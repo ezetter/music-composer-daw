@@ -34,7 +34,11 @@ public:
 
     void systemRequestedQuit() override
     {
-        quit();
+        // Offer to save a score with unsaved changes first.
+        if (auto* content = mainWindow != nullptr ? dynamic_cast<MainComponent*> (mainWindow->getContentComponent()) : nullptr)
+            content->saveChangesThen ([] { quit(); });
+        else
+            quit();
     }
 
 private:

@@ -141,6 +141,18 @@ public:
     /** Picks a new order for a measure's chord to play its notes in, if it's a Random chord. */
     void reshuffle (int measure);
 
+    //==============================================================================
+    /** Replaces the score with a new, empty one. */
+    void clear();
+
+    /** The whole score, as JSON to save in a file. */
+    juce::var toJSON() const;
+
+    /** Replaces the score with one saved by toJSON(). Anything missing or out of range falls
+        back to its default, so a damaged file loads as much as it can.
+    */
+    juce::Result loadJSON (const juce::var&);
+
 private:
     struct Measure
     {

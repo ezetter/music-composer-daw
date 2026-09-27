@@ -5,15 +5,19 @@
 #include "InstrumentPanel.h"
 #include "PianoKeyboard.h"
 #include "Score.h"
+#include "ScoreDocument.h"
 #include "ScorePanel.h"
 #include "StaffView.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
 /** The main window's contents: a toolbar, a sidebar with the score's and chords' settings, the
-    scrolling grand staff, and a piano keyboard, all playing through an instrument plugin.
+    scrolling grand staff, and a piano keyboard, all playing through an instrument plugin. It
+    also puts the File menu in the menu bar, for saving and opening scores.
 */
 class MainComponent final : public juce::Component,
+                            public juce::ApplicationCommandTarget,
+                            private juce::MenuBarModel,
                             private juce::Timer,
                             private juce::ChangeListener,
                             private juce::KeyListener
@@ -27,6 +31,14 @@ public:
     void resized() override;
     void parentHierarchyChanged() override;
 
+    /** Offers to save unsaved changes, then does the action, unless the user cancels. */
+    void saveChangesThen (std::function<void()> action);
+
+    ApplicationCommandTarget* getNextCommandTarget() override;
+    void getAllCommands (juce::Array<juce::CommandID>&) override;
+    void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
+    bool perform (const InvocationInfo&) override;
+
     static constexpr int minimumWidth = 1000;
     static constexpr int minimumHeight = 640;
 
@@ -39,6 +51,18 @@ private:
         void paint (juce::Graphics&) override;
         int dividerY = 0;
     };
+
+    enum Commands
+    {
+        newScore = 1,
+        openScore,
+        saveScore,
+        saveScoreAs
+    };
+
+    juce::StringArray getMenuBarNames() override;
+    juce::PopupMenu getMenuForIndex (int menuIndex, const juce::String& menuName) override;
+    void menuItemSelected (int, int) override {}
 
     void timerCallback() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -58,10 +82,14 @@ private:
     void removeMeasure();
     void showHeldNotes();
     void tempoEdited (bool finished);
+    void scoreReplaced();
+    void showDocumentTitle();
 
     juce::AudioDeviceManager audioDeviceManager;
     InstrumentHost instrumentHost;
     Score score;
+    ScoreDocument document;
+    juce::ApplicationCommandManager commandManager;
 
     juce::TextButton playButton { "Play" };
     juce::Label tempoLabel;

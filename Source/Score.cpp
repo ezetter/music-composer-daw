@@ -292,3 +292,221 @@ void Score::tidyChord (Measure& measure, bool reshuffleRandomOrder)
     if (reshuffleRandomOrder || ! orderStillFits)
         chord.randomOrder = music::createRandomOrder (midiNotes, numSlots, random);
 }
+
+//==============================================================================
+namespace
+{
+    constexpr auto formatName = "Anthropocene Music score";
+    constexpr int formatVersion = 1;
+
+    juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
+    {
+        juce::Array<juce::var> list;
+
+        for (const auto& note : notes)
+            list.add (juce::Array<juce::var> { note.midi, note.spelling.letter, note.spelling.alter });
+
+        return list;
+    }
+
+    /** A number from the file, or the fallback if it's missing or out of range. */
+    int readInt (const juce::var& value, int lowest, int highest, int fallback)
+    {
+        if (! (value.isInt() || value.isInt64() || value.isDouble()))
+            return fallback;
+
+        const auto number = (int) value;
+        return number >= lowest && number <= highest ? number : fallback;
+    }
+
+    std::optional<std::vector<music::KeyboardNote>> readKeyboardNotes (const juce::var& value)
+    {
+        const auto* list = value.getArray();
+
+        if (list == nullptr)
+            return {};
+
+        std::vector<music::KeyboardNote> notes;
+
+        for (const auto& item : *list)
+        {
+            const music::KeyboardNote note { readInt (item[0], 0, 127, -1),
+                                             { readInt (item[1], 0, 6, -1), readInt (item[2], -2, 2, 99) } };
+
+            // Skip anything that isn't a real note, or whose spelling doesn't match its pitch.
+            if (note.midi >= 0 && note.spelling.letter >= 0 && note.spelling.alter != 99
+                && note.spelling.getPitchClass() == music::mod (note.midi, 12))
+                notes.push_back (note);
+        }
+
+        return notes;
+    }
+}
+
+void Score::clear()
+{
+    measures = std::vector<Measure> (initialMeasures);
+    keyIndex = 0;
+    beatsPerMeasure = 4;
+    beatsPerMinute = 120.0;
+    sendSynchronousChangeMessage();
+}
+
+juce::var Score::toJSON() const
+{
+    auto* root = new juce::DynamicObject();
+    root->setProperty ("format", formatName);
+    root->setProperty ("version", formatVersion);
+    root->setProperty ("key", keyIndex);
+    root->setProperty ("beatsPerMeasure", beatsPerMeasure);
+    root->setProperty ("beatsPerMinute", beatsPerMinute);
+
+    juce::Array<juce::var> measureList;
+
+    for (const auto& measure : measures)
+    {
+        auto* measureObject = new juce::DynamicObject();
+
+        // Every beat is kept, including ones hidden by a shorter time signature.
+        for (auto staff : { Staff::treble, Staff::bass })
+        {
+            juce::Array<juce::var> beats;
+
+            for (const auto& notes : measure.notes[(size_t) staff])
+            {
+                juce::Array<juce::var> pitches;
+
+                for (const auto& pitch : notes)
+                    pitches.add (juce::Array<juce::var> { pitch.step, pitch.alter });
+
+                beats.add (pitches);
+            }
+
+            measureObject->setProperty (staff == Staff::treble ? "treble" : "bass", beats);
+        }
+
+        if (measure.chord.has_value())
+        {
+            const auto& chord = *measure.chord;
+            auto* chordObject = new juce::DynamicObject();
+            chordObject->setProperty ("degree", chord.spec.degree);
+            chordObject->setProperty ("flat", chord.spec.flat);
+            chordObject->setProperty ("minor", chord.spec.minor);
+            chordObject->setProperty ("altered", chord.spec.altered);
+            chordObject->setProperty ("addedNote", (int) chord.spec.addedNote);
+            chordObject->setProperty ("inversion", chord.spec.inversion);
+            chordObject->setProperty ("octave", chord.spec.octave);
+            chordObject->setProperty ("staff", chord.style.staff == Staff::treble ? "treble" : "bass");
+            chordObject->setProperty ("type", (int) chord.style.type);
+            chordObject->setProperty ("alternate", (int) chord.style.alternate);
+
+            if (chord.keyboardNotes.has_value())
+                chordObject->setProperty ("keyboardNotes", notesToJSON (*chord.keyboardNotes));
+
+            if (chord.alternateNotes.has_value())
+                chordObject->setProperty ("alternateNotes", notesToJSON (*chord.alternateNotes));
+
+            juce::Array<juce::var> order;
+
+            for (auto midi : chord.randomOrder)
+                order.add (midi);
+
+            chordObject->setProperty ("randomOrder", order);
+            measureObject->setProperty ("chord", chordObject);
+        }
+
+        measureList.add (measureObject);
+    }
+
+    root->setProperty ("measures", measureList);
+    return root;
+}
+
+juce::Result Score::loadJSON (const juce::var& json)
+{
+    if (json.getProperty ("format", {}).toString() != formatName)
+        return juce::Result::fail ("This isn't an Anthropocene Music score.");
+
+    const auto* measureList = json.getProperty ("measures", {}).getArray();
+
+    if (measureList == nullptr || measureList->isEmpty())
+        return juce::Result::fail ("The score has no measures.");
+
+    std::vector<Measure> loaded;
+
+    for (const auto& item : *measureList)
+    {
+        Measure measure;
+
+        for (auto staff : { Staff::treble, Staff::bass })
+        {
+            const auto& beats = item.getProperty (staff == Staff::treble ? "treble" : "bass", {});
+
+            for (int beat = 0; beat < maxBeatsPerMeasure; ++beat)
+            {
+                auto& notes = measure.notes[(size_t) staff][(size_t) beat];
+
+                if (const auto* pitches = beats[beat].getArray())
+                    for (const auto& pitch : *pitches)
+                        if (const auto step = readInt (pitch[0], 0, 80, -1); step >= 0)
+                            notes.push_back ({ step, readInt (pitch[1], -2, 2, 0) });
+
+                std::sort (notes.begin(), notes.end(), comesBefore);
+                notes.erase (std::unique (notes.begin(), notes.end()), notes.end());
+            }
+        }
+
+        if (const auto& c = item.getProperty ("chord", {}); c.isObject())
+        {
+            MeasureChord chord;
+            chord.spec.degree = readInt (c.getProperty ("degree", {}), -1, 6, -1);
+            chord.spec.flat = (bool) c.getProperty ("flat", false);
+            chord.spec.minor = (bool) c.getProperty ("minor", false);
+            chord.spec.altered = (bool) c.getProperty ("altered", false);
+            chord.spec.addedNote = (music::AddedNote) readInt (c.getProperty ("addedNote", {}), 0, 6, 0);
+            chord.spec.inversion = readInt (c.getProperty ("inversion", {}), 0, 3, 0);
+            chord.spec.octave = readInt (c.getProperty ("octave", {}), -1, 1, 0);
+            chord.style.staff = c.getProperty ("staff", {}).toString() == "bass" ? Staff::bass : Staff::treble;
+            chord.style.type = (music::ChordType) readInt (c.getProperty ("type", {}), 0, 4, 0);
+            chord.style.alternate = (music::AlternateStaff) readInt (c.getProperty ("alternate", {}), 0, 4, 0);
+            chord.keyboardNotes = readKeyboardNotes (c.getProperty ("keyboardNotes", {}));
+            chord.alternateNotes = readKeyboardNotes (c.getProperty ("alternateNotes", {}));
+
+            // Keep only the combinations the chord panel allows: an added note suits the chord's
+            // quality and can't go with + / °, and only 7th chords have a 3rd inversion.
+            const auto choices = music::getAddedNoteChoices (chord.spec.minor);
+
+            if (chord.spec.addedNote != music::AddedNote::none
+                && (chord.spec.altered || std::find (choices.begin(), choices.end(), chord.spec.addedNote) == choices.end()))
+                chord.spec.addedNote = music::AddedNote::none;
+
+            if (chord.spec.inversion == 3 && chord.spec.addedNote == music::AddedNote::none)
+                chord.spec.inversion = 0;
+
+            if (chord.keyboardNotes.has_value() && chord.keyboardNotes->empty())
+                chord.keyboardNotes.reset();
+
+            if (const auto* order = c.getProperty ("randomOrder", {}).getArray())
+                for (const auto& midi : *order)
+                    chord.randomOrder.push_back (readInt (midi, 0, 127, 0));
+
+            measure.chord = chord;
+        }
+
+        loaded.push_back (std::move (measure));
+    }
+
+    measures = std::move (loaded);
+    keyIndex = readInt (json.getProperty ("key", {}), 0, (int) music::getMajorKeys().size() - 1, 0);
+    beatsPerMeasure = readInt (json.getProperty ("beatsPerMeasure", {}), 2, maxBeatsPerMeasure, 4);
+
+    const auto tempo = (double) json.getProperty ("beatsPerMinute", 120.0);
+    beatsPerMinute = tempo >= minBeatsPerMinute && tempo <= maxBeatsPerMinute ? tempo : 120.0;
+
+    // A saved random order is kept if it still fits its chord, and made again if not.
+    for (auto& measure : measures)
+        tidyChord (measure);
+
+    sendSynchronousChangeMessage();
+    return juce::Result::ok();
+}

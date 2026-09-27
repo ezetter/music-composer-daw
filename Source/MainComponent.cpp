@@ -46,7 +46,8 @@ void MainComponent::SidebarContent::paint (juce::Graphics& g)
 }
 
 MainComponent::MainComponent (juce::PropertiesFile& settings)
-    : instrumentPanel (instrumentHost, settings)
+    : document (score, settings),
+      instrumentPanel (instrumentHost, settings)
 {
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
@@ -101,6 +102,14 @@ MainComponent::MainComponent (juce::PropertiesFile& settings)
     addAndMakeVisible (keyboard);
 
     score.addChangeListener (this);
+    document.addChangeListener (this);
+
+    // The File menu, with its keyboard shortcuts
+    commandManager.registerAllCommandsForTarget (this);
+    commandManager.setFirstCommandTarget (this);
+    setApplicationCommandManagerToWatch (&commandManager);
+    juce::MenuBarModel::setMacMainMenu (this);
+
     setInputMode (InputMode::notes);
     setSize (1280, 820);
 
@@ -115,11 +124,18 @@ MainComponent::MainComponent (juce::PropertiesFile& settings)
 
 MainComponent::~MainComponent()
 {
+    juce::MenuBarModel::setMacMainMenu (nullptr);
+    commandManager.setFirstCommandTarget (nullptr);
+
     audioDeviceManager.removeAudioCallback (&instrumentHost);
     score.removeChangeListener (this);
+    document.removeChangeListener (this);
 
     if (keyListenerTarget != nullptr)
+    {
         keyListenerTarget->removeKeyListener (this);
+        keyListenerTarget->removeKeyListener (commandManager.getKeyMappings());
+    }
 }
 
 void MainComponent::paint (juce::Graphics& g)
@@ -182,10 +198,15 @@ void MainComponent::parentHierarchyChanged()
         return;
 
     if (keyListenerTarget != nullptr)
+    {
         keyListenerTarget->removeKeyListener (this);
+        keyListenerTarget->removeKeyListener (commandManager.getKeyMappings());
+    }
 
     keyListenerTarget = top;
     top->addKeyListener (this);
+    top->addKeyListener (commandManager.getKeyMappings());   // the menu's shortcuts
+    showDocumentTitle();
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
@@ -199,8 +220,18 @@ bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
     return false;
 }
 
-void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
+void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
+    if (source == &document)
+    {
+        showDocumentTitle();
+        return;
+    }
+
+    // The tempo can change by loading a score, so show it unless it's being typed.
+    if (! tempoEditor.hasKeyboardFocus (false))
+        tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
+
     if (selectedMeasure.has_value() && *selectedMeasure >= score.getNumMeasures())
         selectMeasure ({});
 
@@ -379,4 +410,106 @@ void MainComponent::addMeasure()
 void MainComponent::removeMeasure()
 {
     score.removeLastMeasure();
+}
+
+//==============================================================================
+juce::StringArray MainComponent::getMenuBarNames()
+{
+    return { "File" };
+}
+
+juce::PopupMenu MainComponent::getMenuForIndex (int, const juce::String&)
+{
+    juce::PopupMenu menu;
+    menu.addCommandItem (&commandManager, newScore);
+    menu.addCommandItem (&commandManager, openScore);
+    menu.addSeparator();
+    menu.addCommandItem (&commandManager, saveScore);
+    menu.addCommandItem (&commandManager, saveScoreAs);
+    return menu;
+}
+
+juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
+{
+    return nullptr;
+}
+
+void MainComponent::getAllCommands (juce::Array<juce::CommandID>& commands)
+{
+    commands.addArray ({ newScore, openScore, saveScore, saveScoreAs });
+}
+
+void MainComponent::getCommandInfo (juce::CommandID command, juce::ApplicationCommandInfo& info)
+{
+    const auto cmd = juce::ModifierKeys::commandModifier;
+
+    switch (command)
+    {
+        case newScore:     info.setInfo ("New", "Starts a new, empty score", "File", 0);
+                           info.addDefaultKeypress ('n', cmd); break;
+        case openScore:    info.setInfo (juce::String (juce::CharPointer_UTF8 ("Open\xe2\x80\xa6")), "Opens a saved score", "File", 0);
+                           info.addDefaultKeypress ('o', cmd); break;
+        case saveScore:    info.setInfo ("Save", "Saves the score", "File", 0);
+                           info.addDefaultKeypress ('s', cmd); break;
+        case saveScoreAs:  info.setInfo (juce::String (juce::CharPointer_UTF8 ("Save As\xe2\x80\xa6")), "Saves the score in a new file", "File", 0);
+                           info.addDefaultKeypress ('s', cmd | juce::ModifierKeys::shiftModifier); break;
+        default:           break;
+    }
+}
+
+bool MainComponent::perform (const InvocationInfo& invocation)
+{
+    switch (invocation.commandID)
+    {
+        case newScore:
+            saveChangesThen ([this] { document.startNewScore(); scoreReplaced(); });
+            return true;
+
+        case openScore:
+            saveChangesThen ([this]
+            {
+                document.loadFromUserSpecifiedFileAsync (true, [safeThis = juce::Component::SafePointer (this)] (juce::Result result)
+                {
+                    if (safeThis != nullptr && result.wasOk())
+                        safeThis->scoreReplaced();
+                });
+            });
+            return true;
+
+        case saveScore:
+            document.saveAsync (true, true, nullptr);
+            return true;
+
+        case saveScoreAs:
+            document.saveAsInteractiveAsync (true, nullptr);
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+void MainComponent::saveChangesThen (std::function<void()> action)
+{
+    document.saveIfNeededAndUserAgreesAsync ([safeThis = juce::Component::SafePointer (this), action] (juce::FileBasedDocument::SaveResult result)
+    {
+        if (safeThis != nullptr && result == juce::FileBasedDocument::savedOk)
+            action();
+    });
+}
+
+void MainComponent::scoreReplaced()
+{
+    // A new score starts from the beginning, with nothing playing or selected.
+    instrumentHost.stop();
+    showPlaybackPosition();
+    selectMeasure ({});
+    setInputMode (InputMode::notes);
+    staffViewport.setViewPosition (0, 0);
+}
+
+void MainComponent::showDocumentTitle()
+{
+    if (auto* window = findParentComponentOfClass<juce::DocumentWindow>())
+        window->setName (document.getDocumentTitle() + (document.hasChangedSinceSaved() ? juce::String (juce::CharPointer_UTF8 (" \xe2\x80\x94 Edited")) : juce::String()));
 }

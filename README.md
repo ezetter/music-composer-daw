@@ -28,6 +28,23 @@ The window has a toolbar along the top, the score's and chords' settings on the 
 - **Load Instrument…** loads a VST3 instrument, such as one from `/Library/Audio/Plug-Ins/VST3`. **Show Editor** opens the instrument's own window, where you can choose its sounds.
 - The instrument is loaded again the next time the app starts, with the sound it had. It's saved when you load it, when you close its editor, and when you quit, in `~/Library/Application Support/Anthropocene Music`. If it can't be loaded, say because it's been uninstalled, the app tells you and forgets it.
 
+### Saving and opening
+
+The **File** menu saves and opens scores:
+
+| Command | Shortcut | What it does |
+| --- | --- | --- |
+| **New** | ⌘N | Starts an empty score: four measures of 4/4 in C major at 120 BPM. |
+| **Open…** | ⌘O | Opens a saved score. |
+| **Save** | ⌘S | Saves the score to its file, asking for a name the first time. |
+| **Save As…** | ⇧⌘S | Saves the score to a new file, which it then keeps using. |
+
+- Scores are saved as `.amscore` files, which are JSON. A file keeps everything about the score: the key, time signature, tempo, the measures and their notes, and each measure's chord with all its settings. That includes notes you've added to or taken out of a chord, and the order a Random chord plays in. Notes on beats hidden by a shorter time signature are kept too.
+- The instrument isn't part of the score. It stays as it is when you open a different score.
+- The window's title shows the score's name, and "Edited" when it has changes that haven't been saved. Before New, Open, or quitting (including closing the window), you're asked whether to save them.
+- If a file can't be opened, because it isn't a score, you're told why and the current score stays as it was. A score with values out of range, say from editing the file by hand, opens with those values set back to their defaults.
+- A newly opened or new score starts in Notes mode, scrolled to the beginning, with nothing selected.
+
 ### Score
 
 | Setting | What it does |
@@ -94,9 +111,10 @@ Click or drag across the piano keys to play the instrument yourself. Once the pi
 
 | File | Contents |
 | --- | --- |
-| `Source/Main.cpp` | The application and its window |
-| `Source/MainComponent.*` | The toolbar, the sidebar, the scrolling staff, the piano, and the audio output |
-| `Source/Score.*` | The music: the key, time signature and speed, quarter notes, and each measure's chord |
+| `Source/Main.cpp` | The application and its window, and asking to save before quitting |
+| `Source/MainComponent.*` | The File menu, the toolbar, the sidebar, the scrolling staff, the piano, and the audio output |
+| `Source/Score.*` | The music: the key, time signature and speed, quarter notes, and each measure's chord, and saving it as JSON |
+| `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
 | `Source/Music.*` | Music theory: keys, spelling, and building, recognising and naming chords |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
 | `Source/StaffView.*` | Draws the grand staff, and turns clicks into notes or selected measures |
