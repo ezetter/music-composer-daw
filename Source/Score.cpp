@@ -2,6 +2,12 @@
 
 #include <algorithm>
 
+int getMidiNoteNumber (int pitch)
+{
+    constexpr int semitonesAboveC[] { 0, 2, 4, 5, 7, 9, 11 };
+    return 12 * (pitch / 7 + 1) + semitonesAboveC[pitch % 7];
+}
+
 void Score::addMeasure()
 {
     measures.emplace_back();

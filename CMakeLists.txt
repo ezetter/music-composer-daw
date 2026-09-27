@@ -21,9 +21,12 @@ juce_add_gui_app(AnthropoceneMusic
 
 target_sources(AnthropoceneMusic
     PRIVATE
+        Source/InstrumentHost.cpp
+        Source/InstrumentPanel.cpp
         Source/Main.cpp
         Source/MainComponent.cpp
         Source/MusicGlyphs.cpp
+        Source/PluginWindow.cpp
         Source/Score.cpp
         Source/StaffView.cpp)
 
@@ -37,7 +40,7 @@ target_compile_definitions(AnthropoceneMusic
         JUCE_USE_CURL=0
         JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:AnthropoceneMusic,JUCE_PRODUCT_NAME>"
         JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:AnthropoceneMusic,JUCE_VERSION>"
-        # Nothing hosts plugins yet, but VST3 and AU hosting are compiled in, ready for it.
+        # Instruments are loaded from VST3 plugins. AU hosting is compiled in too, though nothing uses it yet.
         JUCE_PLUGINHOST_VST3=1
         JUCE_PLUGINHOST_AU=1)
 

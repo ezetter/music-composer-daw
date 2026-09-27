@@ -25,6 +25,12 @@ public:
     /** The note that clicking at this point would add, if any. */
     std::optional<Note> getNoteAt (juce::Point<float>) const;
 
+    /** Highlights the beat that's playing, given in beats from the start of the score. */
+    void setPlaybackPosition (std::optional<double> beats);
+
+    /** The area of the beat that's highlighted as playing, or an empty rectangle if none is. */
+    juce::Rectangle<int> getPlaybackArea() const;
+
     void paint (juce::Graphics&) override;
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
@@ -48,11 +54,12 @@ private:
     void drawCentred (juce::Graphics&, juce::juce_wchar glyph, float centreX, float y) const;
 
     void setHoverNote (std::optional<Note>);
-    juce::Rectangle<int> getBeatArea (const Note&) const;
+    juce::Rectangle<int> getBeatArea (int measure, int beat) const;
 
     Score& score;
     MusicGlyphs glyphs;
     std::optional<Note> hoverNote;
+    std::optional<int> playingBeat;     // counted from the start of the score
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StaffView)
 };

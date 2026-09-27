@@ -51,6 +51,7 @@ namespace
 
     const juce::Colour inkColour { 0xff1b1b1b };
     const juce::Colour hoverColour { 0x992f7de1 };
+    const juce::Colour playbackColour { 0x2e4a8fe0 };
     const juce::Colour measureNumberColour { 0xff8c8c8c };
 
     int getBottomLinePitch (Staff staff)
@@ -144,6 +145,17 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
 void StaffView::paint (juce::Graphics& g)
 {
     g.fillAll (paperColour);
+
+    if (playingBeat.has_value())
+    {
+        const auto area = getPlaybackArea().toFloat()
+                              .withTop (getStaffTop (Staff::treble) - 2.0f * staffSpace)
+                              .withBottom (getStaffTop (Staff::bass) + (staffHeight + 2.0f) * staffSpace);
+
+        g.setColour (playbackColour);
+        g.fillRoundedRectangle (area.reduced (0.5f * staffSpace, 0.0f), 0.5f * staffSpace);
+    }
+
     g.setColour (inkColour);
 
     const auto lineThickness = staffLineThickness * staffSpace;
@@ -410,19 +422,39 @@ void StaffView::setHoverNote (std::optional<Note> note)
         return;
 
     if (hoverNote.has_value())
-        repaint (getBeatArea (*hoverNote));
+        repaint (getBeatArea (hoverNote->measure, hoverNote->beat));
 
     hoverNote = note;
 
     if (hoverNote.has_value())
-        repaint (getBeatArea (*hoverNote));
+        repaint (getBeatArea (hoverNote->measure, hoverNote->beat));
 }
 
-juce::Rectangle<int> StaffView::getBeatArea (const Note& note) const
+void StaffView::setPlaybackPosition (std::optional<double> beats)
+{
+    const auto beat = beats.has_value() ? std::optional<int> ((int) *beats) : std::nullopt;
+
+    if (beat == playingBeat)
+        return;
+
+    repaint (getPlaybackArea());
+    playingBeat = beat;
+    repaint (getPlaybackArea());
+}
+
+juce::Rectangle<int> StaffView::getPlaybackArea() const
+{
+    if (! playingBeat.has_value())
+        return {};
+
+    return getBeatArea (*playingBeat / Score::beatsPerMeasure, *playingBeat % Score::beatsPerMeasure);
+}
+
+juce::Rectangle<int> StaffView::getBeatArea (int measure, int beat) const
 {
     const auto width = beatWidth * staffSpace;
 
-    return juce::Rectangle<float> (getBeatX (note.measure, note.beat) - width / 2.0f, 0.0f, width, (float) getHeight())
+    return juce::Rectangle<float> (getBeatX (measure, beat) - width / 2.0f, 0.0f, width, (float) getHeight())
                .getSmallestIntegerContainer();
 }
 

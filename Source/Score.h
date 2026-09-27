@@ -23,6 +23,9 @@ struct Note
     bool operator== (const Note&) const = default;
 };
 
+/** The MIDI note number of a pitch: middle C (28) is note 60. */
+int getMidiNoteNumber (int pitch);
+
 /** Music in 4/4 time for a grand staff. Listeners hear about every change. */
 class Score : public juce::ChangeBroadcaster
 {
