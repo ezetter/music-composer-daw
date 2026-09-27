@@ -39,6 +39,8 @@ The window has a toolbar along the top, the score's and chords' settings on the 
 
 In **Notes** mode, clicking the staff adds a quarter note at that pitch and beat, taking its sharp or flat from the key signature. A blue note shows where it will go. Clicking between the staves puts the note on the nearer staff, with ledger lines. Rests fill the beats without notes.
 
+Clicking a quarter note takes it out again, whatever its sharp or flat. The note under the pointer turns red to show that a click will remove it. The notes of a measure's chord are changed in Chords mode instead.
+
 ### Chords
 
 In **Chords** mode, clicking a measure selects it and plays it, and the chord panel edits that measure's chord. Clicking it again, or pressing Esc, lets it go. Everything updates as you change it.

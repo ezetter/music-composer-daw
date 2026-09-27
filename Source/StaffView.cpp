@@ -54,6 +54,7 @@ namespace
 
     const juce::Colour inkColour { 0xff1b1b1b };
     const juce::Colour hoverColour { 0x992f7de1 };
+    const juce::Colour removalColour { 0xffd8413a };
     const juce::Colour playbackColour { 0x2e4a8fe0 };
     const juce::Colour selectionColour { 0xff2f5fd0 };
     const juce::Colour numeralColour { 0xff2848b0 };
@@ -143,6 +144,7 @@ struct StaffView::NoteLayout
     NoteLayout (const StaffEvent& event, Staff staff, float centre, std::map<int, int>& alterationsInForce,
                 const std::array<int, 7>& keyAlterations)
         : centreX (centre),
+          onset (event.onset),
           duration (event.duration),
           headWidth (getNoteheadWidth (event.duration) * staffSpace)
     {
@@ -171,6 +173,7 @@ struct StaffView::NoteLayout
     }
 
     float centreX = 0.0f;
+    double onset = 0.0;
     Duration duration = Duration::quarter;
     float headWidth = 0.0f;
     std::vector<int> positions;                     // low to high
@@ -833,8 +836,18 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
         beams.push_back (beamed);
     }
 
+    // In notes mode, the quarter note under the pointer is red, to show a click will take it out.
+    std::optional<int> highlightedPosition;
+
+    if (inputMode == InputMode::notes && hoverNote.has_value() && ! hoverHintHidden && content.source == StaffContent::Source::notes
+        && hoverNote->staff == staff && hoverNote->measure == measure)
+        highlightedPosition = hoverNote->pitch.step - getBottomLineStep (staff);
+
     for (size_t i = 0; i < notes.size(); ++i)
-        drawNote (g, staff, notes[i], rolled[i]);
+    {
+        const auto isHovered = highlightedPosition.has_value() && juce::exactlyEqual (notes[i].onset, (double) hoverNote->beat);
+        drawNote (g, staff, notes[i], rolled[i], isHovered ? highlightedPosition : std::nullopt);
+    }
 
     for (const auto& note : notes)
         drawStem (g, staff, note);
@@ -843,12 +856,23 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
         drawBeams (g, staff, beamed);
 }
 
-void StaffView::drawNote (juce::Graphics& g, Staff staff, const NoteLayout& note, bool rolled) const
+void StaffView::drawNote (juce::Graphics& g, Staff staff, const NoteLayout& note, bool rolled,
+                          std::optional<int> highlightedPosition) const
 {
     drawLedgerLines (g, staff, note.positions, note.headLefts, note.headWidth);
 
     for (size_t i = 0; i < note.positions.size(); ++i)
+    {
+        const auto highlighted = note.positions[i] == highlightedPosition;
+
+        if (highlighted)
+            g.setColour (removalColour);
+
         glyphs.draw (g, getNoteheadGlyph (note.duration), { note.headLefts[i], getY (staff, note.positions[i]) });
+
+        if (highlighted)
+            g.setColour (inkColour);
+    }
 
     const auto headsLeft = *std::min_element (note.headLefts.begin(), note.headLefts.end());
     const auto headsRight = *std::max_element (note.headLefts.begin(), note.headLefts.end()) + note.headWidth;
@@ -1059,13 +1083,12 @@ void StaffView::drawLabels (juce::Graphics& g, int measure) const
 
 void StaffView::drawHoverNote (juce::Graphics& g) const
 {
-    if (inputMode != InputMode::notes || ! hoverNote.has_value() || hoverNote->measure >= score.getNumMeasures()
-        || hoverNote->beat >= score.getBeatsPerMeasure())
+    if (inputMode != InputMode::notes || ! hoverNote.has_value() || hoverHintHidden
+        || hoverNote->measure >= score.getNumMeasures() || hoverNote->beat >= score.getBeatsPerMeasure())
         return;
 
-    const auto& notes = score.getNotes (hoverNote->staff, hoverNote->measure, hoverNote->beat);
-
-    if (std::find (notes.begin(), notes.end(), hoverNote->pitch) != notes.end())
+    // Over a note, the note itself is highlighted instead.
+    if (score.hasNoteAt (hoverNote->staff, hoverNote->measure, hoverNote->beat, hoverNote->pitch.step))
         return;
 
     const auto position = hoverNote->pitch.step - getBottomLineStep (hoverNote->staff);
@@ -1104,7 +1127,17 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     if (inputMode == InputMode::notes)
     {
         if (const auto note = getNoteAt (e.position))
-            score.addNote (*note);
+        {
+            // Clicking a note takes it out, whatever its sharp or flat; clicking anywhere else adds one.
+            if (score.hasNoteAt (note->staff, note->measure, note->beat, note->pitch.step))
+                score.removeNotesAt (note->staff, note->measure, note->beat, note->pitch.step);
+            else
+                score.addNote (*note);
+
+            // Show what the click did, rather than what another click would do.
+            hoverHintHidden = true;
+            repaint (getBeatArea (note->measure, note->beat));
+        }
     }
     else if (const auto measure = getMeasureAt (e.position); measure.has_value() && onMeasureClicked != nullptr)
     {
@@ -1116,6 +1149,8 @@ void StaffView::setHoverNote (std::optional<Note> note)
 {
     if (note == hoverNote)
         return;
+
+    hoverHintHidden = false;
 
     if (hoverNote.has_value())
         repaint (getBeatArea (hoverNote->measure, hoverNote->beat));

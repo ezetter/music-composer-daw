@@ -125,6 +125,23 @@ const std::vector<music::Pitch>& Score::getNotes (Staff staff, int measure, int 
     return measures[(size_t) measure].notes[(size_t) staff][(size_t) beat];
 }
 
+bool Score::hasNoteAt (Staff staff, int measure, int beat, int step) const
+{
+    const auto& notes = getNotes (staff, measure, beat);
+    return std::any_of (notes.begin(), notes.end(), [step] (const music::Pitch& pitch) { return pitch.step == step; });
+}
+
+bool Score::removeNotesAt (Staff staff, int measure, int beat, int step)
+{
+    auto& notes = measures[(size_t) measure].notes[(size_t) staff][(size_t) beat];
+
+    if (std::erase_if (notes, [step] (const music::Pitch& pitch) { return pitch.step == step; }) == 0)
+        return false;
+
+    sendSynchronousChangeMessage();
+    return true;
+}
+
 //==============================================================================
 const MeasureChord* Score::getChord (int measure) const
 {

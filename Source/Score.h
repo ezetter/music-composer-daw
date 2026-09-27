@@ -98,6 +98,12 @@ public:
     /** The quarter notes on one beat of one staff, lowest first. */
     const std::vector<music::Pitch>& getNotes (Staff, int measure, int beat) const;
 
+    /** Whether a beat of a staff has a quarter note on this line or space, whatever its sharp or flat. */
+    bool hasNoteAt (Staff, int measure, int beat, int step) const;
+
+    /** Removes the quarter notes on a line or space of one beat. Returns false if there weren't any. */
+    bool removeNotesAt (Staff, int measure, int beat, int step);
+
     //==============================================================================
     /** The measure's chord, or null if it doesn't have one. */
     const MeasureChord* getChord (int measure) const;

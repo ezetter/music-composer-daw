@@ -12,8 +12,8 @@
 
 /** Draws a score on a single grand staff that extends to the right as measures are added.
 
-    In notes mode, clicking the staff adds a quarter note. In chords mode, clicking a measure
-    selects it, so its chord can be edited.
+    In notes mode, clicking the staff adds a quarter note, and clicking a quarter note takes it
+    out again. In chords mode, clicking a measure selects it, so its chord can be edited.
 */
 class StaffView final : public juce::Component,
                         private juce::ChangeListener
@@ -83,7 +83,7 @@ private:
     void drawHeader (juce::Graphics&) const;
     void drawMeasure (juce::Graphics&, int measure) const;
     void drawStaff (juce::Graphics&, int measure, Staff) const;
-    void drawNote (juce::Graphics&, Staff, const NoteLayout&, bool rolled) const;
+    void drawNote (juce::Graphics&, Staff, const NoteLayout&, bool rolled, std::optional<int> highlightedPosition) const;
     void drawStem (juce::Graphics&, Staff, const NoteLayout&) const;
     void drawBeams (juce::Graphics&, Staff, std::vector<NoteLayout*>&) const;
     void drawLedgerLines (juce::Graphics&, Staff, const std::vector<int>& staffPositions,
@@ -100,6 +100,7 @@ private:
     MusicGlyphs glyphs;
     InputMode inputMode = InputMode::notes;
     std::optional<Note> hoverNote;
+    bool hoverHintHidden = false;       // after a click, until the pointer moves to another spot
     std::optional<int> hoverMeasure;
     std::optional<int> selectedMeasure;
     std::optional<int> playingBeat;     // counted from the start of the score
