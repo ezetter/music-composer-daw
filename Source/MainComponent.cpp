@@ -45,7 +45,8 @@ void MainComponent::SidebarContent::paint (juce::Graphics& g)
     g.fillRect (sidebarPadding, dividerY, getWidth() - 2 * sidebarPadding, 1);
 }
 
-MainComponent::MainComponent()
+MainComponent::MainComponent (juce::PropertiesFile& settings)
+    : instrumentPanel (instrumentHost, settings)
 {
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));

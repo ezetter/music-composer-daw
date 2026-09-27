@@ -19,7 +19,8 @@ class MainComponent final : public juce::Component,
                             private juce::KeyListener
 {
 public:
-    MainComponent();
+    /** The settings are where the app keeps what it needs next time, such as the instrument. */
+    explicit MainComponent (juce::PropertiesFile& settings);
     ~MainComponent() override;
 
     void paint (juce::Graphics&) override;
@@ -67,7 +68,7 @@ private:
     juce::TextEditor tempoEditor;
     juce::TextButton notesButton { "Notes" };
     juce::TextButton chordsButton { "Chords" };
-    InstrumentPanel instrumentPanel { instrumentHost };
+    InstrumentPanel instrumentPanel;
 
     ScorePanel scorePanel { score };
     ChordPanel chordPanel { score };

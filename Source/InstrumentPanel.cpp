@@ -2,14 +2,19 @@
 
 namespace
 {
+    // Where the instrument's description and state are kept in the settings
+    const char* const instrumentKey = "instrument";
+    const char* const instrumentStateKey = "instrumentState";
+
     juce::String withEllipsis (const juce::String& text)
     {
         return text + juce::String (juce::CharPointer_UTF8 ("\xe2\x80\xa6"));
     }
 }
 
-InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse)
+InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, juce::PropertiesFile& settingsToUse)
     : host (hostToUse),
+      settings (settingsToUse),
       loadButton (withEllipsis ("Load Instrument")),
       editorButton ("Show Editor")
 {
@@ -28,6 +33,13 @@ InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse)
     }
 
     updateControls();
+    reloadSavedInstrument();
+}
+
+InstrumentPanel::~InstrumentPanel()
+{
+    // Keep any changes made to the instrument's sound since it was last saved.
+    saveInstrument();
 }
 
 void InstrumentPanel::resized()
@@ -104,13 +116,13 @@ void InstrumentPanel::loadInstrumentFrom (const juce::File& pluginFile)
                         });
 }
 
-void InstrumentPanel::createInstrument (const juce::PluginDescription& description)
+void InstrumentPanel::createInstrument (const juce::PluginDescription& description, const juce::MemoryBlock& state, bool reloading)
 {
     nameBeingLoaded = description.name;
     updateControls();
 
     formatManager.createPluginInstanceAsync (description, host.getSampleRate(), host.getBlockSize(),
-        [safeThis = juce::Component::SafePointer (this), name = description.name]
+        [safeThis = juce::Component::SafePointer (this), name = description.name, state, reloading]
         (std::unique_ptr<juce::AudioPluginInstance> instrument, const juce::String& error)
         {
             if (safeThis == nullptr)
@@ -120,18 +132,60 @@ void InstrumentPanel::createInstrument (const juce::PluginDescription& descripti
 
             if (instrument != nullptr)
             {
+                if (! state.isEmpty())
+                    instrument->setStateInformation (state.getData(), (int) state.getSize());
+
                 // The old instrument's editor has to go before the old instrument does.
                 safeThis->editorWindow = nullptr;
                 safeThis->host.setInstrument (std::move (instrument));
+                safeThis->saveInstrument();
+            }
+            else if (reloading)
+            {
+                // Forget an instrument that can't be loaded any more, rather than failing every time.
+                safeThis->settings.removeValue (instrumentKey);
+                safeThis->settings.removeValue (instrumentStateKey);
+                safeThis->settings.saveIfNeeded();
+
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't reload " + name,
+                                                        error + (error.isEmpty() ? "" : "\n\n")
+                                                            + withEllipsis ("You can choose an instrument with Load Instrument"));
             }
             else
             {
-                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                                        "Couldn't load " + name, error);
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't load " + name, error);
             }
 
             safeThis->updateControls();
         });
+}
+
+void InstrumentPanel::reloadSavedInstrument()
+{
+    const auto xml = settings.getXmlValue (instrumentKey);
+    juce::PluginDescription description;
+
+    if (xml == nullptr || ! description.loadFromXml (*xml))
+        return;
+
+    juce::MemoryBlock state;
+    state.fromBase64Encoding (settings.getValue (instrumentStateKey));
+    createInstrument (description, state, true);
+}
+
+void InstrumentPanel::saveInstrument()
+{
+    auto* instrument = host.getInstrument();
+
+    if (instrument == nullptr)
+        return;
+
+    juce::MemoryBlock state;
+    instrument->getStateInformation (state);
+
+    settings.setValue (instrumentKey, instrument->getPluginDescription().createXml().get());
+    settings.setValue (instrumentStateKey, state.toBase64Encoding());
+    settings.saveIfNeeded();
 }
 
 void InstrumentPanel::showEditor()
@@ -142,8 +196,13 @@ void InstrumentPanel::showEditor()
         return;
     }
 
+    // Closing the editor saves the instrument, with any sound chosen in it.
     if (auto* instrument = host.getInstrument())
-        editorWindow = std::make_unique<PluginWindow> (*instrument, [this] { editorWindow = nullptr; });
+        editorWindow = std::make_unique<PluginWindow> (*instrument, [this]
+        {
+            saveInstrument();
+            editorWindow = nullptr;
+        });
 }
 
 void InstrumentPanel::updateControls()

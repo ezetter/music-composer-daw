@@ -26,6 +26,7 @@ The window has a toolbar along the top, the score's and chords' settings on the 
 - **BPM** sets the tempo in quarter notes per minute, from 20 to 300, fractions allowed. The default is 120. A change applies from the next Play.
 - **Notes / Chords** chooses what clicking the staff does. See below.
 - **Load Instrument…** loads a VST3 instrument, such as one from `/Library/Audio/Plug-Ins/VST3`. **Show Editor** opens the instrument's own window, where you can choose its sounds.
+- The instrument is loaded again the next time the app starts, with the sound it had. It's saved when you load it, when you close its editor, and when you quit, in `~/Library/Application Support/Anthropocene Music`. If it can't be loaded, say because it's been uninstalled, the app tells you and forgets it.
 
 ### Score
 

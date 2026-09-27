@@ -13,12 +13,22 @@ public:
         // spaces them out, so chord names like B♭maj7 would come out as "B ♭ maj7".
         lookAndFeel.setDefaultSansSerifTypefaceName ("Helvetica Neue");
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
-        mainWindow = std::make_unique<MainWindow> (getApplicationName());
+
+        // Kept in ~/Library/Application Support/Anthropocene Music
+        juce::PropertiesFile::Options options;
+        options.applicationName = getApplicationName();
+        options.folderName = getApplicationName();
+        options.osxLibrarySubFolder = "Application Support";
+        options.filenameSuffix = "settings";
+        properties.setStorageParameters (options);
+
+        mainWindow = std::make_unique<MainWindow> (getApplicationName(), *properties.getUserSettings());
     }
 
     void shutdown() override
     {
         mainWindow = nullptr;
+        properties.closeFiles();
         juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     }
 
@@ -31,14 +41,14 @@ private:
     class MainWindow final : public juce::DocumentWindow
     {
     public:
-        explicit MainWindow (const juce::String& name)
+        MainWindow (const juce::String& name, juce::PropertiesFile& settings)
             : DocumentWindow (name,
                               juce::Desktop::getInstance().getDefaultLookAndFeel()
                                                           .findColour (juce::ResizableWindow::backgroundColourId),
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new MainComponent(), true);
+            setContentOwned (new MainComponent (settings), true);
             setResizable (true, false);
             setResizeLimits (MainComponent::minimumWidth, MainComponent::minimumHeight, 10000, 10000);
             centreWithSize (getWidth(), getHeight());
@@ -55,6 +65,7 @@ private:
     };
 
     juce::LookAndFeel_V4 lookAndFeel { juce::LookAndFeel_V4::getLightColourScheme() };
+    juce::ApplicationProperties properties;
     std::unique_ptr<MainWindow> mainWindow;
 };
 
