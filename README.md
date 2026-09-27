@@ -23,7 +23,7 @@ The window has a toolbar along the top, the score's and chords' settings on the 
 ### Toolbar
 
 - **Play** (or the space bar) plays the score from the beginning, highlighting each beat and following it along the staff. **Stop** stops it.
-- **Seconds per measure** sets the speed: how long each measure lasts, from 0.5 to 30 seconds, fractions allowed. The default of 2 is quarter note = 120 in 4/4. A change applies from the next Play.
+- **BPM** sets the tempo in quarter notes per minute, from 20 to 300, fractions allowed. The default is 120. A change applies from the next Play.
 - **Notes / Chords** chooses what clicking the staff does. See below.
 - **Load Instrument…** loads a VST3 instrument, such as one from `/Library/Audio/Plug-Ins/VST3`. **Show Editor** opens the instrument's own window, where you can choose its sounds.
 
@@ -44,6 +44,8 @@ Clicking a quarter note takes it out again, whatever its sharp or flat. The note
 ### Chords
 
 In **Chords** mode, clicking a measure selects it and plays it, and the chord panel edits that measure's chord. Clicking it again, or pressing Esc, lets it go. Everything updates as you change it.
+
+Switching to Chords selects the first measure without any notes, ready for a chord, or the first measure if they all have notes. It scrolls that measure into view.
 
 The chord panel has the Chord Progression Builder's settings for one chord:
 

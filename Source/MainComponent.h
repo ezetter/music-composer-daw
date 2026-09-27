@@ -48,6 +48,7 @@ private:
     void setInputMode (InputMode);
     void selectMeasure (std::optional<int>);
     void measureClicked (int measure);
+    void scrollToMeasure (int measure);
     void pianoKeyClicked (int midiNote);
     void togglePlayback();
     void play (int firstMeasure, int lastMeasure);
@@ -55,15 +56,15 @@ private:
     void addMeasure();
     void removeMeasure();
     void showHeldNotes();
-    void secondsPerMeasureEdited (bool finished);
+    void tempoEdited (bool finished);
 
     juce::AudioDeviceManager audioDeviceManager;
     InstrumentHost instrumentHost;
     Score score;
 
     juce::TextButton playButton { "Play" };
-    juce::Label secondsLabel;
-    juce::TextEditor secondsEditor;
+    juce::Label tempoLabel;
+    juce::TextEditor tempoEditor;
     juce::TextButton notesButton { "Notes" };
     juce::TextButton chordsButton { "Chords" };
     InstrumentPanel instrumentPanel { instrumentHost };

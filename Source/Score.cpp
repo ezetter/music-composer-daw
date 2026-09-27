@@ -73,14 +73,14 @@ void Score::setBeatsPerMeasure (int newBeatsPerMeasure)
     sendSynchronousChangeMessage();
 }
 
-void Score::setSecondsPerMeasure (double newSecondsPerMeasure)
+void Score::setBeatsPerMinute (double newBeatsPerMinute)
 {
-    jassert (newSecondsPerMeasure >= minSecondsPerMeasure && newSecondsPerMeasure <= maxSecondsPerMeasure);
+    jassert (newBeatsPerMinute >= minBeatsPerMinute && newBeatsPerMinute <= maxBeatsPerMinute);
 
-    if (juce::exactlyEqual (newSecondsPerMeasure, secondsPerMeasure))
+    if (juce::exactlyEqual (newBeatsPerMinute, beatsPerMinute))
         return;
 
-    secondsPerMeasure = newSecondsPerMeasure;
+    beatsPerMinute = newBeatsPerMinute;
     sendSynchronousChangeMessage();
 }
 

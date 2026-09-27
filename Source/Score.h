@@ -76,11 +76,14 @@ public:
     */
     void setBeatsPerMeasure (int);
 
-    /** How long a measure lasts when it plays. */
-    double getSecondsPerMeasure() const noexcept { return secondsPerMeasure; }
-    void setSecondsPerMeasure (double);
+    /** The tempo, in quarter notes per minute. */
+    double getBeatsPerMinute() const noexcept { return beatsPerMinute; }
+    void setBeatsPerMinute (double);
 
-    static constexpr double minSecondsPerMeasure = 0.5, maxSecondsPerMeasure = 30.0;
+    static constexpr double minBeatsPerMinute = 20.0, maxBeatsPerMinute = 300.0;
+
+    /** How long a measure lasts when it plays, at the tempo. */
+    double getSecondsPerMeasure() const noexcept { return beatsPerMeasure * 60.0 / beatsPerMinute; }
 
     //==============================================================================
     int getNumMeasures() const noexcept { return (int) measures.size(); }
@@ -140,6 +143,6 @@ private:
     std::vector<Measure> measures = std::vector<Measure> (initialMeasures);
     int keyIndex = 0;
     int beatsPerMeasure = 4;
-    double secondsPerMeasure = 2.0;
+    double beatsPerMinute = 120.0;
     juce::Random random;
 };

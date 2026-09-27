@@ -17,15 +17,25 @@ namespace
     constexpr int highestKey = 108;
     constexpr int numWhiteKeys = 52;
 
-    /** A number of seconds without trailing zeros, e.g. "2" or "1.75". */
-    juce::String formatSeconds (double seconds)
+    /** A number without trailing zeros, e.g. "120" or "92.5". */
+    juce::String formatNumber (double number)
     {
-        auto text = juce::String (seconds, 2);
+        auto text = juce::String (number, 2);
 
         while (text.endsWithChar ('0'))
             text = text.dropLastCharacters (1);
 
         return text.trimCharactersAtEnd (".");
+    }
+
+    bool hasNotes (const Score& score, int measure)
+    {
+        const auto content = getMeasureContent (score, measure);
+
+        return std::any_of (content.staves.begin(), content.staves.end(), [] (const StaffContent& staff)
+        {
+            return std::any_of (staff.events.begin(), staff.events.end(), [] (const StaffEvent& e) { return ! e.isRest(); });
+        });
     }
 }
 
@@ -40,18 +50,18 @@ MainComponent::MainComponent()
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
 
-    secondsLabel.setText ("Seconds per measure", juce::dontSendNotification);
-    secondsLabel.setFont (juce::FontOptions (12.5f));
-    secondsLabel.setColour (juce::Label::textColourId, controls::secondaryText);
-    secondsLabel.setJustificationType (juce::Justification::centredRight);
+    tempoLabel.setText ("BPM", juce::dontSendNotification);
+    tempoLabel.setFont (juce::FontOptions (12.5f));
+    tempoLabel.setColour (juce::Label::textColourId, controls::secondaryText);
+    tempoLabel.setJustificationType (juce::Justification::centredRight);
 
-    secondsEditor.setInputRestrictions (5, "0123456789.");
-    secondsEditor.setJustification (juce::Justification::centred);
-    secondsEditor.setText (formatSeconds (score.getSecondsPerMeasure()), false);
-    secondsEditor.setTooltip ("How long each measure lasts when it plays, from 0.5 to 30 seconds");
-    secondsEditor.onTextChange = [this] { secondsPerMeasureEdited (false); };
-    secondsEditor.onReturnKey = [this] { secondsPerMeasureEdited (true); secondsEditor.giveAwayKeyboardFocus(); };
-    secondsEditor.onFocusLost = [this] { secondsPerMeasureEdited (true); };
+    tempoEditor.setInputRestrictions (6, "0123456789.");
+    tempoEditor.setJustification (juce::Justification::centred);
+    tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
+    tempoEditor.setTooltip ("The tempo, in quarter notes per minute, from 20 to 300");
+    tempoEditor.onTextChange = [this] { tempoEdited (false); };
+    tempoEditor.onReturnKey = [this] { tempoEdited (true); tempoEditor.giveAwayKeyboardFocus(); };
+    tempoEditor.onFocusLost = [this] { tempoEdited (true); };
 
     controls::makeSegmented ({ &notesButton, &chordsButton }, 1);
     notesButton.setTooltip ("Click the staff to add quarter notes");
@@ -63,7 +73,7 @@ MainComponent::MainComponent()
     // computer keyboard can play too.
     playButton.setWantsKeyboardFocus (false);
 
-    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &secondsLabel, &secondsEditor,
+    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &tempoLabel, &tempoEditor,
                                                                      &notesButton, &chordsButton, &instrumentPanel })
         addAndMakeVisible (component);
 
@@ -134,9 +144,9 @@ void MainComponent::resized()
     auto toolbar = bounds.removeFromTop (toolbarHeight).reduced (12, 8);
     playButton.setBounds (toolbar.removeFromLeft (80));
     toolbar.removeFromLeft (16);
-    secondsLabel.setBounds (toolbar.removeFromLeft (130));
+    tempoLabel.setBounds (toolbar.removeFromLeft (34));
     toolbar.removeFromLeft (4);
-    secondsEditor.setBounds (toolbar.removeFromLeft (52));
+    tempoEditor.setBounds (toolbar.removeFromLeft (56));
     toolbar.removeFromLeft (20);
     notesButton.setBounds (toolbar.removeFromLeft (76));
     chordsButton.setBounds (toolbar.removeFromLeft (76));
@@ -199,13 +209,34 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
 //==============================================================================
 void MainComponent::setInputMode (InputMode mode)
 {
+    const auto switchingToChords = mode == InputMode::chords && inputMode != InputMode::chords;
+
     inputMode = mode;
     notesButton.setToggleState (mode == InputMode::notes, juce::dontSendNotification);
     chordsButton.setToggleState (mode == InputMode::chords, juce::dontSendNotification);
     staffView.setInputMode (mode);
 
     if (mode == InputMode::notes)
+    {
         selectMeasure ({});
+    }
+    else if (switchingToChords)
+    {
+        // Start on the first measure without any notes, or on the first measure if they all have some.
+        auto measure = 0;
+
+        for (int m = 0; m < score.getNumMeasures(); ++m)
+        {
+            if (! hasNotes (score, m))
+            {
+                measure = m;
+                break;
+            }
+        }
+
+        selectMeasure (measure);
+        scrollToMeasure (measure);
+    }
 
     chordPanel.setHint (mode == InputMode::notes ? "Switch to Chords above, then click a measure to give it a chord."
                                                  : "Click a measure to add a chord to it, or to change its chord.");
@@ -231,14 +262,18 @@ void MainComponent::measureClicked (int measure)
 
     selectMeasure (measure);
 
-    const auto content = getMeasureContent (score, measure);
-    const auto hasNotes = std::any_of (content.staves.begin(), content.staves.end(), [] (const StaffContent& staff)
-    {
-        return std::any_of (staff.events.begin(), staff.events.end(), [] (const StaffEvent& e) { return ! e.isRest(); });
-    });
-
-    if (hasNotes)
+    if (hasNotes (score, measure))
         play (measure, measure);
+}
+
+void MainComponent::scrollToMeasure (int measure)
+{
+    // A measure out of view is brought to a quarter of the way across.
+    const auto area = staffView.getMeasureArea (measure);
+    const auto viewArea = staffViewport.getViewArea();
+
+    if (area.getX() < viewArea.getX() || area.getRight() > viewArea.getRight())
+        staffViewport.setViewPosition (area.getX() - viewArea.getWidth() / 4, 0);
 }
 
 void MainComponent::pianoKeyClicked (int midiNote)
@@ -307,29 +342,29 @@ void MainComponent::showPlaybackPosition()
         staffViewport.setViewPosition (playingArea.getX() - viewArea.getWidth() / 4, 0);
 }
 
-void MainComponent::secondsPerMeasureEdited (bool finished)
+void MainComponent::tempoEdited (bool finished)
 {
-    const auto text = secondsEditor.getText().trim();
-    const auto seconds = text.getDoubleValue();
+    const auto text = tempoEditor.getText().trim();
+    const auto beatsPerMinute = text.getDoubleValue();
     const auto valid = text.containsOnly ("0123456789.") && text.containsAnyOf ("0123456789")
                     && text.indexOfChar ('.') == text.lastIndexOfChar ('.')
-                    && seconds >= Score::minSecondsPerMeasure && seconds <= Score::maxSecondsPerMeasure;
+                    && beatsPerMinute >= Score::minBeatsPerMinute && beatsPerMinute <= Score::maxBeatsPerMinute;
 
     if (valid)
-        score.setSecondsPerMeasure (seconds);
+        score.setBeatsPerMinute (beatsPerMinute);
     else if (finished)
-        secondsEditor.setText (formatSeconds (score.getSecondsPerMeasure()), false);
+        tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
 
     // A value that won't do is outlined in red until it's fixed, or put back when editing stops.
     for (auto colourId : { juce::TextEditor::outlineColourId, juce::TextEditor::focusedOutlineColourId })
     {
         if (! valid && ! finished)
-            secondsEditor.setColour (colourId, juce::Colours::red);
+            tempoEditor.setColour (colourId, juce::Colours::red);
         else
-            secondsEditor.removeColour (colourId);
+            tempoEditor.removeColour (colourId);
     }
 
-    secondsEditor.repaint();
+    tempoEditor.repaint();
 }
 
 void MainComponent::addMeasure()

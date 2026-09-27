@@ -524,6 +524,12 @@ std::optional<int> StaffView::getMeasureAt (juce::Point<float> point) const
     return {};
 }
 
+juce::Rectangle<int> StaffView::getMeasureArea (int measure) const
+{
+    const auto& layout = measureLayouts[(size_t) measure];
+    return juce::Rectangle<float> (layout.x, 0.0f, layout.width, (float) getHeight()).getSmallestIntegerContainer();
+}
+
 std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
 {
     const auto measure = findMeasure (point.x);

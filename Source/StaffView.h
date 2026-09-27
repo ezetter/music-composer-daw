@@ -42,6 +42,9 @@ public:
     /** The measure at this point, if any. */
     std::optional<int> getMeasureAt (juce::Point<float>) const;
 
+    /** The area a measure takes up, the full height of the view. */
+    juce::Rectangle<int> getMeasureArea (int measure) const;
+
     /** Highlights the beat that's playing, given in beats from the start of the score. */
     void setPlaybackPosition (std::optional<double> beats);
 
