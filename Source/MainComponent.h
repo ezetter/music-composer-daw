@@ -1,17 +1,22 @@
 #pragma once
 
+#include "ChordPanel.h"
 #include "InstrumentHost.h"
 #include "InstrumentPanel.h"
+#include "PianoKeyboard.h"
 #include "Score.h"
+#include "ScorePanel.h"
 #include "StaffView.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
-/** The main window's contents: a toolbar, the scrolling grand staff, and a piano keyboard, all
-    playing through an instrument plugin.
+/** The main window's contents: a toolbar, a sidebar with the score's and chords' settings, the
+    scrolling grand staff, and a piano keyboard, all playing through an instrument plugin.
 */
 class MainComponent final : public juce::Component,
-                            private juce::Timer
+                            private juce::Timer,
+                            private juce::ChangeListener,
+                            private juce::KeyListener
 {
 public:
     MainComponent();
@@ -19,32 +24,63 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void parentHierarchyChanged() override;
 
-    static constexpr int minimumWidth = 900;
-    static constexpr int minimumHeight = 540;
+    static constexpr int minimumWidth = 1000;
+    static constexpr int minimumHeight = 640;
 
 private:
+    using InputMode = StaffView::InputMode;
+
+    /** Holds the sidebar's panels, with a line between them. */
+    struct SidebarContent final : public juce::Component
+    {
+        void paint (juce::Graphics&) override;
+        int dividerY = 0;
+    };
+
     void timerCallback() override;
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+
+    using juce::Component::keyPressed;
+    bool keyPressed (const juce::KeyPress&, juce::Component*) override;
+
+    void setInputMode (InputMode);
+    void selectMeasure (std::optional<int>);
+    void measureClicked (int measure);
+    void pianoKeyClicked (int midiNote);
     void togglePlayback();
+    void play (int firstMeasure, int lastMeasure);
     void showPlaybackPosition();
     void addMeasure();
     void removeMeasure();
-    void updateButtons();
+    void showHeldNotes();
+    void secondsPerMeasureEdited (bool finished);
 
     juce::AudioDeviceManager audioDeviceManager;
     InstrumentHost instrumentHost;
     Score score;
 
     juce::TextButton playButton { "Play" };
-    juce::TextButton addMeasureButton { "Add Measure" };
-    juce::TextButton removeMeasureButton { "Remove Measure" };
+    juce::Label secondsLabel;
+    juce::TextEditor secondsEditor;
+    juce::TextButton notesButton { "Notes" };
+    juce::TextButton chordsButton { "Chords" };
     InstrumentPanel instrumentPanel { instrumentHost };
+
+    ScorePanel scorePanel { score };
+    ChordPanel chordPanel { score };
+    SidebarContent sidebarContent;
+    juce::Viewport sidebar;
 
     StaffView staffView { score };
     juce::Viewport staffViewport;
 
-    juce::MidiKeyboardComponent keyboard { instrumentHost.getKeyboardState(),
-                                           juce::MidiKeyboardComponent::horizontalKeyboard };
+    PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
+
+    InputMode inputMode = InputMode::notes;
+    std::optional<int> selectedMeasure;
+    juce::Component::SafePointer<juce::Component> keyListenerTarget;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

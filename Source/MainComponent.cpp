@@ -1,33 +1,81 @@
 #include "MainComponent.h"
 
+#include "Controls.h"
+#include "MeasureContent.h"
+
+#include <algorithm>
+
 namespace
 {
     constexpr int toolbarHeight = 44;
+    constexpr int sidebarWidth = 280;
+    constexpr int sidebarPadding = 14;
     constexpr int keyboardHeight = 140;
 
     // A full 88-key piano, A0 to C8
     constexpr int lowestKey = 21;
     constexpr int highestKey = 108;
     constexpr int numWhiteKeys = 52;
+
+    /** A number of seconds without trailing zeros, e.g. "2" or "1.75". */
+    juce::String formatSeconds (double seconds)
+    {
+        auto text = juce::String (seconds, 2);
+
+        while (text.endsWithChar ('0'))
+            text = text.dropLastCharacters (1);
+
+        return text.trimCharactersAtEnd (".");
+    }
+}
+
+void MainComponent::SidebarContent::paint (juce::Graphics& g)
+{
+    g.setColour (juce::Colours::black.withAlpha (0.1f));
+    g.fillRect (sidebarPadding, dividerY, getWidth() - 2 * sidebarPadding, 1);
 }
 
 MainComponent::MainComponent()
 {
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
-    addMeasureButton.onClick = [this] { addMeasure(); };
-    removeMeasureButton.onClick = [this] { removeMeasure(); };
 
-    for (auto* button : { &playButton, &addMeasureButton, &removeMeasureButton })
-    {
-        // Clicking a button shouldn't take the keyboard focus away from the piano, which the
-        // computer keyboard can play too.
-        button->setWantsKeyboardFocus (false);
-        addAndMakeVisible (button);
-    }
+    secondsLabel.setText ("Seconds per measure", juce::dontSendNotification);
+    secondsLabel.setFont (juce::FontOptions (12.5f));
+    secondsLabel.setColour (juce::Label::textColourId, controls::secondaryText);
+    secondsLabel.setJustificationType (juce::Justification::centredRight);
 
-    addAndMakeVisible (instrumentPanel);
+    secondsEditor.setInputRestrictions (5, "0123456789.");
+    secondsEditor.setJustification (juce::Justification::centred);
+    secondsEditor.setText (formatSeconds (score.getSecondsPerMeasure()), false);
+    secondsEditor.setTooltip ("How long each measure lasts when it plays, from 0.5 to 30 seconds");
+    secondsEditor.onTextChange = [this] { secondsPerMeasureEdited (false); };
+    secondsEditor.onReturnKey = [this] { secondsPerMeasureEdited (true); secondsEditor.giveAwayKeyboardFocus(); };
+    secondsEditor.onFocusLost = [this] { secondsPerMeasureEdited (true); };
 
+    controls::makeSegmented ({ &notesButton, &chordsButton }, 1);
+    notesButton.setTooltip ("Click the staff to add quarter notes");
+    chordsButton.setTooltip ("Click a measure to add or change its chord");
+    notesButton.onClick = [this] { setInputMode (InputMode::notes); };
+    chordsButton.onClick = [this] { setInputMode (InputMode::chords); };
+
+    // Clicking a button shouldn't take the keyboard focus away from the piano, which the
+    // computer keyboard can play too.
+    playButton.setWantsKeyboardFocus (false);
+
+    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &secondsLabel, &secondsEditor,
+                                                                     &notesButton, &chordsButton, &instrumentPanel })
+        addAndMakeVisible (component);
+
+    scorePanel.onAddMeasure = [this] { addMeasure(); };
+    scorePanel.onRemoveMeasure = [this] { removeMeasure(); };
+    sidebarContent.addAndMakeVisible (scorePanel);
+    sidebarContent.addAndMakeVisible (chordPanel);
+    sidebar.setViewedComponent (&sidebarContent, false);
+    sidebar.setScrollBarsShown (true, false);
+    addAndMakeVisible (sidebar);
+
+    staffView.onMeasureClicked = [this] (int measure) { measureClicked (measure); };
     staffViewport.setViewedComponent (&staffView, false);
     staffViewport.setScrollBarsShown (false, true);
     addAndMakeVisible (staffViewport);
@@ -38,10 +86,12 @@ MainComponent::MainComponent()
     keyboard.setScrollButtonsVisible (false);
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, juce::Colour (0xff4a8fe0));
     keyboard.setColour (juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId, juce::Colour (0x264a8fe0));
+    keyboard.onKeyClicked = [this] (int midiNote) { pianoKeyClicked (midiNote); };
     addAndMakeVisible (keyboard);
 
-    updateButtons();
-    setSize (1280, 680);
+    score.addChangeListener (this);
+    setInputMode (InputMode::notes);
+    setSize (1280, 820);
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate
@@ -55,18 +105,26 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent()
 {
     audioDeviceManager.removeAudioCallback (&instrumentHost);
+    score.removeChangeListener (this);
+
+    if (keyListenerTarget != nullptr)
+        keyListenerTarget->removeKeyListener (this);
 }
 
 void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 
+    g.setColour (controls::sidebarBackground);
+    g.fillRect (sidebar.getBounds());
+
     // The staff view doesn't cover the space for the scroll bar, so fill that in to match.
     g.setColour (StaffView::paperColour);
     g.fillRect (staffViewport.getBounds());
 
     g.setColour (juce::Colours::black.withAlpha (0.15f));
-    g.fillRect (0, staffViewport.getY() - 1, getWidth(), 1);
+    g.fillRect (0, toolbarHeight - 1, getWidth(), 1);
+    g.fillRect (sidebar.getRight(), toolbarHeight, 1, getHeight() - toolbarHeight);
 }
 
 void MainComponent::resized()
@@ -76,11 +134,24 @@ void MainComponent::resized()
     auto toolbar = bounds.removeFromTop (toolbarHeight).reduced (12, 8);
     playButton.setBounds (toolbar.removeFromLeft (80));
     toolbar.removeFromLeft (16);
-    addMeasureButton.setBounds (toolbar.removeFromLeft (120));
-    toolbar.removeFromLeft (8);
-    removeMeasureButton.setBounds (toolbar.removeFromLeft (140));
-    toolbar.removeFromLeft (16);
+    secondsLabel.setBounds (toolbar.removeFromLeft (130));
+    toolbar.removeFromLeft (4);
+    secondsEditor.setBounds (toolbar.removeFromLeft (52));
+    toolbar.removeFromLeft (20);
+    notesButton.setBounds (toolbar.removeFromLeft (76));
+    chordsButton.setBounds (toolbar.removeFromLeft (76));
+    toolbar.removeFromLeft (20);
     instrumentPanel.setBounds (toolbar);
+
+    sidebar.setBounds (bounds.removeFromLeft (sidebarWidth));
+    bounds.removeFromLeft (1);
+
+    const auto contentWidth = sidebar.getMaximumVisibleWidth();
+    const auto panelWidth = contentWidth - 2 * sidebarPadding;
+    scorePanel.setBounds (sidebarPadding, sidebarPadding, panelWidth, scorePanel.getIdealHeight());
+    sidebarContent.dividerY = scorePanel.getBottom() + 14;
+    chordPanel.setBounds (sidebarPadding, sidebarContent.dividerY + 14, panelWidth, chordPanel.getIdealHeight());
+    sidebarContent.setSize (contentWidth, chordPanel.getBottom() + sidebarPadding);
 
     keyboard.setBounds (bounds.removeFromBottom (keyboardHeight));
     keyboard.setKeyWidth ((float) keyboard.getWidth() / (float) numWhiteKeys);
@@ -91,6 +162,105 @@ void MainComponent::resized()
                                    staffViewport.getHeight() - staffViewport.getScrollBarThickness()));
 }
 
+void MainComponent::parentHierarchyChanged()
+{
+    // Esc is listened for on the whole window, whichever control has the keyboard focus.
+    auto* top = getTopLevelComponent();
+
+    if (top == keyListenerTarget.getComponent())
+        return;
+
+    if (keyListenerTarget != nullptr)
+        keyListenerTarget->removeKeyListener (this);
+
+    keyListenerTarget = top;
+    top->addKeyListener (this);
+}
+
+bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
+{
+    if (key == juce::KeyPress::escapeKey && selectedMeasure.has_value())
+    {
+        selectMeasure ({});
+        return true;
+    }
+
+    return false;
+}
+
+void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    if (selectedMeasure.has_value() && *selectedMeasure >= score.getNumMeasures())
+        selectMeasure ({});
+
+    showHeldNotes();
+}
+
+//==============================================================================
+void MainComponent::setInputMode (InputMode mode)
+{
+    inputMode = mode;
+    notesButton.setToggleState (mode == InputMode::notes, juce::dontSendNotification);
+    chordsButton.setToggleState (mode == InputMode::chords, juce::dontSendNotification);
+    staffView.setInputMode (mode);
+
+    if (mode == InputMode::notes)
+        selectMeasure ({});
+
+    chordPanel.setHint (mode == InputMode::notes ? "Switch to Chords above, then click a measure to give it a chord."
+                                                 : "Click a measure to add a chord to it, or to change its chord.");
+    showHeldNotes();
+}
+
+void MainComponent::selectMeasure (std::optional<int> measure)
+{
+    selectedMeasure = measure;
+    staffView.setSelectedMeasure (measure);
+    chordPanel.setMeasure (measure);
+    showHeldNotes();
+}
+
+void MainComponent::measureClicked (int measure)
+{
+    // Clicking a measure selects it, and plays it; clicking it again lets it go.
+    if (selectedMeasure == measure)
+    {
+        selectMeasure ({});
+        return;
+    }
+
+    selectMeasure (measure);
+
+    const auto content = getMeasureContent (score, measure);
+    const auto hasNotes = std::any_of (content.staves.begin(), content.staves.end(), [] (const StaffContent& staff)
+    {
+        return std::any_of (staff.events.begin(), staff.events.end(), [] (const StaffEvent& e) { return ! e.isRest(); });
+    });
+
+    if (hasNotes)
+        play (measure, measure);
+}
+
+void MainComponent::pianoKeyClicked (int midiNote)
+{
+    // With a measure selected, a key adds its note to the measure's chord, or takes it out.
+    if (inputMode == InputMode::chords && selectedMeasure.has_value())
+        score.toggleChordNote (*selectedMeasure, midiNote, chordPanel.getStyleForNewChord());
+}
+
+void MainComponent::showHeldNotes()
+{
+    std::map<int, juce::String> heldNotes;
+
+    if (inputMode == InputMode::chords && selectedMeasure.has_value())
+        if (const auto chord = score.getChordNotes (*selectedMeasure))
+            for (const auto& tone : chord->tones)
+                heldNotes[tone.midi] = tone.getName();
+
+    keyboard.setHeldNotes (heldNotes);
+}
+
+//==============================================================================
 void MainComponent::timerCallback()
 {
     showPlaybackPosition();
@@ -101,13 +271,18 @@ void MainComponent::togglePlayback()
     if (instrumentHost.getPlaybackPosition().has_value())
     {
         instrumentHost.stop();
+        showPlaybackPosition();
     }
     else
     {
-        instrumentHost.play (score);
-        startTimerHz (30);
+        play (0, score.getNumMeasures() - 1);
     }
+}
 
+void MainComponent::play (int firstMeasure, int lastMeasure)
+{
+    instrumentHost.play (score, firstMeasure, lastMeasure);
+    startTimerHz (30);
     showPlaybackPosition();
 }
 
@@ -132,10 +307,34 @@ void MainComponent::showPlaybackPosition()
         staffViewport.setViewPosition (playingArea.getX() - viewArea.getWidth() / 4, 0);
 }
 
+void MainComponent::secondsPerMeasureEdited (bool finished)
+{
+    const auto text = secondsEditor.getText().trim();
+    const auto seconds = text.getDoubleValue();
+    const auto valid = text.containsOnly ("0123456789.") && text.containsAnyOf ("0123456789")
+                    && text.indexOfChar ('.') == text.lastIndexOfChar ('.')
+                    && seconds >= Score::minSecondsPerMeasure && seconds <= Score::maxSecondsPerMeasure;
+
+    if (valid)
+        score.setSecondsPerMeasure (seconds);
+    else if (finished)
+        secondsEditor.setText (formatSeconds (score.getSecondsPerMeasure()), false);
+
+    // A value that won't do is outlined in red until it's fixed, or put back when editing stops.
+    for (auto colourId : { juce::TextEditor::outlineColourId, juce::TextEditor::focusedOutlineColourId })
+    {
+        if (! valid && ! finished)
+            secondsEditor.setColour (colourId, juce::Colours::red);
+        else
+            secondsEditor.removeColour (colourId);
+    }
+
+    secondsEditor.repaint();
+}
+
 void MainComponent::addMeasure()
 {
     score.addMeasure();
-    updateButtons();
 
     // Scroll to the end, so the new measure is in view.
     staffViewport.setViewPosition (staffView.getWidth(), 0);
@@ -144,10 +343,4 @@ void MainComponent::addMeasure()
 void MainComponent::removeMeasure()
 {
     score.removeLastMeasure();
-    updateButtons();
-}
-
-void MainComponent::updateButtons()
-{
-    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
 }

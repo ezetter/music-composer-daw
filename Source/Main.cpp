@@ -9,6 +9,9 @@ public:
 
     void initialise (const juce::String&) override
     {
+        // JUCE's usual Lucida Grande has no flat or sharp signs, and the font it falls back on
+        // spaces them out, so chord names like B♭maj7 would come out as "B ♭ maj7".
+        lookAndFeel.setDefaultSansSerifTypefaceName ("Helvetica Neue");
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
     }

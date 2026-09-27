@@ -34,8 +34,8 @@ public:
     double getSampleRate() const;
     int getBlockSize() const;
 
-    /** Plays the score from the beginning, as it is now. Does nothing unless the audio is running. */
-    void play (const Score&);
+    /** Plays some measures of the score, as they are now. Does nothing unless the audio is running. */
+    void play (const Score&, int firstMeasure, int lastMeasure);
     void stop();
 
     /** How far playback has got, in beats from the start of the score, or nothing if it's stopped. */
@@ -50,22 +50,19 @@ public:
     void audioDeviceAboutToStart (juce::AudioIODevice*) override;
     void audioDeviceStopped() override;
 
-    static constexpr double tempo = 120.0;    // quarter notes per minute
-
 private:
     struct NoteEvent
     {
-        double beat;
+        int64_t sample;
         int noteNumber;
         bool isNoteOn;
     };
 
-    static std::vector<NoteEvent> createNoteEvents (const Score&);
+    static std::vector<NoteEvent> createNoteEvents (const Score&, int firstMeasure, int lastMeasure, double sampleRate);
 
     juce::Optional<PositionInfo> getPosition() const override;
 
-    double getSamplesPerBeat() const noexcept;
-    int64_t beatsToSamples (double beats) const noexcept;
+    double getBeatsPlayed() const noexcept;
     void allocateInstrumentBuffer();
     void addScoreEvents (juce::MidiBuffer&, int numSamples);
     void advancePlayback (int numSamples);
@@ -82,8 +79,11 @@ private:
 
     std::vector<NoteEvent> noteEvents;
     size_t nextNoteEvent = 0;
-    double scoreLength = 0.0;           // in beats
-    int64_t position = 0;               // in samples, at the start of the block being played
+    int64_t position = 0;               // in samples since playback started, at the start of the block being played
+    int64_t endPosition = 0;
+    double secondsPerBeat = 0.5;
+    int beatsPerMeasure = 4;
+    double firstBeat = 0.0;             // where playback started, in beats from the start of the score
     bool playing = false;
     std::bitset<128> scoreNotesOn;      // notes from the score that are sounding
     bool releaseScoreNotes = false;     // whether they need turning off

@@ -7,14 +7,29 @@
 /** SMuFL code points of the music symbols we draw. */
 namespace Smufl
 {
-    constexpr juce::juce_wchar brace         = 0xE000;
-    constexpr juce::juce_wchar gClef         = 0xE050;
-    constexpr juce::juce_wchar fClef         = 0xE062;
-    constexpr juce::juce_wchar timeSig4      = 0xE084;
-    constexpr juce::juce_wchar noteheadBlack = 0xE0A4;
-    constexpr juce::juce_wchar restWhole     = 0xE4E3;
-    constexpr juce::juce_wchar restHalf      = 0xE4E4;
-    constexpr juce::juce_wchar restQuarter   = 0xE4E5;
+    constexpr juce::juce_wchar brace                 = 0xE000;
+    constexpr juce::juce_wchar gClef                 = 0xE050;
+    constexpr juce::juce_wchar fClef                 = 0xE062;
+    constexpr juce::juce_wchar timeSig0              = 0xE080;
+    constexpr juce::juce_wchar noteheadWhole         = 0xE0A2;
+    constexpr juce::juce_wchar noteheadHalf          = 0xE0A3;
+    constexpr juce::juce_wchar noteheadBlack         = 0xE0A4;
+    constexpr juce::juce_wchar augmentationDot       = 0xE1E7;
+    constexpr juce::juce_wchar flag8thUp             = 0xE240;
+    constexpr juce::juce_wchar flag8thDown           = 0xE241;
+    constexpr juce::juce_wchar flag16thUp            = 0xE242;
+    constexpr juce::juce_wchar flag16thDown          = 0xE243;
+    constexpr juce::juce_wchar accidentalFlat        = 0xE260;
+    constexpr juce::juce_wchar accidentalNatural     = 0xE261;
+    constexpr juce::juce_wchar accidentalSharp       = 0xE262;
+    constexpr juce::juce_wchar accidentalDoubleSharp = 0xE263;
+    constexpr juce::juce_wchar accidentalDoubleFlat  = 0xE264;
+    constexpr juce::juce_wchar restWhole             = 0xE4E3;
+    constexpr juce::juce_wchar restHalf              = 0xE4E4;
+    constexpr juce::juce_wchar restQuarter           = 0xE4E5;
+    constexpr juce::juce_wchar rest8th               = 0xE4E6;
+    constexpr juce::juce_wchar rest16th              = 0xE4E7;
+    constexpr juce::juce_wchar wiggleArpeggiatoUp    = 0xEAA9;
 }
 
 /** Outlines of music symbols from the embedded Bravura font, sized for a given staff space.

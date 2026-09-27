@@ -1,13 +1,40 @@
 #include "InstrumentHost.h"
 
+#include "MeasureContent.h"
+
 #include <algorithm>
 #include <cmath>
-#include <set>
 
 namespace
 {
     constexpr int midiChannel = 1;
     constexpr float scoreVelocity = 0.8f;
+
+    // A chord's notes sound this far apart, from the bottom up: a little for a block chord, so
+    // it doesn't sound machine-struck, and more for a rolled one.
+    constexpr double blockChordSpread = 0.012;
+    constexpr double rolledChordSpread = 0.06;
+
+    // Chords stop this long before the end of their measure.
+    constexpr double chordRelease = 0.1;
+
+    /** A note sounding from one time to another, in seconds. */
+    struct Sounding
+    {
+        int noteNumber;
+        double start;
+        double end;
+    };
+
+    void addChord (std::vector<Sounding>& soundings, std::vector<music::Tone> tones, double start, double end, bool rolled)
+    {
+        std::sort (tones.begin(), tones.end(), [] (const music::Tone& a, const music::Tone& b) { return a.midi < b.midi; });
+
+        const auto spread = rolled ? rolledChordSpread : blockChordSpread;
+
+        for (size_t i = 0; i < tones.size(); ++i)
+            soundings.push_back ({ tones[i].midi, start + (double) i * spread, end });
+    }
 }
 
 void InstrumentHost::setInstrument (std::unique_ptr<juce::AudioPluginInstance> newInstrument)
@@ -56,22 +83,34 @@ int InstrumentHost::getBlockSize() const
 }
 
 //==============================================================================
-void InstrumentHost::play (const Score& score)
+void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure)
 {
-    auto events = createNoteEvents (score);
+    double currentSampleRate = 0.0;
+
+    {
+        const juce::ScopedLock sl (lock);
+        currentSampleRate = sampleRate;
+    }
+
+    if (currentSampleRate <= 0.0)
+        return;
+
+    auto events = createNoteEvents (score, firstMeasure, lastMeasure, currentSampleRate);
+    const auto beats = score.getBeatsPerMeasure();
+    const auto seconds = (double) (lastMeasure - firstMeasure + 1) * score.getSecondsPerMeasure();
 
     const juce::ScopedLock sl (lock);
 
-    if (sampleRate <= 0.0)
-        return;
-
     noteEvents.swap (events);
     nextNoteEvent = 0;
-    scoreLength = (double) (score.getNumMeasures() * Score::beatsPerMeasure);
     position = 0;
+    endPosition = (int64_t) std::llround (seconds * sampleRate);
+    secondsPerBeat = score.getSecondsPerMeasure() / beats;
+    beatsPerMeasure = beats;
+    firstBeat = (double) (firstMeasure * beats);
     playing = true;
     releaseScoreNotes = true;
-    playbackPosition = 0.0;
+    playbackPosition = firstBeat;
 }
 
 void InstrumentHost::stop()
@@ -91,36 +130,89 @@ std::optional<double> InstrumentHost::getPlaybackPosition() const noexcept
     return {};
 }
 
-std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const Score& score)
+std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const Score& score, int firstMeasure, int lastMeasure,
+                                                                         double sampleRate)
 {
-    std::vector<NoteEvent> events;
+    const auto measureSeconds = score.getSecondsPerMeasure();
+    const auto beatSeconds = measureSeconds / score.getBeatsPerMeasure();
+    std::vector<Sounding> soundings;
 
-    for (int measure = 0; measure < score.getNumMeasures(); ++measure)
+    for (auto measure = firstMeasure; measure <= lastMeasure; ++measure)
     {
-        for (int beat = 0; beat < Score::beatsPerMeasure; ++beat)
+        const auto start = (double) (measure - firstMeasure) * measureSeconds;
+        const auto chordEnd = start + measureSeconds - chordRelease;
+        const auto content = getMeasureContent (score, measure);
+
+        for (const auto& staff : content.staves)
         {
-            // A note that's on both staves only plays once.
-            std::set<int> noteNumbers;
-
-            for (auto staff : { Staff::treble, Staff::bass })
-                for (auto pitch : score.getChord (staff, measure, beat))
-                    noteNumbers.insert (getMidiNoteNumber (pitch));
-
-            const auto start = (double) (measure * Score::beatsPerMeasure + beat);
-
-            for (auto noteNumber : noteNumbers)
+            for (const auto& event : staff.events)
             {
-                events.push_back ({ start, noteNumber, true });
-                events.push_back ({ start + 1.0, noteNumber, false });
+                const auto onset = start + event.onset * beatSeconds;
+
+                switch (staff.source)
+                {
+                    case StaffContent::Source::notes:
+                        for (const auto& tone : event.tones)
+                            soundings.push_back ({ tone.midi, onset, onset + beatSeconds });
+                        break;
+
+                    case StaffContent::Source::chord:
+                        if (music::isMelodic (content.chordStyle.type))
+                        {
+                            // Arpeggio notes ring on to the end of the measure, as with the sustain pedal down.
+                            for (const auto& tone : event.tones)
+                                soundings.push_back ({ tone.midi, onset, chordEnd });
+                        }
+                        else
+                        {
+                            addChord (soundings, event.tones, onset, chordEnd, event.rolled);
+                        }
+                        break;
+
+                    case StaffContent::Source::alternate:
+                        addChord (soundings, event.tones, onset, chordEnd, event.rolled);
+                        break;
+                }
             }
         }
+    }
+
+    // Every note lasts a moment at least, but one that starts again while it's still sounding is
+    // cut off first.
+    std::sort (soundings.begin(), soundings.end(), [] (const Sounding& a, const Sounding& b)
+    {
+        return a.noteNumber != b.noteNumber ? a.noteNumber < b.noteNumber : a.start < b.start;
+    });
+
+    for (size_t i = 0; i < soundings.size(); ++i)
+    {
+        auto& sounding = soundings[i];
+        sounding.end = juce::jmax (sounding.end, sounding.start + 0.05);
+
+        if (i + 1 < soundings.size() && soundings[i + 1].noteNumber == sounding.noteNumber)
+            sounding.end = juce::jmin (sounding.end, soundings[i + 1].start);
+    }
+
+    std::vector<NoteEvent> events;
+
+    for (const auto& sounding : soundings)
+    {
+        const auto startSample = (int64_t) std::llround (sounding.start * sampleRate);
+        const auto endSample = (int64_t) std::llround (sounding.end * sampleRate);
+
+        // A note cut off before it starts doesn't play at all.
+        if (endSample <= startSample)
+            continue;
+
+        events.push_back ({ startSample, sounding.noteNumber, true });
+        events.push_back ({ endSample, sounding.noteNumber, false });
     }
 
     // When a note ends just as the same note starts again, it has to stop before it restarts.
     std::stable_sort (events.begin(), events.end(), [] (const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.beat < b.beat) return true;
-        if (b.beat < a.beat) return false;
+        if (a.sample != b.sample)
+            return a.sample < b.sample;
 
         return ! a.isNoteOn && b.isNoteOn;
     });
@@ -206,28 +298,23 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
 //==============================================================================
 juce::Optional<juce::AudioPlayHead::PositionInfo> InstrumentHost::getPosition() const
 {
-    const auto beats = (double) position / getSamplesPerBeat();
-    const auto beatsPerMeasure = (double) Score::beatsPerMeasure;
+    const auto beats = getBeatsPlayed();
+    const auto beatsPerBar = (double) beatsPerMeasure;
 
     PositionInfo info;
     info.setIsPlaying (playing);
-    info.setBpm (tempo);
-    info.setTimeSignature (TimeSignature { Score::beatsPerMeasure, 4 });
+    info.setBpm (60.0 / secondsPerBeat);
+    info.setTimeSignature (TimeSignature { beatsPerMeasure, 4 });
     info.setPpqPosition (beats);
-    info.setPpqPositionOfLastBarStart (std::floor (beats / beatsPerMeasure) * beatsPerMeasure);
-    info.setTimeInSeconds ((double) position / sampleRate);
-    info.setTimeInSamples (position);
+    info.setPpqPositionOfLastBarStart (std::floor (beats / beatsPerBar) * beatsPerBar);
+    info.setTimeInSeconds (beats * secondsPerBeat);
+    info.setTimeInSamples ((int64_t) std::llround (beats * secondsPerBeat * sampleRate));
     return info;
 }
 
-double InstrumentHost::getSamplesPerBeat() const noexcept
+double InstrumentHost::getBeatsPlayed() const noexcept
 {
-    return sampleRate * 60.0 / tempo;
-}
-
-int64_t InstrumentHost::beatsToSamples (double beats) const noexcept
-{
-    return (int64_t) std::llround (beats * getSamplesPerBeat());
+    return firstBeat + (double) position / (sampleRate * secondsPerBeat);
 }
 
 void InstrumentHost::allocateInstrumentBuffer()
@@ -255,7 +342,7 @@ void InstrumentHost::addScoreEvents (juce::MidiBuffer& midi, int numSamples)
     for (; nextNoteEvent < noteEvents.size(); ++nextNoteEvent)
     {
         const auto& event = noteEvents[nextNoteEvent];
-        const auto samplePosition = beatsToSamples (event.beat) - position;
+        const auto samplePosition = event.sample - position;
 
         if (samplePosition >= numSamples)
             break;
@@ -275,11 +362,11 @@ void InstrumentHost::advancePlayback (int numSamples)
 
     position += numSamples;
 
-    if (position >= beatsToSamples (scoreLength))
+    if (position >= endPosition)
     {
         playing = false;
         releaseScoreNotes = true;
     }
 
-    playbackPosition = playing ? (double) position / getSamplesPerBeat() : -1.0;
+    playbackPosition = playing ? getBeatsPlayed() : -1.0;
 }

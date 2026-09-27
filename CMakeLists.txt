@@ -21,13 +21,18 @@ juce_add_gui_app(AnthropoceneMusic
 
 target_sources(AnthropoceneMusic
     PRIVATE
+        Source/ChordPanel.cpp
         Source/InstrumentHost.cpp
         Source/InstrumentPanel.cpp
         Source/Main.cpp
         Source/MainComponent.cpp
+        Source/MeasureContent.cpp
+        Source/Music.cpp
         Source/MusicGlyphs.cpp
+        Source/PianoKeyboard.cpp
         Source/PluginWindow.cpp
         Source/Score.cpp
+        Source/ScorePanel.cpp
         Source/StaffView.cpp)
 
 juce_add_binary_data(AnthropoceneMusicResources
