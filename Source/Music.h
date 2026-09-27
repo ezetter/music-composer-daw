@@ -150,6 +150,9 @@ namespace music
         bool operator== (const KeyboardNote&) const = default;
     };
 
+    /** The tones of notes set by hand, low to high. */
+    std::vector<Tone> createTones (Spelling tonic, const std::vector<KeyboardNote>&);
+
     /** A chord made of notes set on the piano. If the spec isn't empty, the chord keeps its names. */
     Chord createChord (Spelling tonic, const std::vector<KeyboardNote>&, const ChordSpec&, Staff);
 

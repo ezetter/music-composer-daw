@@ -12,8 +12,9 @@
 
 /** Draws a score on a single grand staff that extends to the right as measures are added.
 
-    In notes mode, clicking the staff adds a quarter note, and clicking a quarter note takes it
-    out again. In chords mode, clicking a measure selects it, so its chord can be edited.
+    In notes mode, clicking the staff adds a note and clicking a note takes it out again: a
+    quarter note, or on a staff with a chord's notes, a note of the chord. In chords mode,
+    clicking a measure selects it, so its chord can be edited.
 */
 class StaffView final : public juce::Component,
                         private juce::ChangeListener
@@ -95,6 +96,9 @@ private:
     void drawLabels (juce::Graphics&, int measure) const;
     void drawHoverNote (juce::Graphics&) const;
     void drawCentred (juce::Graphics&, juce::juce_wchar glyph, float centreX, float y) const;
+
+    /** The note already written where this note would go, if any. */
+    std::optional<music::Tone> findNoteUnder (const Note&) const;
 
     void setHoverNote (std::optional<Note>);
     void setHoverMeasure (std::optional<int>);

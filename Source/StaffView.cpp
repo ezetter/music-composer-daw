@@ -551,9 +551,6 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
     const auto staffDivide = trebleTop + (staffHeight + staffGap / 2.0f) * staffSpace;
     const auto staff = point.y < staffDivide ? Staff::treble : Staff::bass;
 
-    if (score.chordUsesStaff (measure, staff))
-        return {};
-
     const auto position = juce::roundToInt ((getY (staff, 0) - point.y) / (staffSpace / 2.0f));
     const auto clampedPosition = staff == Staff::treble
                                      ? juce::jlimit (lowestTreblePosition, highestTreblePosition, position)
@@ -842,16 +839,18 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
         beams.push_back (beamed);
     }
 
-    // In notes mode, the quarter note under the pointer is red, to show a click will take it out.
+    // In notes mode, the note under the pointer is red, to show a click will take it out. A chord's
+    // notes are taken out wherever they are in the measure; a quarter note only on its own beat.
     std::optional<int> highlightedPosition;
 
-    if (inputMode == InputMode::notes && hoverNote.has_value() && ! hoverHintHidden && content.source == StaffContent::Source::notes
+    if (inputMode == InputMode::notes && hoverNote.has_value() && ! hoverHintHidden
         && hoverNote->staff == staff && hoverNote->measure == measure)
         highlightedPosition = hoverNote->pitch.step - getBottomLineStep (staff);
 
     for (size_t i = 0; i < notes.size(); ++i)
     {
-        const auto isHovered = highlightedPosition.has_value() && juce::exactlyEqual (notes[i].onset, (double) hoverNote->beat);
+        const auto isHovered = highlightedPosition.has_value()
+                            && (content.source != StaffContent::Source::notes || juce::exactlyEqual (notes[i].onset, (double) hoverNote->beat));
         drawNote (g, staff, notes[i], rolled[i], isHovered ? highlightedPosition : std::nullopt);
     }
 
@@ -1087,6 +1086,27 @@ void StaffView::drawLabels (juce::Graphics& g, int measure) const
         g.drawSingleLineText (chord.figures[i], juce::roundToInt (figureX), juce::roundToInt (baseline - 9.0f + 11.0f * (float) i));
 }
 
+std::optional<music::Tone> StaffView::findNoteUnder (const Note& note) const
+{
+    if (! juce::isPositiveAndBelow (note.measure, (int) measureLayouts.size()))
+        return {};
+
+    // A chord's notes count wherever they are in the measure; a quarter note only on its own beat.
+    const auto& content = measureLayouts[(size_t) note.measure].content.staves[(size_t) note.staff];
+
+    for (const auto& event : content.events)
+    {
+        if (content.source == StaffContent::Source::notes && ! juce::exactlyEqual (event.onset, (double) note.beat))
+            continue;
+
+        for (const auto& tone : event.tones)
+            if (tone.pitch.step == note.pitch.step)
+                return tone;
+    }
+
+    return {};
+}
+
 void StaffView::drawHoverNote (juce::Graphics& g) const
 {
     if (inputMode != InputMode::notes || ! hoverNote.has_value() || hoverHintHidden
@@ -1094,7 +1114,7 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
         return;
 
     // Over a note, the note itself is highlighted instead.
-    if (score.hasNoteAt (hoverNote->staff, hoverNote->measure, hoverNote->beat, hoverNote->pitch.step))
+    if (findNoteUnder (*hoverNote).has_value())
         return;
 
     const auto position = hoverNote->pitch.step - getBottomLineStep (hoverNote->staff);
@@ -1134,8 +1154,22 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     {
         if (const auto note = getNoteAt (e.position))
         {
+            // On a staff with a chord's notes, clicking one of them takes it out of the chord, and
+            // clicking anywhere else adds a note to them.
+            if (score.chordUsesStaff (note->measure, note->staff))
+            {
+                const auto existing = findNoteUnder (*note);
+                const auto* chord = score.getChord (note->measure);
+                const music::KeyboardNote clicked { existing ? existing->midi : note->pitch.getMidiNoteNumber(),
+                                                    existing ? existing->pitch.getSpelling() : note->pitch.getSpelling() };
+
+                if (note->staff == chord->style.staff)
+                    score.toggleChordNote (note->measure, clicked.midi, chord->style);
+                else
+                    score.toggleAlternateNote (note->measure, clicked);
+            }
             // Clicking a note takes it out, whatever its sharp or flat; clicking anywhere else adds one.
-            if (score.hasNoteAt (note->staff, note->measure, note->beat, note->pitch.step))
+            else if (score.hasNoteAt (note->staff, note->measure, note->beat, note->pitch.step))
                 score.removeNotesAt (note->staff, note->measure, note->beat, note->pitch.step);
             else
                 score.addNote (*note);

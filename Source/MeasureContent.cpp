@@ -145,7 +145,7 @@ MeasureContent getMeasureContent (const Score& score, int measure)
             content.staves[(size_t) style.staff] = getChordContent (*chord, *measureChord, score.getBeatsPerMeasure());
             filled[(size_t) style.staff] = true;
 
-            const auto alternateTones = music::getAlternateTones (score.getKey(), *chord, style.staff, style.alternate);
+            const auto alternateTones = score.getAlternateTones (measure);
 
             if (! alternateTones.empty())
             {

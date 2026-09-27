@@ -465,6 +465,18 @@ Chord createChord (Spelling tonic, const ChordSpec& spec, Staff staff)
 }
 
 //==============================================================================
+std::vector<Tone> createTones (Spelling tonic, const std::vector<KeyboardNote>& notes)
+{
+    const auto keyAlterations = getKeyAlterations (tonic);
+    std::vector<Tone> tones;
+
+    for (const auto& note : notes)
+        tones.push_back (makeTone (note, keyAlterations));
+
+    std::sort (tones.begin(), tones.end(), [] (const Tone& a, const Tone& b) { return a.midi < b.midi; });
+    return tones;
+}
+
 Chord createChord (Spelling tonic, const std::vector<KeyboardNote>& notes, const ChordSpec& spec, Staff staff)
 {
     const auto keyAlterations = getKeyAlterations (tonic);

@@ -46,6 +46,9 @@ struct MeasureChord
     /** The order the Random chord type plays the notes in, as MIDI note numbers. */
     std::vector<int> randomOrder;
 
+    /** The alternate staff's notes, when they've been changed by hand from what the chord gives it. */
+    std::optional<std::vector<music::KeyboardNote>> alternateNotes;
+
     bool hasNotes() const { return ! spec.isEmpty() || keyboardNotes.has_value(); }
 };
 
@@ -126,6 +129,14 @@ public:
         chord's notes on the piano does. A measure without a chord gets one in the given style.
     */
     void toggleChordNote (int measure, int midiNote, const ChordStyle& styleForNewChord);
+
+    /** Adds a note to the notes a measure's chord puts on its alternate staff, or takes it out if
+        it's already there. From then on the alternate staff keeps these notes, until the chord changes.
+    */
+    void toggleAlternateNote (int measure, const music::KeyboardNote&);
+
+    /** The notes a measure's chord puts on its alternate staff. */
+    std::vector<music::Tone> getAlternateTones (int measure) const;
 
     /** Picks a new order for a measure's chord to play its notes in, if it's a Random chord. */
     void reshuffle (int measure);

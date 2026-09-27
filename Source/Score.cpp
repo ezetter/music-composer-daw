@@ -189,7 +189,7 @@ void Score::toggleChordNote (int measure, int midiNote, const ChordStyle& styleF
     auto& target = measures[(size_t) measure];
 
     if (! target.chord.has_value())
-        target.chord = MeasureChord { {}, {}, styleForNewChord, {} };
+        target.chord = MeasureChord { {}, {}, styleForNewChord, {}, {} };
 
     std::vector<int> midiNotes;
 
@@ -207,6 +207,50 @@ void Score::toggleChordNote (int measure, int midiNote, const ChordStyle& styleF
 
     tidyChord (target);
     sendSynchronousChangeMessage();
+}
+
+void Score::toggleAlternateNote (int measure, const music::KeyboardNote& note)
+{
+    auto& target = measures[(size_t) measure];
+
+    if (! target.chord.has_value() || ! target.chord->hasNotes() || target.chord->style.alternate == music::AlternateStaff::none)
+        return;
+
+    auto& chord = *target.chord;
+
+    if (! chord.alternateNotes.has_value())
+    {
+        // Start from the notes the chord gives the alternate staff.
+        std::vector<music::KeyboardNote> notes;
+
+        for (const auto& tone : getAlternateTones (measure))
+            notes.push_back ({ tone.midi, tone.pitch.getSpelling() });
+
+        chord.alternateNotes = std::move (notes);
+    }
+
+    auto& notes = *chord.alternateNotes;
+
+    if (std::erase_if (notes, [&] (const music::KeyboardNote& n) { return n.midi == note.midi; }) == 0)
+        notes.push_back (note);
+
+    sendSynchronousChangeMessage();
+}
+
+std::vector<music::Tone> Score::getAlternateTones (int measure) const
+{
+    const auto* chord = getChord (measure);
+
+    if (chord == nullptr || chord->style.alternate == music::AlternateStaff::none)
+        return {};
+
+    if (chord->alternateNotes.has_value())
+        return music::createTones (getKey(), *chord->alternateNotes);
+
+    if (const auto notes = getChordNotes (measure))
+        return music::getAlternateTones (getKey(), *notes, chord->style.staff, chord->style.alternate);
+
+    return {};
 }
 
 void Score::reshuffle (int measure)

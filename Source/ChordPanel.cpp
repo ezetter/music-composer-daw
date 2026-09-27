@@ -189,10 +189,17 @@ void ChordPanel::edit (const std::function<void (MeasureChord&)>& change)
         return;
 
     const auto* existing = score.getChord (*measure);
-    auto chord = existing != nullptr ? *existing : MeasureChord { {}, {}, lastStyle, {} };
+    auto chord = existing != nullptr ? *existing : MeasureChord { {}, {}, lastStyle, {}, {} };
 
+    const auto before = chord;
     change (chord);
     lastStyle = chord.style;
+
+    // A different chord, or a different alternate staff, gives the alternate staff its own notes again.
+    if (chord.spec != before.spec || chord.keyboardNotes != before.keyboardNotes
+        || chord.style.staff != before.style.staff || chord.style.alternate != before.style.alternate)
+        chord.alternateNotes.reset();
+
     score.setChord (*measure, chord);
 }
 
