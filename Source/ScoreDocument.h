@@ -29,6 +29,12 @@ public:
     */
     std::function<void (int part, const juce::var&)> loadInstrument;
 
+    /** Supplies a part's volume to save with the score, in decibels. */
+    std::function<float (int part)> getVolumeToSave;
+
+    /** Sets a part's volume from an opened score. Scores saved without volumes leave them as they are. */
+    std::function<void (int part, float decibels)> loadVolume;
+
     juce::String getDocumentTitle() override;
 
 protected:

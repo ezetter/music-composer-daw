@@ -53,6 +53,9 @@ public:
     /** The measure at this point, if any. */
     std::optional<int> getMeasureAt (juce::Point<float>) const;
 
+    /** The span of the view from the top of the treble staff to the bottom of the bass staff. */
+    juce::Range<int> getStavesRange() const;
+
     /** The area a measure takes up, the full height of the view. */
     juce::Rectangle<int> getMeasureArea (int measure) const;
 

@@ -316,6 +316,11 @@ int StaffView::getContentHeight() const
     return (int) std::ceil ((getMarginAbove() + staffHeight + staffGap + staffHeight + getMarginBelow()) * staffSpace);
 }
 
+juce::Range<int> StaffView::getStavesRange() const
+{
+    return { juce::roundToInt (getStaffTop (Staff::treble)), juce::roundToInt (getStaffTop (Staff::bass) + staffHeight * staffSpace) };
+}
+
 float StaffView::getSymbolOffset() const
 {
     return juce::jmax (2.0f, reachAbove + 1.8f);

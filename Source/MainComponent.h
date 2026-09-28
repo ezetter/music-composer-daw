@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ChordEditor.h"
+#include "Controls.h"
 #include "InstrumentHost.h"
 #include "InstrumentPanel.h"
 #include "MidiInputs.h"
@@ -54,12 +55,27 @@ private:
 
         std::array<std::unique_ptr<StaffView>, Score::numParts> views;
 
+        /** Called when the systems move or change size. */
+        std::function<void()> onLayoutChanged;
+
     private:
         void childBoundsChanged (juce::Component*) override;
         void layOut();
 
         int minimumHeight = 0;
         bool layingOut = false;
+    };
+
+    /** A viewport that says when it scrolls. */
+    struct ScrollingViewport final : public juce::Viewport
+    {
+        std::function<void()> onScroll;
+
+        void visibleAreaChanged (const juce::Rectangle<int>&) override
+        {
+            if (onScroll != nullptr)
+                onScroll();
+        }
     };
 
     enum Commands
@@ -108,6 +124,14 @@ private:
     void showDocumentTitle();
     void showPartTitles();
 
+    /** Changes a part's volume, and shows it on its dial. A change made on the dial counts as a
+        change to the score.
+    */
+    void setVolume (int part, float decibels, bool changedOnDial);
+
+    /** Keeps each part's volume dial beside its staves, as they scroll up and down. */
+    void positionVolumeDials();
+
     juce::PropertiesFile& settings;
     juce::AudioDeviceManager audioDeviceManager;
     InstrumentHost instrumentHost;
@@ -131,7 +155,11 @@ private:
     juce::Viewport sidebar;
 
     StaffSystems staffSystems { score };
-    juce::Viewport staffViewport;
+    ScrollingViewport staffViewport;
+
+    controls::DialLookAndFeel dialLookAndFeel;
+    juce::Component volumeColumn;       // to the left of the staves, holding a volume dial for each part
+    std::array<juce::Slider, Score::numParts> volumeDials;
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 

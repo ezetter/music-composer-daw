@@ -26,6 +26,8 @@ The score has two parts. They share the key, time signature, tempo and measures,
 
 One part is **active**, marked by a blue bar beside its staves. The piano and MIDI controllers play the active part's instrument, and the toolbar's instrument controls and the sidebar's **Alternate staff** are the active part's. Choose it with **Part 1 / Part 2** in the toolbar, or click in a part's staves or its chord buttons. Keys held down when another part becomes active are let go; the score's notes play on.
 
+Each part has a **volume dial** to the left of its staves, setting how loud its instrument is in the mix, from **Off** up to +6 dB. It starts at 0 dB, which leaves the instrument as loud as it is; double-click it to go back there. Drag up or down, or round, to turn it. The dials follow the staves as they scroll up and down. Volumes change smoothly, without clicks, even while the score plays. A volume change counts as a change to the score, which saves each part's volume; the volumes are also remembered the next time the app starts, and stay as they are for a new score.
+
 ### Toolbar
 
 - **Play** (or the space bar) plays the score from the beginning, highlighting each beat and following it along the staff. **Stop** stops it.
@@ -46,7 +48,7 @@ The **File** menu saves and opens scores:
 | **Save** | ⌘S | Saves the score to its file, asking for a name the first time. |
 | **Save As…** | ⇧⌘S | Saves the score to a new file, which it then keeps using. |
 
-- Scores are saved as `.amscore` files, which are JSON. A file keeps everything about the score, and the instruments it's played on: the key, time signature, tempo, and for each part its alternate staff, its measures and their notes, and each measure's chord with all its settings. That includes notes you've added to or taken out of a chord, and the order a Random chord plays in. Notes on beats hidden by a shorter time signature are kept too.
+- Scores are saved as `.amscore` files, which are JSON. A file keeps everything about the score, and the instruments it's played on and their volumes: the key, time signature, tempo, and for each part its alternate staff, its measures and their notes, and each measure's chord with all its settings. That includes notes you've added to or taken out of a chord, and the order a Random chord plays in. Notes on beats hidden by a shorter time signature are kept too.
 - Each part's instrument is saved with the score, with its sound: whatever you've chosen in its editor. Opening the score loads the instruments again, or just gives it the saved sound if it's the one already loaded. An instrument's sound can be large, so a score can be too; Pigments adds about half a megabyte.
 - Loading a different instrument, or changing its sound in its editor, counts as a change that needs saving, and the title shows it within half a second. It goes by what the instrument reports: a change to one of its parameters, its program, or its other settings. Just opening the editor, or playing, isn't a change, even though some instruments (Pigments, for one) save details of their editor window along with their sound.
 - If a score's instrument can't be loaded, say because it isn't installed, the score still opens, you're told, and the instrument you had stays loaded. A part saved without an instrument also leaves the one it has as it is, and so does New. Scores saved before there were two parts open as part 1, with their instrument, and an empty part 2.
@@ -127,7 +129,7 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | File | Contents |
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
-| `Source/MainComponent.*` | The File and MIDI menus, the toolbar, the sidebar, the two parts' scrolling staves, the piano, and the audio output |
+| `Source/MainComponent.*` | The File and MIDI menus, the toolbar, the sidebar, the two parts' scrolling staves and their volume dials, the piano, and the audio output |
 | `Source/Score.*` | The music: the key, time signature and speed, and each part's quarter notes, chords and alternate staff, and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
 | `Source/Music.*` | Music theory: keys, spelling, and building, recognising and naming chords |

@@ -54,6 +54,11 @@ juce::Result ScoreDocument::loadDocument (const juce::File& file)
                                                          : part == 0 ? json.getProperty ("instrument", {}) : juce::var());
     }
 
+    if (const auto* volumes = json.getProperty ("volumes", {}).getArray(); result.wasOk() && volumes != nullptr && loadVolume != nullptr)
+        for (int part = 0; part < Score::numParts && part < volumes->size(); ++part)
+            if (const auto& volume = volumes->getReference (part); volume.isDouble() || volume.isInt() || volume.isInt64())
+                loadVolume (part, (float) (double) volume);
+
     return result;
 }
 
@@ -70,6 +75,17 @@ juce::Result ScoreDocument::saveDocument (const juce::File& file)
             instruments.add (getInstrumentToSave (part));
 
         json.getDynamicObject()->setProperty ("instruments", instruments);
+    }
+
+    // Each part's volume, in decibels
+    if (getVolumeToSave != nullptr)
+    {
+        juce::Array<juce::var> volumes;
+
+        for (int part = 0; part < Score::numParts; ++part)
+            volumes.add (getVolumeToSave (part));
+
+        json.getDynamicObject()->setProperty ("volumes", volumes);
     }
 
     if (file.replaceWithText (juce::JSON::toString (json)))

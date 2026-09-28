@@ -10,6 +10,9 @@ namespace
     constexpr int sidebarWidth = 280;
     constexpr int sidebarPadding = 14;
     constexpr int keyboardHeight = 140;
+    constexpr int volumeColumnWidth = 64;
+    constexpr int volumeDialSize = 44;
+    constexpr int volumeTextHeight = 16;
 
     // A full 88-key piano, A0 to C8
     constexpr int lowestKey = 21;
@@ -21,6 +24,12 @@ namespace
 
     // The MIDI menu's items are numbered from here, in the order of the inputs they're for.
     constexpr int firstMidiInputItem = 1000;
+
+    // Where a part's volume is kept in the settings, such as "volume1"
+    juce::String getVolumeKey (int part)
+    {
+        return "volume" + juce::String (part + 1);
+    }
 
     /** A number without trailing zeros, e.g. "120" or "92.5". */
     juce::String formatNumber (double number)
@@ -81,6 +90,9 @@ void MainComponent::StaffSystems::layOut()
     }
 
     setSize (width, juce::jmax (y, minimumHeight));
+
+    if (onLayoutChanged != nullptr)
+        onLayoutChanged();
 }
 
 //==============================================================================
@@ -171,6 +183,49 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     staffViewport.setScrollBarsShown (true, true);
     addAndMakeVisible (staffViewport);
 
+    // A volume dial beside each part's staves, from off up to +6 dB. It's remembered from one run
+    // of the app to the next, and saved with the score. Double-clicking puts it back to 0 dB.
+    for (int part = 0; part < Score::numParts; ++part)
+    {
+        auto& dial = volumeDials[(size_t) part];
+
+        // The text comes first, so the dial shows it from the start.
+        dial.textFromValueFunction = [] (double decibels)
+        {
+            if (decibels <= InstrumentHost::minVolume)
+                return juce::String ("Off");
+
+            return (decibels > 0.05 ? "+" : "") + juce::String (std::abs (decibels) < 0.05 ? 0.0 : decibels, 1) + " dB";
+        };
+        dial.valueFromTextFunction = [] (const juce::String& text)
+        {
+            return text.trim().equalsIgnoreCase ("off") ? (double) InstrumentHost::minVolume : text.getDoubleValue();
+        };
+
+        dial.setLookAndFeel (&dialLookAndFeel);
+        dial.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        dial.setTextBoxStyle (juce::Slider::TextBoxBelow, true, volumeColumnWidth, volumeTextHeight);
+        dial.setRange (InstrumentHost::minVolume, InstrumentHost::maxVolume, 0.1);
+        dial.setSkewFactorFromMidPoint (-12.0);
+        dial.setDoubleClickReturnValue (true, 0.0);
+        dial.setWantsKeyboardFocus (false);
+        dial.setTooltip ("Part " + juce::String (part + 1) + "'s volume. Double-click for 0 dB.");
+        dial.setColour (juce::Slider::textBoxTextColourId, controls::secondaryText);
+        dial.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        dial.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+
+        setVolume (part, (float) settings.getDoubleValue (getVolumeKey (part), 0.0), false);
+        dial.onValueChange = [this, part] { setVolume (part, (float) volumeDials[(size_t) part].getValue(), true); };
+        volumeColumn.addAndMakeVisible (dial);
+    }
+
+    addAndMakeVisible (volumeColumn);
+    staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
+    staffViewport.onScroll = [this] { positionVolumeDials(); };
+
+    document.getVolumeToSave = [this] (int part) { return instrumentHost.getVolume (part); };
+    document.loadVolume = [this] (int part, float decibels) { setVolume (part, decibels, false); };
+
     keyboard.setAvailableRange (lowestKey, highestKey);
     keyboard.setOctaveForMiddleC (4);
     keyboard.setKeyPressBaseOctave (5);     // the computer keyboard's A key plays middle C
@@ -195,7 +250,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     setActivePart (0);
     showPartTitles();
-    setSize (1500, 920);    // wide enough for four measures of most music
+    setSize (1564, 920);    // wide enough for four measures of most music
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate
@@ -229,9 +284,11 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (controls::sidebarBackground);
     g.fillRect (sidebar.getBounds());
 
-    // The staff view doesn't cover the space for the scroll bar, so fill that in to match.
+    // The staff view doesn't cover the space for the scroll bar, so fill that in to match, and the
+    // volume dials sit on the same paper.
     g.setColour (StaffView::paperColour);
     g.fillRect (staffViewport.getBounds());
+    g.fillRect (volumeColumn.getBounds());
 
     g.setColour (juce::Colours::black.withAlpha (0.15f));
     g.fillRect (0, toolbarHeight - 1, getWidth(), 1);
@@ -268,8 +325,10 @@ void MainComponent::resized()
     keyboard.setBounds (bounds.removeFromBottom (keyboardHeight));
     keyboard.setKeyWidth ((float) keyboard.getWidth() / (float) numWhiteKeys);
 
+    volumeColumn.setBounds (bounds.removeFromLeft (volumeColumnWidth));
     staffViewport.setBounds (bounds);
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
+    positionVolumeDials();
 }
 
 void MainComponent::parentHierarchyChanged()
@@ -346,6 +405,34 @@ void MainComponent::showPartTitles()
     for (int part = 0; part < Score::numParts; ++part)
         staffSystems.views[(size_t) part]->setTitle ("Part " + juce::String (part + 1) + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 "))
                                                      + instrumentPanels[(size_t) part]->getStatus());
+}
+
+void MainComponent::setVolume (int part, float decibels, bool changedOnDial)
+{
+    // To a tenth of a decibel, as the dial goes, without the dial's rounding errors
+    decibels = juce::jlimit (InstrumentHost::minVolume, InstrumentHost::maxVolume, std::round (decibels * 10.0f) / 10.0f);
+    instrumentHost.setVolume (part, decibels);
+    settings.setValue (getVolumeKey (part), decibels);
+    volumeDials[(size_t) part].setValue (decibels, juce::dontSendNotification);
+
+    if (changedOnDial)
+        document.changed();
+}
+
+void MainComponent::positionVolumeDials()
+{
+    // Each dial is centred on its part's staves, wherever they've scrolled to.
+    const auto scrolled = staffViewport.getViewPositionY();
+
+    for (size_t part = 0; part < volumeDials.size(); ++part)
+    {
+        const auto& view = *staffSystems.views[part];
+        const auto staves = view.getStavesRange();
+        const auto centreY = view.getBounds().getY() + staves.getStart() + staves.getLength() / 2 - scrolled;
+
+        volumeDials[part].setBounds (juce::Rectangle<int> (volumeColumnWidth, volumeDialSize + volumeTextHeight)
+                                         .withCentre ({ volumeColumnWidth / 2, centreY }));
+    }
 }
 
 void MainComponent::editChord (int part, int measure)

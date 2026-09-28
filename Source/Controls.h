@@ -43,4 +43,56 @@ namespace controls
     {
         return juce::String (juce::CharPointer_UTF8 (text));
     }
+
+    /** Draws small rotary dials: a thin track with the value arced along it, and a knob with a
+        pointer, and small value text under them.
+    */
+    struct DialLookAndFeel final : public juce::LookAndFeel_V4
+    {
+        DialLookAndFeel() : LookAndFeel_V4 (getLightColourScheme()) {}
+
+        void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float position,
+                               float startAngle, float endAngle, juce::Slider&) override
+        {
+            const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat();
+            const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f - 2.0f;
+            const auto centre = bounds.getCentre();
+            const auto angle = startAngle + position * (endAngle - startAngle);
+            const auto arcThickness = 2.5f;
+
+            const auto arc = [&] (float from, float to)
+            {
+                juce::Path path;
+                path.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, from, to, true);
+                return path;
+            };
+
+            const juce::PathStrokeType stroke (arcThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+            g.setColour (juce::Colours::black.withAlpha (0.12f));
+            g.strokePath (arc (startAngle, endAngle), stroke);
+
+            if (position > 0.0f)
+            {
+                g.setColour (accent);
+                g.strokePath (arc (startAngle, angle), stroke);
+            }
+
+            const auto knobRadius = radius - arcThickness - 2.5f;
+            g.setColour (juce::Colours::white);
+            g.fillEllipse (juce::Rectangle<float> (2.0f * knobRadius, 2.0f * knobRadius).withCentre (centre));
+            g.setColour (juce::Colours::black.withAlpha (0.2f));
+            g.drawEllipse (juce::Rectangle<float> (2.0f * knobRadius, 2.0f * knobRadius).withCentre (centre), 1.0f);
+
+            const auto tip = centre.getPointOnCircumference (knobRadius - 2.0f, angle);
+            g.setColour (position > 0.0f ? accent : secondaryText);
+            g.drawLine ({ centre.getPointOnCircumference (knobRadius * 0.3f, angle), tip }, 2.0f);
+        }
+
+        juce::Label* createSliderTextBox (juce::Slider& slider) override
+        {
+            auto* label = LookAndFeel_V4::createSliderTextBox (slider);
+            label->setFont (juce::FontOptions (11.5f));
+            return label;
+        }
+    };
 }

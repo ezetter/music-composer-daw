@@ -79,6 +79,11 @@ void InstrumentHost::setActivePart (int part)
     activePart = part;
 }
 
+void InstrumentHost::setVolume (int part, float decibels)
+{
+    slots[(size_t) part].volume = juce::jlimit (minVolume, maxVolume, decibels);
+}
+
 double InstrumentHost::getSampleRate() const
 {
     const juce::ScopedLock sl (lock);
@@ -297,6 +302,8 @@ void InstrumentHost::prepareToPlay (double newSampleRate, int maximumBlockSize)
     for (auto& slot : slots)
     {
         slot.midi.ensureSize (4096);
+        slot.gain.reset (sampleRate, 0.05);
+        slot.gain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (slot.volume.load(), minVolume));
 
         if (slot.instrument != nullptr)
         {
@@ -378,7 +385,11 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
         slot.buffer.clear();
         instrument->processBlock (slot.buffer, slot.midi);
 
-        // The instruments are mixed together, a mono one playing through every output channel.
+        slot.gain.setTargetValue (juce::Decibels::decibelsToGain (slot.volume.load(), minVolume));
+        slot.gain.applyGain (slot.buffer, numSamples);
+
+        // The instruments are mixed together, each at its volume, a mono one playing through every
+        // output channel.
         if (const auto numInstrumentOutputs = instrument->getTotalNumOutputChannels(); numInstrumentOutputs > 0)
             for (int channel = 0; channel < numOutputChannels; ++channel)
                 output.addFrom (channel, 0, slot.buffer, juce::jmin (channel, numInstrumentOutputs - 1), 0, numSamples);
