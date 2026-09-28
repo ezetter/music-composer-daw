@@ -20,6 +20,9 @@ namespace
     // Where Loop is kept in the settings
     const char* const loopKey = "loop";
 
+    // The MIDI menu's items are numbered from here, in the order of the inputs they're for.
+    constexpr int firstMidiInputItem = 1000;
+
     /** A number without trailing zeros, e.g. "120" or "92.5". */
     juce::String formatNumber (double number)
     {
@@ -125,6 +128,10 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, juce::Colour (0xff4a8fe0));
     keyboard.setColour (juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId, juce::Colour (0x264a8fe0));
     keyboard.onKeyClicked = [this] (int midiNote) { pianoKeyClicked (midiNote); };
+
+    // A MIDI controller plays like the on-screen piano, including adding notes to a chord.
+    midiInputs.onNoteOn = [this] (int midiNote) { pianoKeyClicked (midiNote); };
+    midiInputs.onDevicesChanged = [this] { menuItemsChanged(); };
     addAndMakeVisible (keyboard);
 
     score.addChangeListener (this);
@@ -447,18 +454,41 @@ void MainComponent::removeMeasure()
 //==============================================================================
 juce::StringArray MainComponent::getMenuBarNames()
 {
-    return { "File" };
+    return { "File", "MIDI" };
 }
 
-juce::PopupMenu MainComponent::getMenuForIndex (int, const juce::String&)
+juce::PopupMenu MainComponent::getMenuForIndex (int menuIndex, const juce::String&)
 {
     juce::PopupMenu menu;
+
+    if (menuIndex == 1)
+    {
+        // Each MIDI input, ticked when it's on.
+        midiMenuDevices = midiInputs.getDevices();
+
+        if (midiMenuDevices.empty())
+            menu.addItem (firstMidiInputItem - 1, "No MIDI Inputs", false);
+
+        for (size_t i = 0; i < midiMenuDevices.size(); ++i)
+            menu.addItem (firstMidiInputItem + (int) i, midiMenuDevices[i].info.name, true, midiMenuDevices[i].enabled);
+
+        return menu;
+    }
+
     menu.addCommandItem (&commandManager, newScore);
     menu.addCommandItem (&commandManager, openScore);
     menu.addSeparator();
     menu.addCommandItem (&commandManager, saveScore);
     menu.addCommandItem (&commandManager, saveScoreAs);
     return menu;
+}
+
+void MainComponent::menuItemSelected (int menuItemID, int topLevelMenuIndex)
+{
+    const auto index = (size_t) (menuItemID - firstMidiInputItem);
+
+    if (topLevelMenuIndex == 1 && menuItemID >= firstMidiInputItem && index < midiMenuDevices.size())
+        midiInputs.setEnabled (midiMenuDevices[index].info.identifier, ! midiMenuDevices[index].enabled);
 }
 
 juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()

@@ -27,6 +27,7 @@ target_sources(AnthropoceneMusic
         Source/Main.cpp
         Source/MainComponent.cpp
         Source/MeasureContent.cpp
+        Source/MidiInputs.cpp
         Source/Music.cpp
         Source/MusicGlyphs.cpp
         Source/PianoKeyboard.cpp

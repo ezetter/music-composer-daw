@@ -110,12 +110,18 @@ Block chords sound together and rolled chords bottom to top in quick succession.
 
 Click or drag across the piano keys to play the instrument yourself. Once the piano has been clicked, the computer keyboard plays it too: A is middle C, and the row from A to L (with W, E, T, Y, U, O and P for the black keys) plays upwards from there.
 
+### MIDI controllers
+
+Plug a MIDI controller into a USB port and it plays the instrument like the on-screen piano, whose keys go down as you play. It's used as soon as it's plugged in, even with the app already running. The keys play at the velocity you strike them, and the sustain pedal, pitch bend, mod wheel and other controls go through to the instrument too. In Chords mode, with a measure selected, a key adds its note to the measure's chord or takes it out, as clicking the piano does.
+
+The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to turn it off or on; one that's off stays off the next time the app starts.
+
 ## Source
 
 | File | Contents |
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
-| `Source/MainComponent.*` | The File menu, the toolbar, the sidebar, the scrolling staff, the piano, and the audio output |
+| `Source/MainComponent.*` | The File and MIDI menus, the toolbar, the sidebar, the scrolling staff, the piano, and the audio output |
 | `Source/Score.*` | The music: the key, time signature and speed, quarter notes, and each measure's chord, and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
 | `Source/Music.*` | Music theory: keys, spelling, and building, recognising and naming chords |
@@ -126,7 +132,8 @@ Click or drag across the piano keys to play the instrument yourself. Once the pi
 | `Source/ChordPanel.*` | The settings for a measure's chord |
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls |
-| `Source/InstrumentHost.*` | Hosts the instrument plugin, and plays it from the piano and the score, once or looping |
+| `Source/InstrumentHost.*` | Hosts the instrument plugin, and plays it from the piano, MIDI controllers and the score, once or looping |
+| `Source/MidiInputs.*` | Connects MIDI controllers, as they're plugged in, and the MIDI menu's settings |
 | `Source/InstrumentPanel.*` | Loads instruments and opens their editors, and saves and loads them with the score |
 | `Source/PluginWindow.*` | The window for an instrument's editor |
 

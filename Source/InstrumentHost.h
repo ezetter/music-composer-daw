@@ -10,12 +10,14 @@
 #include <optional>
 #include <vector>
 
-/** Hosts an instrument plugin, and plays it from the on-screen keyboard and from the score.
+/** Hosts an instrument plugin, and plays it from the on-screen keyboard, MIDI controllers and
+    the score.
 
     It's an audio device callback, so it can play straight through an audio device. Apart from the
     callbacks, everything here has to be called on the message thread.
 */
 class InstrumentHost final : public juce::AudioIODeviceCallback,
+                             public juce::MidiInputCallback,
                              private juce::AudioPlayHead
 {
 public:
@@ -62,6 +64,11 @@ public:
     void audioDeviceAboutToStart (juce::AudioIODevice*) override;
     void audioDeviceStopped() override;
 
+    /** Plays a message from a MIDI controller. Its notes show on the on-screen keyboard too.
+        This can be called on any thread.
+    */
+    void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
+
 private:
     struct NoteEvent
     {
@@ -91,6 +98,8 @@ private:
     void advancePlayback();
 
     juce::MidiKeyboardState keyboardState;
+    juce::MidiMessageCollector midiInput;     // messages from MIDI controllers, waiting for the next block
+    std::atomic<bool> midiInputReady { false };
 
     // Everything below is shared with the audio thread, which holds this lock while it's working.
     mutable juce::CriticalSection lock;

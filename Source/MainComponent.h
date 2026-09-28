@@ -3,6 +3,7 @@
 #include "ChordPanel.h"
 #include "InstrumentHost.h"
 #include "InstrumentPanel.h"
+#include "MidiInputs.h"
 #include "PianoKeyboard.h"
 #include "Score.h"
 #include "ScoreDocument.h"
@@ -62,7 +63,7 @@ private:
 
     juce::StringArray getMenuBarNames() override;
     juce::PopupMenu getMenuForIndex (int menuIndex, const juce::String& menuName) override;
-    void menuItemSelected (int, int) override {}
+    void menuItemSelected (int menuItemID, int topLevelMenuIndex) override;
 
     void timerCallback() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -89,6 +90,10 @@ private:
     juce::PropertiesFile& settings;
     juce::AudioDeviceManager audioDeviceManager;
     InstrumentHost instrumentHost;
+    MidiInputs midiInputs { audioDeviceManager, instrumentHost, settings };
+
+    /** The MIDI inputs the MIDI menu showed, the last time it was opened */
+    std::vector<MidiInputs::Device> midiMenuDevices;
     Score score;
     ScoreDocument document;
     juce::ApplicationCommandManager commandManager;

@@ -279,6 +279,8 @@ void InstrumentHost::prepareToPlay (double newSampleRate, int maximumBlockSize)
     sampleRate = newSampleRate;
     blockSize = maximumBlockSize;
     midiBuffer.ensureSize (4096);
+    midiInput.reset (newSampleRate);
+    midiInputReady = true;
 
     if (instrument != nullptr)
     {
@@ -296,6 +298,7 @@ void InstrumentHost::releaseResources()
         instrument->releaseResources();
 
     sampleRate = 0.0;
+    midiInputReady = false;
     playing = false;
     scoreNotesOn.reset();
     playbackPosition = -1.0;
@@ -322,8 +325,10 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
 
     midiBuffer.clear();
     addScoreEvents (midiBuffer, numSamples);
+    midiInput.removeNextBlockOfMessages (midiBuffer, numSamples);
 
-    // This adds the notes played on the on-screen keyboard, and shows the score's notes on it.
+    // This adds the notes played on the on-screen keyboard, and shows the score's and MIDI
+    // controllers' notes on it.
     keyboardState.processNextMidiBuffer (midiBuffer, 0, numSamples, true);
 
     if (instrument != nullptr)
@@ -344,6 +349,13 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
     }
 
     advancePlayback();
+}
+
+void InstrumentHost::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
+{
+    // Until the audio has started there's nothing to play it, and nowhere for it to wait.
+    if (midiInputReady)
+        midiInput.addMessageToQueue (message);
 }
 
 //==============================================================================
