@@ -148,6 +148,11 @@ private:
     */
     void setVolume (int part, float decibels, bool changedOnDial);
 
+    /** Mutes or unmutes a part, and shows it on its dial. A change made on the dial counts as a
+        change to the score.
+    */
+    void setMuted (int part, bool muted, bool changedOnDial);
+
     /** Keeps each part's volume dial beside its staves, as they scroll up and down. */
     void positionVolumeDials();
 
@@ -178,7 +183,7 @@ private:
 
     controls::DialLookAndFeel dialLookAndFeel;
     juce::Component volumeColumn;       // to the left of the staves, holding a volume dial for each part
-    std::array<juce::Slider, Score::numParts> volumeDials;
+    std::array<controls::ClickableDial, Score::numParts> volumeDials;
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 

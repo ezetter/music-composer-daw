@@ -45,15 +45,17 @@ namespace controls
     }
 
     /** Draws small rotary dials: a thin track with the value arced along it, and a knob with a
-        pointer, and small value text under them.
+        pointer, and small value text under them. A dial whose "muted" property is set is grey.
     */
     struct DialLookAndFeel final : public juce::LookAndFeel_V4
     {
         DialLookAndFeel() : LookAndFeel_V4 (getLightColourScheme()) {}
 
         void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float position,
-                               float startAngle, float endAngle, juce::Slider&) override
+                               float startAngle, float endAngle, juce::Slider& slider) override
         {
+            const auto muted = (bool) slider.getProperties().getWithDefault ("muted", false);
+            const auto colour = muted ? juce::Colours::black.withAlpha (0.3f) : accent;
             const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat();
             const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f - 2.0f;
             const auto centre = bounds.getCentre();
@@ -73,7 +75,7 @@ namespace controls
 
             if (position > 0.0f)
             {
-                g.setColour (accent);
+                g.setColour (colour);
                 g.strokePath (arc (startAngle, angle), stroke);
             }
 
@@ -84,7 +86,7 @@ namespace controls
             g.drawEllipse (juce::Rectangle<float> (2.0f * knobRadius, 2.0f * knobRadius).withCentre (centre), 1.0f);
 
             const auto tip = centre.getPointOnCircumference (knobRadius - 2.0f, angle);
-            g.setColour (position > 0.0f ? accent : secondaryText);
+            g.setColour (position > 0.0f ? colour : secondaryText);
             g.drawLine ({ centre.getPointOnCircumference (knobRadius * 0.3f, angle), tip }, 2.0f);
         }
 
@@ -93,6 +95,21 @@ namespace controls
             auto* label = LookAndFeel_V4::createSliderTextBox (slider);
             label->setFont (juce::FontOptions (11.5f));
             return label;
+        }
+    };
+
+    /** A rotary dial that can also be clicked, without turning it. */
+    struct ClickableDial final : public juce::Slider
+    {
+        /** Called when the dial's clicked and let go without being dragged. */
+        std::function<void()> onClick;
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            juce::Slider::mouseUp (e);
+
+            if (isEnabled() && ! e.mouseWasDraggedSinceMouseDown() && ! e.mods.isPopupMenu() && onClick != nullptr)
+                onClick();
         }
     };
 

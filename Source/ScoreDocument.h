@@ -35,6 +35,12 @@ public:
     /** Sets a part's volume from an opened score. Scores saved without volumes leave them as they are. */
     std::function<void (int part, float decibels)> loadVolume;
 
+    /** Supplies whether a part is muted, to save with the score. */
+    std::function<bool (int part)> getMutedToSave;
+
+    /** Mutes or unmutes a part from an opened score. Scores saved without it leave it as it is. */
+    std::function<void (int part, bool muted)> loadMuted;
+
     juce::String getDocumentTitle() override;
 
     //==============================================================================

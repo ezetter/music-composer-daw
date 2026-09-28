@@ -84,6 +84,11 @@ void InstrumentHost::setVolume (int part, float decibels)
     slots[(size_t) part].volume = juce::jlimit (minVolume, maxVolume, decibels);
 }
 
+void InstrumentHost::setMuted (int part, bool shouldBeMuted)
+{
+    slots[(size_t) part].muted = shouldBeMuted;
+}
+
 double InstrumentHost::getSampleRate() const
 {
     const juce::ScopedLock sl (lock);
@@ -303,7 +308,7 @@ void InstrumentHost::prepareToPlay (double newSampleRate, int maximumBlockSize)
     {
         slot.midi.ensureSize (4096);
         slot.gain.reset (sampleRate, 0.05);
-        slot.gain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (slot.volume.load(), minVolume));
+        slot.gain.setCurrentAndTargetValue (slot.muted ? 0.0f : juce::Decibels::decibelsToGain (slot.volume.load(), minVolume));
 
         if (slot.instrument != nullptr)
         {
@@ -385,7 +390,7 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
         slot.buffer.clear();
         instrument->processBlock (slot.buffer, slot.midi);
 
-        slot.gain.setTargetValue (juce::Decibels::decibelsToGain (slot.volume.load(), minVolume));
+        slot.gain.setTargetValue (slot.muted ? 0.0f : juce::Decibels::decibelsToGain (slot.volume.load(), minVolume));
         slot.gain.applyGain (slot.buffer, numSamples);
 
         // The instruments are mixed together, each at its volume, a mono one playing through every

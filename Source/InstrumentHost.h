@@ -47,6 +47,10 @@ public:
 
     static constexpr float minVolume = -60.0f, maxVolume = 6.0f;
 
+    /** Silences a part's instrument, or lets it play again at its volume. */
+    void setMuted (int part, bool);
+    bool isMuted (int part) const noexcept { return slots[(size_t) part].muted; }
+
     /** The sample rate and block size to create a new instrument with. */
     double getSampleRate() const;
     int getBlockSize() const;
@@ -113,6 +117,7 @@ private:
         juce::MidiBuffer midi;
         std::bitset<128> scoreNotesOn;      // notes from the score that are sounding
         std::atomic<float> volume { 0.0f };                 // in decibels
+        std::atomic<bool> muted { false };
         juce::SmoothedValue<float> gain { 1.0f };           // following the volume, so changes don't click
     };
 

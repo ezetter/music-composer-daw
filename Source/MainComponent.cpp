@@ -38,6 +38,12 @@ namespace
         return "volume" + juce::String (part + 1);
     }
 
+    // And whether it's muted, such as "muted1"
+    juce::String getMutedKey (int part)
+    {
+        return "muted" + juce::String (part + 1);
+    }
+
     /** A number without trailing zeros, e.g. "120" or "92.5". */
     juce::String formatNumber (double number)
     {
@@ -221,15 +227,19 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     staffViewport.setScrollBarsShown (true, true);
     addAndMakeVisible (staffViewport);
 
-    // A volume dial beside each part's staves, from off up to +6 dB. It's remembered from one run
-    // of the app to the next, and saved with the score. Double-clicking puts it back to 0 dB.
+    // A volume dial beside each part's staves, from off up to +6 dB. Clicking it without turning it
+    // mutes the part, or unmutes it. Both are remembered from one run of the app to the next, and
+    // saved with the score.
     for (int part = 0; part < Score::numParts; ++part)
     {
         auto& dial = volumeDials[(size_t) part];
 
         // The text comes first, so the dial shows it from the start.
-        dial.textFromValueFunction = [] (double decibels)
+        dial.textFromValueFunction = [this, part] (double decibels)
         {
+            if (instrumentHost.isMuted (part))
+                return juce::String ("Muted");
+
             if (decibels <= InstrumentHost::minVolume)
                 return juce::String ("Off");
 
@@ -245,15 +255,24 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
         dial.setTextBoxStyle (juce::Slider::TextBoxBelow, true, volumeColumnWidth, volumeTextHeight);
         dial.setRange (InstrumentHost::minVolume, InstrumentHost::maxVolume, 0.1);
         dial.setSkewFactorFromMidPoint (-12.0);
-        dial.setDoubleClickReturnValue (true, 0.0);
         dial.setWantsKeyboardFocus (false);
-        dial.setTooltip ("Instrument " + juce::String (part + 1) + "'s volume. Double-click for 0 dB.");
+        dial.setTooltip ("Instrument " + juce::String (part + 1) + "'s volume. Drag to turn it, or click to mute or unmute.");
         dial.setColour (juce::Slider::textBoxTextColourId, controls::secondaryText);
         dial.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         dial.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
 
         setVolume (part, (float) settings.getDoubleValue (getVolumeKey (part), 0.0), false);
-        dial.onValueChange = [this, part] { setVolume (part, (float) volumeDials[(size_t) part].getValue(), true); };
+        setMuted (part, settings.getBoolValue (getMutedKey (part), false), false);
+
+        // Turning a muted dial unmutes it, rather than changing a volume that can't be heard.
+        dial.onValueChange = [this, part]
+        {
+            if (instrumentHost.isMuted (part))
+                setMuted (part, false, true);
+
+            setVolume (part, (float) volumeDials[(size_t) part].getValue(), true);
+        };
+        dial.onClick = [this, part] { setMuted (part, ! instrumentHost.isMuted (part), true); };
         volumeColumn.addAndMakeVisible (dial);
     }
 
@@ -263,6 +282,8 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     document.getVolumeToSave = [this] (int part) { return instrumentHost.getVolume (part); };
     document.loadVolume = [this] (int part, float decibels) { setVolume (part, decibels, false); };
+    document.getMutedToSave = [this] (int part) { return instrumentHost.isMuted (part); };
+    document.loadMuted = [this] (int part, bool muted) { setMuted (part, muted, false); };
 
     keyboard.setAvailableRange (lowestKey, highestKey);
     keyboard.setOctaveForMiddleC (4);
@@ -486,6 +507,20 @@ void MainComponent::setVolume (int part, float decibels, bool changedOnDial)
     instrumentHost.setVolume (part, decibels);
     settings.setValue (getVolumeKey (part), decibels);
     volumeDials[(size_t) part].setValue (decibels, juce::dontSendNotification);
+
+    if (changedOnDial)
+        document.changed();
+}
+
+void MainComponent::setMuted (int part, bool muted, bool changedOnDial)
+{
+    instrumentHost.setMuted (part, muted);
+    settings.setValue (getMutedKey (part), muted);
+
+    auto& dial = volumeDials[(size_t) part];
+    dial.getProperties().set ("muted", muted);
+    dial.updateText();
+    dial.repaint();
 
     if (changedOnDial)
         document.changed();

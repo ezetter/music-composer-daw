@@ -102,6 +102,11 @@ juce::Result ScoreDocument::loadDocument (const juce::File& file)
             if (const auto& volume = volumes->getReference (part); volume.isDouble() || volume.isInt() || volume.isInt64())
                 loadVolume (part, (float) (double) volume);
 
+    if (const auto* muted = json.getProperty ("muted", {}).getArray(); result.wasOk() && muted != nullptr && loadMuted != nullptr)
+        for (int part = 0; part < Score::numParts && part < muted->size(); ++part)
+            if (const auto& value = muted->getReference (part); value.isBool())
+                loadMuted (part, (bool) value);
+
     if (result.wasOk())
         rememberRecentScore (file);
 
@@ -132,6 +137,17 @@ juce::Result ScoreDocument::saveDocument (const juce::File& file)
             volumes.add (getVolumeToSave (part));
 
         json.getDynamicObject()->setProperty ("volumes", volumes);
+    }
+
+    // Whether each part is muted
+    if (getMutedToSave != nullptr)
+    {
+        juce::Array<juce::var> muted;
+
+        for (int part = 0; part < Score::numParts; ++part)
+            muted.add (getMutedToSave (part));
+
+        json.getDynamicObject()->setProperty ("muted", muted);
     }
 
     if (file.replaceWithText (juce::JSON::toString (json)))
