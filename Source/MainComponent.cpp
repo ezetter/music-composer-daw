@@ -14,7 +14,8 @@ namespace
     constexpr int volumeDialSize = 44;
     constexpr int volumeTextHeight = 16;
     constexpr int measureButtonSize = 28;
-    constexpr int measureButtonsWidth = 44;     // after the final barline, for + and −
+    constexpr int cloneButtonWidth = 56, cloneButtonHeight = 26;
+    constexpr int measureButtonsWidth = 110;    // after the final barline, for + and −, and Clone beside them
 
     // A full 88-key piano, A0 to C8
     constexpr int lowestKey = 21;
@@ -72,6 +73,14 @@ MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
     addMeasureButton.onClick = [this] { if (onAddMeasure != nullptr) onAddMeasure(); };
     removeMeasureButton.onClick = [this] { if (onRemoveMeasure != nullptr) onRemoveMeasure(); };
 
+    // Clone repeats every measure after the last, in both parts.
+    cloneButton.setTooltip ("Repeat all the measures after the last one, with everything in them");
+    cloneButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
+    cloneButton.setColour (juce::TextButton::textColourOffId, controls::accent);
+    cloneButton.setWantsKeyboardFocus (false);
+    cloneButton.onClick = [this] { if (onCloneMeasures != nullptr) onCloneMeasures(); };
+    addAndMakeVisible (cloneButton);
+
     for (auto* button : { &addMeasureButton, &removeMeasureButton })
     {
         button->setLookAndFeel (&roundButtonLookAndFeel);
@@ -125,14 +134,17 @@ void MainComponent::StaffSystems::layOut()
 
     setSize (width + measureButtonsWidth, juce::jmax (y, minimumHeight));
 
-    // + over −, just past the final barline, halfway between the first part's staves and the second's
+    // + over −, just past the final barline, halfway between the first part's staves and the
+    // second's, and Clone to their right
     const auto gapTop = views[0]->getBounds().getY() + views[0]->getStavesRange().getEnd();
     const auto gapBottom = views[1]->getBounds().getY() + views[1]->getStavesRange().getStart();
-    const auto centre = juce::Point<int> (width + measureButtonsWidth / 2 - 8, (gapTop + gapBottom) / 2);
+    const auto centre = juce::Point<int> (width + 14, (gapTop + gapBottom) / 2);
 
     addMeasureButton.setBounds (juce::Rectangle<int> (measureButtonSize, measureButtonSize).withCentre (centre.translated (0, -measureButtonSize / 2 - 3)));
     removeMeasureButton.setBounds (juce::Rectangle<int> (measureButtonSize, measureButtonSize).withCentre (centre.translated (0, measureButtonSize / 2 + 3)));
     removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
+    cloneButton.setBounds (juce::Rectangle<int> (cloneButtonWidth, cloneButtonHeight)
+                               .withCentre (centre.translated (measureButtonSize / 2 + 10 + cloneButtonWidth / 2, 0)));
 
     if (onLayoutChanged != nullptr)
         onLayoutChanged();
@@ -209,6 +221,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     staffSystems.onAddMeasure = [this] { addMeasure(); };
     staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
+    staffSystems.onCloneMeasures = [this] { cloneMeasures(); };
     scorePanel.onCopyProgression = [this] { copyProgression(); };
     sidebarContent.addAndMakeVisible (scorePanel);
     sidebar.setViewedComponent (&sidebarContent, false);
@@ -309,7 +322,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     setActivePart (0);
     showPartTitles();
-    setSize (1610, 920);    // wide enough for four measures of most music, and the + and − after them
+    setSize (1676, 920);    // wide enough for four measures of most music, and the buttons after them
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate
@@ -711,6 +724,14 @@ void MainComponent::addMeasure()
     score.addMeasure();
 
     // Scroll to the end, so the new measure is in view.
+    staffViewport.setViewPosition (staffSystems.getWidth(), staffViewport.getViewPositionY());
+}
+
+void MainComponent::cloneMeasures()
+{
+    score.cloneMeasures();
+
+    // Scroll to the end, so the buttons stay in view.
     staffViewport.setViewPosition (staffSystems.getWidth(), staffViewport.getViewPositionY());
 }
 

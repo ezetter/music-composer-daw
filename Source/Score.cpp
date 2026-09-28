@@ -124,6 +124,17 @@ void Score::addMeasure()
     sendSynchronousChangeMessage();
 }
 
+void Score::cloneMeasures()
+{
+    for (auto& part : parts)
+    {
+        const auto copy = part.measures;
+        part.measures.insert (part.measures.end(), copy.begin(), copy.end());
+    }
+
+    sendSynchronousChangeMessage();
+}
+
 void Score::removeLastMeasure()
 {
     if (getNumMeasures() <= 1)

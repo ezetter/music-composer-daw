@@ -46,7 +46,7 @@ public:
 
 private:
     /** The parts' staff systems, one above the other, their measures lined up, with + and −
-        buttons after the last measure for adding and removing measures.
+        buttons after the last measure for adding and removing measures, and Clone for repeating them all.
     */
     struct StaffSystems final : public juce::Component
     {
@@ -61,8 +61,8 @@ private:
         /** Called when the systems move or change size. */
         std::function<void()> onLayoutChanged;
 
-        /** Called when + or − is clicked. */
-        std::function<void()> onAddMeasure, onRemoveMeasure;
+        /** Called when +, − or Clone is clicked. */
+        std::function<void()> onAddMeasure, onRemoveMeasure, onCloneMeasures;
 
     private:
         void childBoundsChanged (juce::Component*) override;
@@ -74,6 +74,7 @@ private:
 
         controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
         juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
+        juce::TextButton cloneButton { "Clone" };
     };
 
     /** A viewport that says when it scrolls. */
@@ -137,6 +138,7 @@ private:
     void showPlaybackPosition();
     void addMeasure();
     void removeMeasure();
+    void cloneMeasures();
     void showHeldNotes();
     void tempoEdited (bool finished);
     void scoreReplaced();

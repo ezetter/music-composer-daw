@@ -109,6 +109,11 @@ public:
     /** Removes the last measure and everything in it, in every part, unless it's the only one. */
     void removeLastMeasure();
 
+    /** Repeats all the measures after the last one, in every part, with everything in them:
+        4 measures become 8, the second 4 a copy of the first, to be edited on their own.
+    */
+    void cloneMeasures();
+
     //==============================================================================
     /** Adds a quarter note. Returns false if the score already has it, or its staff is taken by
         the measure's chord.
