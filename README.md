@@ -47,6 +47,7 @@ The **File** menu saves and opens scores:
 | --- | --- | --- |
 | **New** | ⌘N | Starts an empty score: four measures of 4/4 in C major at 120 BPM. |
 | **Open…** | ⌘O | Opens a saved score. |
+| **Open Recent** | | Lists the 10 scores opened or saved most recently, newest first, and opens the one you choose. Scores that have been moved or deleted aren't listed, and two with the same name say which folder they're in. **Clear Menu** empties the list. The list is remembered from one run of the app to the next, and the scores also appear in the Mac's own recent documents. |
 | **Save** | ⌘S | Saves the score to its file, asking for a name the first time. |
 | **Save As…** | ⇧⌘S | Saves the score to a new file, which it then keeps using. |
 

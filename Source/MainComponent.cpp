@@ -27,6 +27,11 @@ namespace
     // The MIDI menu's items are numbered from here, in the order of the inputs they're for.
     constexpr int firstMidiInputItem = 1000;
 
+    // The File menu's Open Recent items, numbered from here in the order of the recent scores
+    constexpr int firstRecentScoreItem = 2000;
+    constexpr int noRecentScoresItem = firstRecentScoreItem + 90;
+    constexpr int clearRecentScoresItem = firstRecentScoreItem + 91;
+
     // Where a part's volume is kept in the settings, such as "volume1"
     juce::String getVolumeKey (int part)
     {
@@ -398,7 +403,9 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
     if (source == &document)
     {
+        // The file, whether there are unsaved changes, or the recent scores have changed.
         showDocumentTitle();
+        menuItemsChanged();
         return;
     }
 
@@ -670,14 +677,73 @@ juce::PopupMenu MainComponent::getMenuForIndex (int menuIndex, const juce::Strin
 
     menu.addCommandItem (&commandManager, newScore);
     menu.addCommandItem (&commandManager, openScore);
+    menu.addSubMenu ("Open Recent", getRecentScoresMenu());
     menu.addSeparator();
     menu.addCommandItem (&commandManager, saveScore);
     menu.addCommandItem (&commandManager, saveScoreAs);
     return menu;
 }
 
+juce::PopupMenu MainComponent::getRecentScoresMenu() const
+{
+    // The scores that are still there, newest first, by name. Two with the same name say which folder they're in.
+    const auto& recent = document.getRecentScores();
+    juce::StringArray names;
+
+    for (int i = 0; i < recent.getNumFiles(); ++i)
+        names.add (recent.getFile (i).getFileNameWithoutExtension());
+
+    juce::PopupMenu menu;
+
+    for (int i = 0; i < recent.getNumFiles(); ++i)
+    {
+        const auto file = recent.getFile (i);
+
+        if (! file.existsAsFile())
+            continue;
+
+        auto name = names[i];
+
+        if (std::count (names.begin(), names.end(), name) > 1)
+            name << juce::String (juce::CharPointer_UTF8 (" \xe2\x80\x94 ")) << file.getParentDirectory().getFileName();
+
+        menu.addItem (firstRecentScoreItem + i, name);
+    }
+
+    if (menu.getNumItems() == 0)
+        menu.addItem (noRecentScoresItem, "No Recent Scores", false);
+
+    menu.addSeparator();
+    menu.addItem (clearRecentScoresItem, "Clear Menu", recent.getNumFiles() > 0);
+    return menu;
+}
+
+void MainComponent::openRecentScore (const juce::File& file)
+{
+    saveChangesThen ([this, file]
+    {
+        // One that's been moved, deleted or damaged is taken off the list.
+        if (document.loadFrom (file, true).wasOk())
+            scoreReplaced();
+        else
+            document.forgetRecentScore (file);
+    });
+}
+
 void MainComponent::menuItemSelected (int menuItemID, int topLevelMenuIndex)
 {
+    if (topLevelMenuIndex == 0)
+    {
+        const auto& recent = document.getRecentScores();
+
+        if (menuItemID == clearRecentScoresItem)
+            document.clearRecentScores();
+        else if (juce::isPositiveAndBelow (menuItemID - firstRecentScoreItem, recent.getNumFiles()))
+            openRecentScore (recent.getFile (menuItemID - firstRecentScoreItem));
+
+        return;
+    }
+
     const auto index = (size_t) (menuItemID - firstMidiInputItem);
 
     if (topLevelMenuIndex == 1 && menuItemID >= firstMidiInputItem && index < midiMenuDevices.size())

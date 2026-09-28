@@ -37,6 +37,18 @@ public:
 
     juce::String getDocumentTitle() override;
 
+    //==============================================================================
+    /** The scores opened or saved most recently, newest first. They're kept in the settings. */
+    const juce::RecentlyOpenedFilesList& getRecentScores() const noexcept { return recentScores; }
+
+    static constexpr int maxRecentScores = 10;
+
+    /** Forgets the recent scores. */
+    void clearRecentScores();
+
+    /** Forgets one recent score, e.g. one that can't be opened any more. */
+    void forgetRecentScore (const juce::File&);
+
 protected:
     juce::Result loadDocument (const juce::File&) override;
     juce::Result saveDocument (const juce::File&) override;
@@ -45,10 +57,13 @@ protected:
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void rememberRecentScore (const juce::File&);
+    void saveRecentScores();
 
     Score& score;
     juce::PropertiesFile& settings;
     bool replacingScore = false;
+    juce::RecentlyOpenedFilesList recentScores;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScoreDocument)
 };

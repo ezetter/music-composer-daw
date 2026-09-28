@@ -100,6 +100,12 @@ private:
     juce::PopupMenu getMenuForIndex (int menuIndex, const juce::String& menuName) override;
     void menuItemSelected (int menuItemID, int topLevelMenuIndex) override;
 
+    /** The File menu's Open Recent menu, listing the recent scores. */
+    juce::PopupMenu getRecentScoresMenu() const;
+
+    /** Opens a recent score, after asking to save any changes to this one. */
+    void openRecentScore (const juce::File&);
+
     void timerCallback() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
 
