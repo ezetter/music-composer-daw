@@ -12,6 +12,9 @@
 
 /** Draws a score on a single grand staff that extends to the right as measures are added.
 
+    It shows one of the score's parts. Its measures are as wide as any part needs, so the parts'
+    staves line up when they're stacked.
+
     Clicking the staff adds a note and clicking a note takes it out again: a quarter note, or on
     a staff with a chord's notes, a note of the chord. Above each measure is a button to add a
     chord to it, or edit the one it has.
@@ -20,7 +23,18 @@ class StaffView final : public juce::Component,
                         private juce::ChangeListener
 {
 public:
-    explicit StaffView (Score&);
+    StaffView (Score&, int part);
+
+    int getPart() const noexcept { return part; }
+
+    /** Marks the view as showing the active part, whose instrument the keyboard plays. */
+    void setActive (bool);
+
+    /** The name written at the top left, such as the part's number and instrument. */
+    void setTitle (const juce::String&);
+
+    /** Called when the view is clicked, to make its part the active one. */
+    std::function<void()> onClicked;
     ~StaffView() override;
 
     /** The size needed to show the whole score. If the view is taller, the staff is centred. */
@@ -101,7 +115,10 @@ private:
     void setHoverNote (std::optional<Note>);
 
     Score& score;
+    const int part;
     MusicGlyphs glyphs;
+    bool active = false;
+    juce::String title;
     std::optional<Note> hoverNote;
     bool hoverHintHidden = false;       // after a click, until the pointer moves to another spot
     std::optional<int> selectedMeasure;

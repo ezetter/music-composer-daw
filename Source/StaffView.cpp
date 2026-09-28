@@ -284,8 +284,9 @@ struct StaffView::NoteLayout
 };
 
 //==============================================================================
-StaffView::StaffView (Score& scoreToShow)
+StaffView::StaffView (Score& scoreToShow, int partToShow)
     : score (scoreToShow),
+      part (partToShow),
       glyphs (staffSpace)
 {
     setOpaque (true);
@@ -308,6 +309,24 @@ int StaffView::getContentWidth() const
 int StaffView::getContentHeight()
 {
     return (int) std::ceil ((marginAbove + staffHeight + staffGap + staffHeight + marginBelow) * staffSpace);
+}
+
+void StaffView::setActive (bool shouldBeActive)
+{
+    if (shouldBeActive == active)
+        return;
+
+    active = shouldBeActive;
+    repaint();
+}
+
+void StaffView::setTitle (const juce::String& newTitle)
+{
+    if (newTitle == title)
+        return;
+
+    title = newTitle;
+    repaint();
 }
 
 void StaffView::setSelectedMeasure (std::optional<int> measure)
@@ -347,26 +366,33 @@ void StaffView::updateLayout()
     for (int measure = 0; measure < score.getNumMeasures(); ++measure)
     {
         MeasureLayout layout;
-        layout.content = getMeasureContent (score, measure);
+        layout.content = getMeasureContent (score, part, measure);
 
-        const auto notesPerBeat = juce::jmax (layout.content.staves[0].notesPerBeat, layout.content.staves[1].notesPerBeat);
-        layout.beatWidth = getBeatWidth (notesPerBeat) * staffSpace;
-
-        // Leave room after the barline for the accidentals, displaced notes and rolls of the
-        // measure's first notes.
+        // Every part's measure is spaced the same, to fit what's in all of them, so their beats line up.
+        auto notesPerBeat = 1;
         layout.padding = measurePadding * staffSpace;
 
-        for (auto staff : { Staff::treble, Staff::bass })
+        for (int spacedPart = 0; spacedPart < Score::numParts; ++spacedPart)
         {
-            const auto& events = layout.content.staves[(size_t) staff].events;
+            const auto content = spacedPart == part ? layout.content : getMeasureContent (score, spacedPart, measure);
+            notesPerBeat = juce::jmax (notesPerBeat, content.staves[0].notesPerBeat, content.staves[1].notesPerBeat);
 
-            if (! events.empty() && ! events.front().isRest() && ! events.front().centred)
+            // Leave room after the barline for the accidentals, displaced notes and rolls of the
+            // measure's first notes.
+            for (auto staff : { Staff::treble, Staff::bass })
             {
-                std::map<int, int> alterationsInForce;
-                const NoteLayout first (events.front(), staff, 0.0f, alterationsInForce, keyAlterations);
-                layout.padding = juce::jmax (layout.padding, first.getLeftReach (events.front().rolled) + 0.9f * staffSpace);
+                const auto& events = content.staves[(size_t) staff].events;
+
+                if (! events.empty() && ! events.front().isRest() && ! events.front().centred)
+                {
+                    std::map<int, int> alterationsInForce;
+                    const NoteLayout first (events.front(), staff, 0.0f, alterationsInForce, keyAlterations);
+                    layout.padding = juce::jmax (layout.padding, first.getLeftReach (events.front().rolled) + 0.9f * staffSpace);
+                }
             }
         }
+
+        layout.beatWidth = getBeatWidth (notesPerBeat) * staffSpace;
 
         layout.width = juce::jmax (minMeasureWidth * staffSpace,
                                    layout.padding + measurePadding * staffSpace + (beats - 1.0f / (float) notesPerBeat) * layout.beatWidth);
@@ -552,7 +578,7 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
     const auto step = getBottomLineStep (staff) + clampedPosition;
     const auto alter = music::getKeyAlterations (score.getKey())[(size_t) music::mod (step, 7)];
 
-    return Note { staff, measure, beat, { step, alter } };
+    return Note { staff, measure, beat, { step, alter }, part };
 }
 
 void StaffView::setPlaybackPosition (std::optional<double> beats)
@@ -634,6 +660,19 @@ void StaffView::drawHeader (juce::Graphics& g) const
 {
     const auto top = getStaffTop (Staff::treble);
     const auto bottom = getStaffTop (Staff::bass) + staffHeight * staffSpace;
+
+    // The part's name at the top left, over the clefs, and a bar beside the active part's staves
+    const auto titleTop = top - (marginAbove - 0.6f) * staffSpace;
+    const auto titleRight = chordButtons.isEmpty() ? firstMeasureLeft * staffSpace : (float) chordButtons.getFirst()->getX() - 0.5f * staffSpace;
+    g.setColour (active ? selectionColour : measureNumberColour);
+    g.setFont (juce::FontOptions (13.0f, active ? juce::Font::bold : juce::Font::plain));
+    g.drawFittedText (title, juce::Rectangle<float> (systemLeft * staffSpace, titleTop, titleRight - systemLeft * staffSpace, 2.0f * staffSpace).toNearestInt(),
+                      juce::Justification::centredLeft, 1, 0.8f);
+
+    if (active)
+        g.fillRoundedRectangle (juce::Rectangle<float>::leftTopRightBottom (0.5f * staffSpace, top, 0.85f * staffSpace, bottom), 0.15f * staffSpace);
+
+    g.setColour (inkColour);
 
     // The brace, scaled to reach from the top of the treble staff to the bottom of the bass
     const auto& brace = glyphs.getPath (Smufl::brace);
@@ -1133,25 +1172,28 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     if (e.mods.isPopupMenu())
         return;
 
+    if (onClicked != nullptr)
+        onClicked();
+
     if (const auto note = getNoteAt (e.position))
     {
         // On a staff with a chord's notes, clicking one of them takes it out of the chord, and
         // clicking anywhere else adds a note to them.
-        if (score.chordUsesStaff (note->measure, note->staff))
+        if (score.chordUsesStaff (part, note->measure, note->staff))
         {
             const auto existing = findNoteUnder (*note);
-            const auto* chord = score.getChord (note->measure);
+            const auto* chord = score.getChord (part, note->measure);
             const music::KeyboardNote clicked { existing ? existing->midi : note->pitch.getMidiNoteNumber(),
                                                 existing ? existing->pitch.getSpelling() : note->pitch.getSpelling() };
 
             if (note->staff == chord->style.staff)
-                score.toggleChordNote (note->measure, clicked.midi, chord->style);
+                score.toggleChordNote (part, note->measure, clicked.midi, chord->style);
             else
-                score.toggleAlternateNote (note->measure, clicked);
+                score.toggleAlternateNote (part, note->measure, clicked);
         }
         // Clicking a note takes it out, whatever its sharp or flat; clicking anywhere else adds one.
-        else if (score.hasNoteAt (note->staff, note->measure, note->beat, note->pitch.step))
-            score.removeNotesAt (note->staff, note->measure, note->beat, note->pitch.step);
+        else if (score.hasNoteAt (part, note->staff, note->measure, note->beat, note->pitch.step))
+            score.removeNotesAt (part, note->staff, note->measure, note->beat, note->pitch.step);
         else
             score.addNote (*note);
 
@@ -1199,7 +1241,14 @@ void StaffView::updateChordButtons()
         button->setColour (juce::TextButton::buttonOnColourId, selectionColour.withAlpha (0.15f));
         button->setColour (juce::TextButton::textColourOffId, selectionColour);
         button->setColour (juce::TextButton::textColourOnId, selectionColour);
-        button->onClick = [this, measure] { if (onChordButtonClicked != nullptr) onChordButtonClicked (measure); };
+        button->onClick = [this, measure]
+        {
+            if (onClicked != nullptr)
+                onClicked();
+
+            if (onChordButtonClicked != nullptr)
+                onChordButtonClicked (measure);
+        };
         addAndMakeVisible (button);
     }
 
@@ -1210,7 +1259,8 @@ void StaffView::updateChordButtons()
     {
         auto* button = chordButtons[measure];
         const auto& layout = measureLayouts[(size_t) measure];
-        const auto hasChord = score.getChord (measure) != nullptr && score.getChord (measure)->hasNotes();
+        const auto* chord = score.getChord (part, measure);
+        const auto hasChord = chord != nullptr && chord->hasNotes();
         const auto width = juce::jmin (layout.width - 1.2f * staffSpace, 90.0f);
 
         button->setButtonText (hasChord ? "Edit Chord" : "Add Chord");

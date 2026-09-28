@@ -2,9 +2,12 @@
 
 namespace
 {
-    // Where the instrument's description and state are kept in the settings
-    const char* const instrumentKey = "instrument";
-    const char* const instrumentStateKey = "instrumentState";
+    // Where a part's instrument's description and state are kept in the settings: part 1's as
+    // they were when there was only one part, and part 2's after it
+    juce::String getInstrumentKey (int part)
+    {
+        return part == 0 ? "instrument" : "instrument" + juce::String (part + 1);
+    }
 
     juce::String withEllipsis (const juce::String& text)
     {
@@ -12,9 +15,12 @@ namespace
     }
 }
 
-InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, juce::PropertiesFile& settingsToUse)
+InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, int partToUse, juce::PropertiesFile& settingsToUse)
     : host (hostToUse),
+      part (partToUse),
       settings (settingsToUse),
+      instrumentKey (getInstrumentKey (part)),
+      instrumentStateKey (getInstrumentKey (part) + "State"),
       loadButton (withEllipsis ("Load Instrument")),
       editorButton ("Show Editor")
 {
@@ -146,7 +152,7 @@ void InstrumentPanel::createInstrument (const juce::PluginDescription& descripti
                 // The old instrument's editor has to go before the old instrument does.
                 safeThis->editorWindow = nullptr;
                 safeThis->listenTo (instrument.get());
-                safeThis->host.setInstrument (std::move (instrument));
+                safeThis->host.setInstrument (safeThis->part, std::move (instrument));
                 safeThis->saveInstrument();
 
                 // A new instrument chosen by hand is a change to the score. One reloaded from the
@@ -159,8 +165,8 @@ void InstrumentPanel::createInstrument (const juce::PluginDescription& descripti
             else if (source == Source::settings)
             {
                 // Forget an instrument that can't be loaded any more, rather than failing every time.
-                safeThis->settings.removeValue (instrumentKey);
-                safeThis->settings.removeValue (instrumentStateKey);
+                safeThis->settings.removeValue (safeThis->instrumentKey);
+                safeThis->settings.removeValue (safeThis->instrumentStateKey);
                 safeThis->settings.saveIfNeeded();
 
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't reload " + name,
@@ -198,7 +204,7 @@ void InstrumentPanel::reloadSavedInstrument()
 
 void InstrumentPanel::saveInstrument()
 {
-    auto* instrument = host.getInstrument();
+    auto* instrument = host.getInstrument (part);
 
     if (instrument == nullptr)
         return;
@@ -212,7 +218,7 @@ juce::MemoryBlock InstrumentPanel::getState() const
 {
     juce::MemoryBlock state;
 
-    if (auto* instrument = host.getInstrument())
+    if (auto* instrument = host.getInstrument (part))
         instrument->getStateInformation (state);
 
     return state;
@@ -221,7 +227,7 @@ juce::MemoryBlock InstrumentPanel::getState() const
 //==============================================================================
 juce::var InstrumentPanel::saveToJSON()
 {
-    auto* instrument = host.getInstrument();
+    auto* instrument = host.getInstrument (part);
 
     if (instrument == nullptr)
         return {};
@@ -251,7 +257,7 @@ void InstrumentPanel::loadFromJSON (const juce::var& json)
     state.fromBase64Encoding (json.getProperty ("state", {}).toString());
 
     // The same instrument just takes the score's settings, without loading it again.
-    if (auto* instrument = host.getInstrument(); instrument != nullptr && instrument->getPluginDescription().isDuplicateOf (description))
+    if (auto* instrument = host.getInstrument (part); instrument != nullptr && instrument->getPluginDescription().isDuplicateOf (description))
     {
         ++instrumentsRequested;
         nameBeingLoaded = {};
@@ -270,7 +276,7 @@ void InstrumentPanel::loadFromJSON (const juce::var& json)
 
 void InstrumentPanel::checkForSoundChanges()
 {
-    if (host.getInstrument() == nullptr || nameBeingLoaded.isNotEmpty() || ! soundTouched.exchange (false))
+    if (host.getInstrument (part) == nullptr || nameBeingLoaded.isNotEmpty() || ! soundTouched.exchange (false))
         return;
 
     // The instrument may have been put back as it was, e.g. by undoing a change in its editor.
@@ -291,7 +297,7 @@ void InstrumentPanel::startTrackingChanges()
 
 void InstrumentPanel::listenTo (juce::AudioPluginInstance* newInstrument)
 {
-    if (auto* instrument = host.getInstrument())
+    if (auto* instrument = host.getInstrument (part))
         instrument->removeListener (this);
 
     if (newInstrument != nullptr)
@@ -324,18 +330,22 @@ void InstrumentPanel::showEditor()
     }
 
     // Closing the editor saves the instrument, with any sound chosen in it.
-    if (auto* instrument = host.getInstrument())
+    if (auto* instrument = host.getInstrument (part))
         editorWindow = std::make_unique<PluginWindow> (*instrument, [this]
         {
             saveInstrument();
             checkForSoundChanges();
             editorWindow = nullptr;
         });
+
+    // Both parts could have the same instrument, so the window says which part's it is.
+    if (editorWindow != nullptr)
+        editorWindow->setName (editorWindow->getName() + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 Part ")) + juce::String (part + 1));
 }
 
 void InstrumentPanel::updateControls()
 {
-    const auto* instrument = host.getInstrument();
+    const auto* instrument = host.getInstrument (part);
     const auto isLoading = nameBeingLoaded.isNotEmpty();
 
     if (isLoading)
@@ -348,4 +358,12 @@ void InstrumentPanel::updateControls()
 
     loadButton.setEnabled (! isLoading);
     editorButton.setEnabled (instrument != nullptr && ! isLoading);
+
+    if (onStatusChanged != nullptr)
+        onStatusChanged();
+}
+
+juce::String InstrumentPanel::getStatus() const
+{
+    return nameLabel.getText();
 }

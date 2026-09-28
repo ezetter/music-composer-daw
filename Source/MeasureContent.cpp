@@ -76,12 +76,12 @@ namespace
         return content;
     }
 
-    StaffContent getNotesContent (const Score& score, Staff staff, int measure, const std::array<int, 7>& keyAlterations)
+    StaffContent getNotesContent (const Score& score, int part, Staff staff, int measure, const std::array<int, 7>& keyAlterations)
     {
         const auto beats = score.getBeatsPerMeasure();
         StaffContent content;
 
-        const auto isEmpty = [&] (int beat) { return score.getNotes (staff, measure, beat).empty(); };
+        const auto isEmpty = [&] (int beat) { return score.getNotes (part, staff, measure, beat).empty(); };
 
         bool allEmpty = true;
 
@@ -101,7 +101,7 @@ namespace
             {
                 StaffEvent event { (double) beat, Duration::quarter, {}, false, false };
 
-                for (const auto& pitch : score.getNotes (staff, measure, beat))
+                for (const auto& pitch : score.getNotes (part, staff, measure, beat))
                     event.tones.push_back (makeTone (pitch, keyAlterations));
 
                 content.events.push_back (event);
@@ -131,14 +131,14 @@ Duration getFullMeasureDuration (int beatsPerMeasure)
                                 : Duration::half;
 }
 
-MeasureContent getMeasureContent (const Score& score, int measure)
+MeasureContent getMeasureContent (const Score& score, int part, int measure)
 {
     MeasureContent content;
     std::array<bool, 2> filled { false, false };
 
-    if (const auto* measureChord = score.getChord (measure))
+    if (const auto* measureChord = score.getChord (part, measure))
     {
-        if (auto chord = score.getChordNotes (measure))
+        if (auto chord = score.getChordNotes (part, measure))
         {
             const auto& style = measureChord->style;
             content.chord = chord;
@@ -149,16 +149,16 @@ MeasureContent getMeasureContent (const Score& score, int measure)
 
             const auto otherStaff = music::getOtherStaff (style.staff);
 
-            if (score.chordUsesStaff (measure, otherStaff))
+            if (score.chordUsesStaff (part, measure, otherStaff))
             {
                 // Held for the whole measure, from the downbeat, like the chord. With all its notes
                 // taken out by hand, it's a whole-measure rest, rather than the quarter notes it hides.
                 auto& alternate = content.staves[(size_t) otherStaff];
                 alternate.source = StaffContent::Source::alternate;
 
-                if (auto tones = score.getAlternateTones (measure); ! tones.empty())
+                if (auto tones = score.getAlternateTones (part, measure); ! tones.empty())
                     alternate.events.push_back ({ 0.0, getFullMeasureDuration (score.getBeatsPerMeasure()), std::move (tones),
-                                                  score.getAlternateStaff() == music::AlternateStaff::rolledChord, false });
+                                                  score.getAlternateStaff (part) == music::AlternateStaff::rolledChord, false });
                 else
                     alternate.events.push_back ({ 0.0, Duration::whole, {}, false, true });
                 filled[(size_t) otherStaff] = true;
@@ -170,7 +170,7 @@ MeasureContent getMeasureContent (const Score& score, int measure)
 
     for (auto staff : { Staff::treble, Staff::bass })
         if (! filled[(size_t) staff])
-            content.staves[(size_t) staff] = getNotesContent (score, staff, measure, keyAlterations);
+            content.staves[(size_t) staff] = getNotesContent (score, part, staff, measure, keyAlterations);
 
     return content;
 }

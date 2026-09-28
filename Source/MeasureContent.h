@@ -35,7 +35,8 @@ struct MeasureContent
     ChordStyle chordStyle;
 };
 
-MeasureContent getMeasureContent (const Score&, int measure);
+/** What one part has in one measure. */
+MeasureContent getMeasureContent (const Score&, int part, int measure);
 
 /** A chord written as one note filling the measure: a whole note in 4/4, a dotted half in 3/4
     and a half in 2/4.

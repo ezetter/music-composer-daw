@@ -22,8 +22,9 @@ namespace
             spec.inversion = 0;
     }
 }
-ChordEditor::ChordEditor (Score& scoreToEdit, int measureToEdit, const ChordStyle& styleForNewChord)
+ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit, const ChordStyle& styleForNewChord)
     : score (scoreToEdit),
+      part (partToEdit),
       measure (measureToEdit)
 {
     chord.style = styleForNewChord;
@@ -123,7 +124,7 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int measureToEdit, const ChordStyl
     };
     reshuffleButton.setWantsKeyboardFocus (false);
     reshuffleButton.setTooltip ("Picks a new random order");
-    reshuffleButton.onClick = [this] { score.reshuffle (measure); };
+    reshuffleButton.onClick = [this] { score.reshuffle (part, measure); };
 
     for (auto* label : { &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel })
     {
@@ -137,7 +138,7 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int measureToEdit, const ChordStyl
     keyboardNotesLabel.setJustificationType (juce::Justification::topLeft);
 
     removeButton.setTooltip ("Takes the chord out of the measure");
-    removeButton.onClick = [this] { score.setChord (measure, std::nullopt); };
+    removeButton.onClick = [this] { score.setChord (part, measure, std::nullopt); };
 
     // Return or Escape closes the window, as well as Done.
     doneButton.addShortcut (juce::KeyPress (juce::KeyPress::returnKey));
@@ -167,13 +168,14 @@ ChordEditor::~ChordEditor()
 
 juce::String ChordEditor::getTitle() const
 {
-    return "Chord" + controls::fromUTF8 (" \xc2\xb7 Measure ") + juce::String (measure + 1);
+    return "Chord" + controls::fromUTF8 (" \xc2\xb7 Part ") + juce::String (part + 1)
+         + controls::fromUTF8 (" \xc2\xb7 Measure ") + juce::String (measure + 1);
 }
 
 void ChordEditor::loadChord()
 {
     // A measure without a chord keeps the style chosen for its new one.
-    if (const auto* existing = score.getChord (measure))
+    if (const auto* existing = score.getChord (part, measure))
         chord = *existing;
     else
         chord = MeasureChord { {}, {}, chord.style, {}, {} };
@@ -214,7 +216,7 @@ void ChordEditor::edit (const std::function<void (MeasureChord&)>& change)
         newChord.alternateNotes.reset();
 
     // Every change goes straight into the score, which sends it back here to show.
-    score.setChord (measure, newChord);
+    score.setChord (part, measure, newChord);
 }
 
 void ChordEditor::finish()
@@ -231,7 +233,8 @@ void ChordEditor::update()
     const auto& style = chord.style;
     const auto key = score.getKey();
 
-    title.setText ("CHORD " + controls::fromUTF8 ("\xc2\xb7") + " MEASURE " + juce::String (measure + 1), juce::dontSendNotification);
+    title.setText ("PART " + juce::String (part + 1) + controls::fromUTF8 (" \xc2\xb7 ") + "MEASURE " + juce::String (measure + 1),
+                   juce::dontSendNotification);
 
     flatButton.setToggleState (spec.flat, juce::dontSendNotification);
     majorButton.setToggleState (! spec.minor, juce::dontSendNotification);
@@ -327,7 +330,7 @@ void ChordEditor::update()
         keyboardNotesLabel.setText ("Set on the keyboard: " + names.joinIntoString (" "), juce::dontSendNotification);
     }
 
-    removeButton.setEnabled (score.getChord (measure) != nullptr);
+    removeButton.setEnabled (score.getChord (part, measure) != nullptr);
     resized();
 }
 

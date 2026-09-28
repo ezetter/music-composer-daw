@@ -5,13 +5,14 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <array>
 #include <atomic>
 #include <bitset>
 #include <optional>
 #include <vector>
 
-/** Hosts an instrument plugin, and plays it from the on-screen keyboard, MIDI controllers and
-    the score.
+/** Hosts an instrument plugin for each of the score's parts, and plays them from the score,
+    in time together. The on-screen keyboard and MIDI controllers play the active part's instrument.
 
     It's an audio device callback, so it can play straight through an audio device. Apart from the
     callbacks, everything here has to be called on the message thread.
@@ -23,21 +24,29 @@ class InstrumentHost final : public juce::AudioIODeviceCallback,
 public:
     InstrumentHost() = default;
 
-    /** The instrument hears the notes played on this keyboard, and the score's notes show up on it. */
+    /** The active part's instrument hears the notes played on this keyboard, and the active part's
+        notes from the score show up on it.
+    */
     juce::MidiKeyboardState& getKeyboardState() noexcept { return keyboardState; }
 
-    /** The instrument, or null if there isn't one yet. */
-    juce::AudioPluginInstance* getInstrument() const noexcept { return instrument.get(); }
+    /** A part's instrument, or null if it doesn't have one yet. */
+    juce::AudioPluginInstance* getInstrument (int part) const noexcept { return slots[(size_t) part].instrument.get(); }
 
-    /** Replaces the instrument, deleting the old one. */
-    void setInstrument (std::unique_ptr<juce::AudioPluginInstance>);
+    /** Replaces a part's instrument, deleting the old one. */
+    void setInstrument (int part, std::unique_ptr<juce::AudioPluginInstance>);
+
+    /** Chooses the part whose instrument the keyboard and MIDI controllers play. Notes they're
+        holding on the other part's instrument are let go.
+    */
+    void setActivePart (int part);
+    int getActivePart() const noexcept { return activePart; }
 
     /** The sample rate and block size to create a new instrument with. */
     double getSampleRate() const;
     int getBlockSize() const;
 
-    /** Plays some measures of the score, as they are now. Does nothing unless the audio is running.
-        When looping, they play over and over until stopped.
+    /** Plays some measures of the score, as they are now, every part on its own instrument. Does
+        nothing unless the audio is running. When looping, they play over and over until stopped.
     */
     void play (const Score&, int firstMeasure, int lastMeasure, bool loop = false);
     void stop();
@@ -80,7 +89,7 @@ private:
     /** Some measures of the score, ready to play. */
     struct Passage
     {
-        std::vector<NoteEvent> events;
+        std::array<std::vector<NoteEvent>, Score::numParts> events;     // for each part
         int64_t length = 0;             // in samples
         double secondsPerBeat = 0.5;
         int beatsPerMeasure = 4;
@@ -88,13 +97,23 @@ private:
     };
 
     static Passage createPassage (const Score&, int firstMeasure, int lastMeasure, double sampleRate);
-    static std::vector<NoteEvent> createNoteEvents (const Score&, int firstMeasure, int lastMeasure, double sampleRate);
+    static std::vector<NoteEvent> createNoteEvents (const Score&, int part, int firstMeasure, int lastMeasure, double sampleRate);
+
+    /** A part's instrument, and what it plays. */
+    struct Slot
+    {
+        std::unique_ptr<juce::AudioPluginInstance> instrument;
+        juce::AudioBuffer<float> buffer;
+        juce::MidiBuffer midi;
+        std::bitset<128> scoreNotesOn;      // notes from the score that are sounding
+    };
 
     juce::Optional<PositionInfo> getPosition() const override;
 
     double getBeatsPlayed() const noexcept;
-    void allocateInstrumentBuffer();
-    void addScoreEvents (juce::MidiBuffer&, int numSamples);
+    void allocateInstrumentBuffer (Slot&);
+    void addScoreEvents (int numSamples);
+    void letGoOfKeyboardNotes (Slot&);
     void advancePlayback();
 
     juce::MidiKeyboardState keyboardState;
@@ -103,22 +122,21 @@ private:
 
     // Everything below is shared with the audio thread, which holds this lock while it's working.
     mutable juce::CriticalSection lock;
-    std::unique_ptr<juce::AudioPluginInstance> instrument;
-    juce::AudioBuffer<float> instrumentBuffer;
-    juce::MidiBuffer midiBuffer;
+    std::array<Slot, Score::numParts> slots;
+    std::atomic<int> activePart { 0 };
+    int keyboardPart = 0;               // the part the keyboard played in the last block
     double sampleRate = 0.0;
     int blockSize = 0;
 
     Passage passage;                    // what's playing
     Passage nextPassage;                // what the loop plays next time through, if hasNextPassage
     bool hasNextPassage = false;
-    size_t nextNoteEvent = 0;
+    std::array<size_t, Score::numParts> nextNoteEvents {};
     int64_t position = 0;               // in samples since this time through started, at the start of the block being played
     int64_t nextPosition = 0;           // where the next block starts, once this one's been played
     bool looping = false;
     bool playing = false;
-    std::bitset<128> scoreNotesOn;      // notes from the score that are sounding
-    bool releaseScoreNotes = false;     // whether they need turning off
+    bool releaseScoreNotes = false;     // whether the score's notes that are sounding need turning off
 
     std::atomic<double> playbackPosition { -1.0 };    // negative when stopped
 

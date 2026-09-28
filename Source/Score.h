@@ -10,13 +10,14 @@
 
 using music::Staff;
 
-/** A quarter note on one beat of one staff. */
+/** A quarter note on one beat of one staff, in one of the score's parts. */
 struct Note
 {
     Staff staff;
     int measure;
     int beat;
     music::Pitch pitch;
+    int part = 0;
 
     bool operator== (const Note&) const = default;
 };
@@ -53,14 +54,16 @@ struct MeasureChord
     bool operator== (const MeasureChord&) const = default;
 };
 
-/** A piece of music on a grand staff, in one key and time signature. Listeners hear about
-    every change.
+/** A piece of music in two parts, each on its own grand staff and played on its own
+    instrument. The parts share the key, time signature, tempo and measures, but each has its
+    own notes, chords and alternate staff. Listeners hear about every change.
 */
 class Score : public juce::ChangeBroadcaster
 {
 public:
     static constexpr int maxBeatsPerMeasure = 4;
     static constexpr int initialMeasures = 4;
+    static constexpr int numParts = 2;
 
     Score();
 
@@ -86,23 +89,24 @@ public:
 
     static constexpr double minBeatsPerMinute = 20.0, maxBeatsPerMinute = 300.0;
 
-    /** What the staff a chord isn't on shows, for every chord in the score. */
-    music::AlternateStaff getAlternateStaff() const noexcept { return alternateStaff; }
+    /** What the staff a chord isn't on shows, for every chord in a part. */
+    music::AlternateStaff getAlternateStaff (int part) const noexcept { return parts[(size_t) part].alternateStaff; }
 
-    /** Changes what the alternate staff shows, for every chord. Notes set by hand on the
-        alternate staff go back to what their chords give it. Quarter notes on the alternate
+    /** Changes what the alternate staff shows, for every chord in a part. Notes set by hand on
+        the alternate staff go back to what their chords give it. Quarter notes on the alternate
         staff in a chord's measure are hidden rather than lost, and come back with None.
     */
-    void setAlternateStaff (music::AlternateStaff);
+    void setAlternateStaff (int part, music::AlternateStaff);
 
     /** How long a measure lasts when it plays, at the tempo. */
     double getSecondsPerMeasure() const noexcept { return beatsPerMeasure * 60.0 / beatsPerMinute; }
 
     //==============================================================================
-    int getNumMeasures() const noexcept { return (int) measures.size(); }
+    /** The number of measures, which every part has. */
+    int getNumMeasures() const noexcept { return (int) parts[0].measures.size(); }
     void addMeasure();
 
-    /** Removes the last measure and everything in it, unless it's the only one. */
+    /** Removes the last measure and everything in it, in every part, unless it's the only one. */
     void removeLastMeasure();
 
     //==============================================================================
@@ -112,25 +116,25 @@ public:
     bool addNote (const Note&);
 
     /** The quarter notes on one beat of one staff, lowest first. */
-    const std::vector<music::Pitch>& getNotes (Staff, int measure, int beat) const;
+    const std::vector<music::Pitch>& getNotes (int part, Staff, int measure, int beat) const;
 
     /** Whether a beat of a staff has a quarter note on this line or space, whatever its sharp or flat. */
-    bool hasNoteAt (Staff, int measure, int beat, int step) const;
+    bool hasNoteAt (int part, Staff, int measure, int beat, int step) const;
 
     /** Removes the quarter notes on a line or space of one beat. Returns false if there weren't any. */
-    bool removeNotesAt (Staff, int measure, int beat, int step);
+    bool removeNotesAt (int part, Staff, int measure, int beat, int step);
 
     //==============================================================================
     /** The measure's chord, or null if it doesn't have one. */
-    const MeasureChord* getChord (int measure) const;
+    const MeasureChord* getChord (int part, int measure) const;
 
     /** Sets or removes a measure's chord. A chord with notes replaces the quarter notes on its
         staff, and hides the ones on the alternate staff, if there is one.
     */
-    void setChord (int measure, std::optional<MeasureChord>);
+    void setChord (int part, int measure, std::optional<MeasureChord>);
 
     /** The notes and names of a measure's chord in the current key, if it has any notes. */
-    std::optional<music::Chord> getChordNotes (int measure) const;
+    std::optional<music::Chord> getChordNotes (int part, int measure) const;
 
     /** The notes and names a chord would have in this score's key, if it has any notes. */
     std::optional<music::Chord> getChordNotes (const MeasureChord&) const;
@@ -141,26 +145,26 @@ public:
     void toggleChordNote (MeasureChord&, int midiNote) const;
 
     /** Whether a measure's chord puts notes on a staff, as the chord or the alternate staff. */
-    bool chordUsesStaff (int measure, Staff) const;
+    bool chordUsesStaff (int part, int measure, Staff) const;
 
     /** Adds a note to a measure's chord, or takes it out if it's already there, as setting the
         chord's notes on the piano does. A measure without a chord gets one in the given style.
     */
-    void toggleChordNote (int measure, int midiNote, const ChordStyle& styleForNewChord);
+    void toggleChordNote (int part, int measure, int midiNote, const ChordStyle& styleForNewChord);
 
     /** Adds a note to the notes a measure's chord puts on its alternate staff, or takes it out if
         it's already there. From then on the alternate staff keeps these notes, until the chord changes.
     */
-    void toggleAlternateNote (int measure, const music::KeyboardNote&);
+    void toggleAlternateNote (int part, int measure, const music::KeyboardNote&);
 
     /** The notes a measure's chord puts on its alternate staff. */
-    std::vector<music::Tone> getAlternateTones (int measure) const;
+    std::vector<music::Tone> getAlternateTones (int part, int measure) const;
 
     /** Picks a new order for a measure's chord to play its notes in, if it's a Random chord. */
-    void reshuffle (int measure);
+    void reshuffle (int part, int measure);
 
     //==============================================================================
-    /** Replaces the score with a new, empty one. */
+    /** Replaces the score with a new, empty one, with nothing in either part. */
     void clear();
 
     /** The whole score, as JSON to save in a file. */
@@ -178,12 +182,19 @@ private:
         std::optional<MeasureChord> chord;
     };
 
+    struct Part
+    {
+        std::vector<Measure> measures = std::vector<Measure> (initialMeasures);
+        music::AlternateStaff alternateStaff = music::AlternateStaff::none;
+    };
+
+    Measure& getMeasure (int part, int measure);
+    const Measure& getMeasure (int part, int measure) const;
     void tidyChord (Measure&, bool reshuffleRandomOrder = false);
 
-    std::vector<Measure> measures = std::vector<Measure> (initialMeasures);
+    std::array<Part, numParts> parts;
     int keyIndex = 0;
     int beatsPerMeasure = 4;
     double beatsPerMinute = 120.0;
-    music::AlternateStaff alternateStaff = music::AlternateStaff::none;
     juce::Random random;
 };

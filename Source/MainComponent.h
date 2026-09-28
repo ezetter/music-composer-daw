@@ -44,6 +44,24 @@ public:
     static constexpr int minimumHeight = 640;
 
 private:
+    /** The parts' staff systems, one above the other, their measures lined up. */
+    struct StaffSystems final : public juce::Component
+    {
+        explicit StaffSystems (Score&);
+
+        /** At least this tall, to fill the view it's in. */
+        void setMinimumHeight (int);
+
+        std::array<std::unique_ptr<StaffView>, Score::numParts> views;
+
+    private:
+        void childBoundsChanged (juce::Component*) override;
+        void layOut();
+
+        int minimumHeight = 0;
+        bool layingOut = false;
+    };
+
     enum Commands
     {
         newScore = 1,
@@ -63,8 +81,15 @@ private:
     bool keyPressed (const juce::KeyPress&, juce::Component*) override;
 
 
-    /** Opens the chord window for a measure, to add a chord or edit the one it has. */
-    void editChord (int measure);
+    /** Makes a part the active one: the keyboard plays its instrument, and the toolbar and the
+        sidebar's alternate staff show and set its.
+    */
+    void setActivePart (int part);
+
+    /** Opens the chord window for a measure of a part, to add a chord or edit the one it has.
+        The part becomes the active one.
+    */
+    void editChord (int part, int measure);
 
     /** The chord being edited, if the chord window is open. */
     ChordEditor* getChordEditor() const;
@@ -81,6 +106,7 @@ private:
     void tempoEdited (bool finished);
     void scoreReplaced();
     void showDocumentTitle();
+    void showPartTitles();
 
     juce::PropertiesFile& settings;
     juce::AudioDeviceManager audioDeviceManager;
@@ -97,17 +123,19 @@ private:
     juce::TextButton loopButton { "Loop" };
     juce::Label tempoLabel;
     juce::TextEditor tempoEditor;
-    InstrumentPanel instrumentPanel;
+    std::array<juce::TextButton, Score::numParts> partButtons;
+    std::array<std::unique_ptr<InstrumentPanel>, Score::numParts> instrumentPanels;     // only the active part's shows
 
     ScorePanel scorePanel { score };
     juce::Component sidebarContent;
     juce::Viewport sidebar;
 
-    StaffView staffView { score };
+    StaffSystems staffSystems { score };
     juce::Viewport staffViewport;
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 
+    int activePart = 0;
     ChordStyle lastChordStyle;          // what a new chord starts with: whichever was chosen last
     juce::Component::SafePointer<juce::Component> keyListenerTarget;
 

@@ -18,10 +18,11 @@ class ChordEditor final : public juce::Component,
                           private juce::ChangeListener
 {
 public:
-    /** Edits the chord in a measure, or starts a new one there in the given style. */
-    ChordEditor (Score&, int measure, const ChordStyle& styleForNewChord);
+    /** Edits the chord in a measure of one part, or starts a new one there in the given style. */
+    ChordEditor (Score&, int part, int measure, const ChordStyle& styleForNewChord);
     ~ChordEditor() override;
 
+    int getPart() const noexcept { return part; }
     int getMeasure() const noexcept { return measure; }
 
     /** The measure's chord, or the new one it would get, with the style chosen for it. */
@@ -38,7 +39,7 @@ public:
     */
     std::function<void()> onFinished;
 
-    /** The title for a window showing the editor, such as "Chord · Measure 3". */
+    /** The title for a window showing the editor, such as "Chord · Part 1 · Measure 3". */
     juce::String getTitle() const;
 
     int getIdealWidth() const;
@@ -53,6 +54,7 @@ private:
     void finish();
 
     Score& score;
+    const int part;
     const int measure;
     MeasureChord chord;
 

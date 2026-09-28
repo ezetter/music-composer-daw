@@ -44,8 +44,15 @@ juce::Result ScoreDocument::loadDocument (const juce::File& file)
     const auto result = score.loadJSON (json);
     replacingScore = false;
 
+    // Scores from before there were two parts have one instrument, for the first.
     if (result.wasOk() && loadInstrument != nullptr)
-        loadInstrument (json.getProperty ("instrument", {}));
+    {
+        const auto* instruments = json.getProperty ("instruments", {}).getArray();
+
+        for (int part = 0; part < Score::numParts; ++part)
+            loadInstrument (part, instruments != nullptr ? instruments->operator[] (part)
+                                                         : part == 0 ? json.getProperty ("instrument", {}) : juce::var());
+    }
 
     return result;
 }
@@ -54,9 +61,16 @@ juce::Result ScoreDocument::saveDocument (const juce::File& file)
 {
     auto json = score.toJSON();
 
+    // Each part's instrument, or null for a part without one
     if (getInstrumentToSave != nullptr)
-        if (const auto instrument = getInstrumentToSave(); ! instrument.isVoid())
-            json.getDynamicObject()->setProperty ("instrument", instrument);
+    {
+        juce::Array<juce::var> instruments;
+
+        for (int part = 0; part < Score::numParts; ++part)
+            instruments.add (getInstrumentToSave (part));
+
+        json.getDynamicObject()->setProperty ("instruments", instruments);
+    }
 
     if (file.replaceWithText (juce::JSON::toString (json)))
         return juce::Result::ok();

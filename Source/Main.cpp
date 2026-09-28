@@ -55,7 +55,13 @@ private:
             setContentOwned (new MainComponent (settings), true);
             setResizable (true, false);
             setResizeLimits (MainComponent::minimumWidth, MainComponent::minimumHeight, 10000, 10000);
-            centreWithSize (getWidth(), getHeight());
+            // Both parts' staves fit on a big enough screen; on a smaller one, the staves scroll.
+            auto size = getBounds();
+
+            if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+                size = size.constrainedWithin (display->userBounds.toNearestInt().reduced (20));
+
+            centreWithSize (size.getWidth(), size.getHeight());
             setVisible (true);
         }
 

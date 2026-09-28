@@ -34,15 +34,71 @@ namespace
     }
 }
 
+//==============================================================================
+MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
+{
+    for (int part = 0; part < Score::numParts; ++part)
+    {
+        views[(size_t) part] = std::make_unique<StaffView> (scoreToShow, part);
+        addAndMakeVisible (*views[(size_t) part]);
+    }
+
+    layOut();
+}
+
+void MainComponent::StaffSystems::setMinimumHeight (int height)
+{
+    minimumHeight = height;
+    layOut();
+}
+
+void MainComponent::StaffSystems::childBoundsChanged (juce::Component*)
+{
+    // A view grows or shrinks with its score.
+    layOut();
+}
+
+void MainComponent::StaffSystems::layOut()
+{
+    if (layingOut)
+        return;
+
+    const juce::ScopedValueSetter<bool> guard (layingOut, true);
+
+    auto width = 0;
+
+    for (auto& view : views)
+        width = juce::jmax (width, view->getContentWidth());
+
+    // Any spare height is shared between the systems, which centre themselves in it.
+    const auto height = juce::jmax (Score::numParts * StaffView::getContentHeight(), minimumHeight);
+    setSize (width, height);
+
+    for (size_t part = 0; part < views.size(); ++part)
+    {
+        const auto top = height * (int) part / Score::numParts;
+        const auto bottom = height * ((int) part + 1) / Score::numParts;
+        views[part]->setBounds (0, top, width, bottom - top);
+    }
+}
+
+//==============================================================================
 MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     : settings (settingsToUse),
-      document (score, settings),
-      instrumentPanel (instrumentHost, settings)
+      document (score, settings)
 {
-    // The instrument, and its sound, are saved with the score.
-    document.getInstrumentToSave = [this] { return instrumentPanel.saveToJSON(); };
-    document.loadInstrument = [this] (const juce::var& json) { instrumentPanel.loadFromJSON (json); };
-    instrumentPanel.onInstrumentChanged = [this] { document.changed(); };
+    // Each part has its own instrument, which is saved with the score, sound and all.
+    for (int part = 0; part < Score::numParts; ++part)
+    {
+        auto& panel = instrumentPanels[(size_t) part];
+        panel = std::make_unique<InstrumentPanel> (instrumentHost, part, settings);
+        panel->onInstrumentChanged = [this] { document.changed(); };
+        panel->onStatusChanged = [this] { showPartTitles(); };
+        addChildComponent (*panel);
+    }
+
+    document.getInstrumentToSave = [this] (int part) { return instrumentPanels[(size_t) part]->saveToJSON(); };
+    document.loadInstrument = [this] (int part, const juce::var& json) { instrumentPanels[(size_t) part]->loadFromJSON (json); };
 
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
@@ -75,13 +131,24 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     tempoEditor.onFocusLost = [this] { tempoEdited (true); };
 
 
+    // The active part, which the keyboard plays
+    controls::makeSegmented ({ &partButtons[0], &partButtons[1] }, 1);
+
+    for (int part = 0; part < Score::numParts; ++part)
+    {
+        auto& button = partButtons[(size_t) part];
+        button.setButtonText ("Part " + juce::String (part + 1));
+        button.setTooltip ("Play part " + juce::String (part + 1) + "'s instrument on the keyboard, and set its alternate staff");
+        button.onClick = [this, part] { setActivePart (part); };
+    }
+
     // Clicking a button shouldn't take the keyboard focus away from the piano, which the
     // computer keyboard can play too.
     playButton.setWantsKeyboardFocus (false);
     loopButton.setWantsKeyboardFocus (false);
 
     for (auto* component : std::initializer_list<juce::Component*> { &playButton, &loopButton, &tempoLabel, &tempoEditor,
-                                                                     &instrumentPanel })
+                                                                     &partButtons[0], &partButtons[1] })
         addAndMakeVisible (component);
 
     scorePanel.onAddMeasure = [this] { addMeasure(); };
@@ -91,9 +158,16 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     sidebar.setScrollBarsShown (true, false);
     addAndMakeVisible (sidebar);
 
-    staffView.onChordButtonClicked = [this] (int measure) { editChord (measure); };
-    staffViewport.setViewedComponent (&staffView, false);
-    staffViewport.setScrollBarsShown (false, true);
+    // Clicking a part's staff, or its chord buttons, makes it the active part.
+    for (auto& view : staffSystems.views)
+    {
+        const auto part = view->getPart();
+        view->onClicked = [this, part] { setActivePart (part); };
+        view->onChordButtonClicked = [this, part] (int measure) { editChord (part, measure); };
+    }
+
+    staffViewport.setViewedComponent (&staffSystems, false);
+    staffViewport.setScrollBarsShown (true, true);
     addAndMakeVisible (staffViewport);
 
     keyboard.setAvailableRange (lowestKey, highestKey);
@@ -118,7 +192,9 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     setApplicationCommandManagerToWatch (&commandManager);
     juce::MenuBarModel::setMacMainMenu (this);
 
-    setSize (1280, 820);
+    setActivePart (0);
+    showPartTitles();
+    setSize (1280, 1060);
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate
@@ -173,8 +249,12 @@ void MainComponent::resized()
     toolbar.removeFromLeft (4);
     tempoEditor.setBounds (toolbar.removeFromLeft (56));
     toolbar.removeFromLeft (20);
+    partButtons[0].setBounds (toolbar.removeFromLeft (70));
+    partButtons[1].setBounds (toolbar.removeFromLeft (70));
     toolbar.removeFromLeft (20);
-    instrumentPanel.setBounds (toolbar);
+
+    for (auto& panel : instrumentPanels)
+        panel->setBounds (toolbar);
 
     sidebar.setBounds (bounds.removeFromLeft (sidebarWidth));
     bounds.removeFromLeft (1);
@@ -188,9 +268,7 @@ void MainComponent::resized()
     keyboard.setKeyWidth ((float) keyboard.getWidth() / (float) numWhiteKeys);
 
     staffViewport.setBounds (bounds);
-    staffView.setSize (staffView.getContentWidth(),
-                       juce::jmax (StaffView::getContentHeight(),
-                                   staffViewport.getHeight() - staffViewport.getScrollBarThickness()));
+    staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
 }
 
 void MainComponent::parentHierarchyChanged()
@@ -244,7 +322,32 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 }
 
 //==============================================================================
-void MainComponent::editChord (int measure)
+void MainComponent::setActivePart (int part)
+{
+    activePart = part;
+    instrumentHost.setActivePart (part);
+    scorePanel.setPart (part);
+
+    for (int p = 0; p < Score::numParts; ++p)
+    {
+        partButtons[(size_t) p].setToggleState (p == part, juce::dontSendNotification);
+        instrumentPanels[(size_t) p]->setVisible (p == part);
+        staffSystems.views[(size_t) p]->setActive (p == part);
+    }
+
+    // The chord window is for the active part's chords.
+    if (const auto* editor = getChordEditor(); editor != nullptr && editor->getPart() != part)
+        closeChordEditor();
+}
+
+void MainComponent::showPartTitles()
+{
+    for (int part = 0; part < Score::numParts; ++part)
+        staffSystems.views[(size_t) part]->setTitle ("Part " + juce::String (part + 1) + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 "))
+                                                     + instrumentPanels[(size_t) part]->getStatus());
+}
+
+void MainComponent::editChord (int part, int measure)
 {
     // One chord is edited at a time. The window stays where it was, if it's open already.
     std::optional<juce::Point<int>> position;
@@ -253,8 +356,9 @@ void MainComponent::editChord (int measure)
         position = chordWindow->getPosition();
 
     closeChordEditor();
+    setActivePart (part);
 
-    auto editor = std::make_unique<ChordEditor> (score, measure, lastChordStyle);
+    auto editor = std::make_unique<ChordEditor> (score, part, measure, lastChordStyle);
     auto* editorPointer = editor.get();
 
     editor->onChordChanged = [this, editorPointer]
@@ -270,7 +374,10 @@ void MainComponent::editChord (int measure)
             return;
 
         chordWindow->setVisible (false);
-        staffView.setSelectedMeasure ({});
+
+        for (auto& view : staffSystems.views)
+            view->setSelectedMeasure ({});
+
         showHeldNotes();
 
         juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this), editorPointer]
@@ -287,7 +394,7 @@ void MainComponent::editChord (int measure)
     chordWindow->setTopLeftPosition (position.value_or (sidebarArea.getTopLeft() + juce::Point<int> (8, 8)));
     chordWindow->setVisible (true);
 
-    staffView.setSelectedMeasure (measure);
+    staffSystems.views[(size_t) part]->setSelectedMeasure (measure);
     scrollToMeasure (measure);
     showHeldNotes();
 }
@@ -300,18 +407,21 @@ ChordEditor* MainComponent::getChordEditor() const
 void MainComponent::closeChordEditor()
 {
     chordWindow = nullptr;
-    staffView.setSelectedMeasure ({});
+
+    for (auto& view : staffSystems.views)
+        view->setSelectedMeasure ({});
+
     showHeldNotes();
 }
 
 void MainComponent::scrollToMeasure (int measure)
 {
     // A measure out of view is brought to a quarter of the way across.
-    const auto area = staffView.getMeasureArea (measure);
+    const auto area = staffSystems.views[0]->getMeasureArea (measure);
     const auto viewArea = staffViewport.getViewArea();
 
     if (area.getX() < viewArea.getX() || area.getRight() > viewArea.getRight())
-        staffViewport.setViewPosition (area.getX() - viewArea.getWidth() / 4, 0);
+        staffViewport.setViewPosition (area.getX() - viewArea.getWidth() / 4, viewArea.getY());
 }
 
 void MainComponent::pianoKeyClicked (int midiNote)
@@ -359,7 +469,8 @@ void MainComponent::showPlaybackPosition()
     const auto position = instrumentHost.getPlaybackPosition();
 
     playButton.setButtonText (position.has_value() ? "Stop" : "Play");
-    staffView.setPlaybackPosition (position);
+    for (auto& view : staffSystems.views)
+        view->setPlaybackPosition (position);
 
     if (! position.has_value())
     {
@@ -368,11 +479,11 @@ void MainComponent::showPlaybackPosition()
     }
 
     // When the beat that's playing goes out of view, scroll it back to a quarter of the way across.
-    const auto playingArea = staffView.getPlaybackArea();
+    const auto playingArea = staffSystems.views[0]->getPlaybackArea();
     const auto viewArea = staffViewport.getViewArea();
 
     if (playingArea.getX() < viewArea.getX() || playingArea.getRight() > viewArea.getRight())
-        staffViewport.setViewPosition (playingArea.getX() - viewArea.getWidth() / 4, 0);
+        staffViewport.setViewPosition (playingArea.getX() - viewArea.getWidth() / 4, viewArea.getY());
 }
 
 void MainComponent::tempoEdited (bool finished)
@@ -405,7 +516,7 @@ void MainComponent::addMeasure()
     score.addMeasure();
 
     // Scroll to the end, so the new measure is in view.
-    staffViewport.setViewPosition (staffView.getWidth(), 0);
+    staffViewport.setViewPosition (staffSystems.getWidth(), staffViewport.getViewPositionY());
 }
 
 void MainComponent::removeMeasure()
@@ -515,8 +626,9 @@ bool MainComponent::perform (const InvocationInfo& invocation)
 
 void MainComponent::saveChangesThen (std::function<void()> action)
 {
-    // The instrument's sound may have been changed in its editor, which might still be open.
-    instrumentPanel.checkForSoundChanges();
+    // An instrument's sound may have been changed in its editor, which might still be open.
+    for (auto& panel : instrumentPanels)
+        panel->checkForSoundChanges();
 
     document.saveIfNeededAndUserAgreesAsync ([safeThis = juce::Component::SafePointer (this), action] (juce::FileBasedDocument::SaveResult result)
     {

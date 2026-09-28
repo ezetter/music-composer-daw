@@ -7,7 +7,8 @@
 
 #include <atomic>
 
-/** Shows which instrument is loaded, with buttons to load a new one and to open its editor.
+/** Shows which instrument one of the score's parts has, with buttons to load a new one and to
+    open its editor.
 
     The instrument and its settings are kept in the app's settings, and loaded again next time.
     They're saved with the score too, and loaded again when the score is opened.
@@ -17,7 +18,15 @@ class InstrumentPanel final : public juce::Component,
                               private juce::Timer
 {
 public:
-    InstrumentPanel (InstrumentHost&, juce::PropertiesFile& settings);
+    InstrumentPanel (InstrumentHost&, int part, juce::PropertiesFile& settings);
+
+    int getPart() const noexcept { return part; }
+
+    /** What the panel says about the instrument: its name, "Loading…" or "No instrument". */
+    juce::String getStatus() const;
+
+    /** Called when the instrument, or whether it's loading, changes. */
+    std::function<void()> onStatusChanged;
     ~InstrumentPanel() override;
 
     void resized() override;
@@ -67,7 +76,9 @@ private:
     void updateControls();
 
     InstrumentHost& host;
+    const int part;
     juce::PropertiesFile& settings;
+    const juce::String instrumentKey, instrumentStateKey;     // where the instrument is kept in the settings
     juce::AudioPluginFormatManager formatManager;
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File pluginFolder { "/Library/Audio/Plug-Ins/VST3" };

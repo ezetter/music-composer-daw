@@ -21,13 +21,13 @@ public:
 
     static constexpr auto fileExtension = ".amscore";
 
-    /** Supplies the instrument and its settings to save with the score, as JSON. */
-    std::function<juce::var()> getInstrumentToSave;
+    /** Supplies a part's instrument and its settings to save with the score, as JSON. */
+    std::function<juce::var (int part)> getInstrumentToSave;
 
-    /** Loads the instrument an opened score was saved with, given the JSON getInstrumentToSave
-        gave, or void if it was saved without one.
+    /** Loads the instrument a part of an opened score was saved with, given the JSON
+        getInstrumentToSave gave, or void if it was saved without one.
     */
-    std::function<void (const juce::var&)> loadInstrument;
+    std::function<void (int part, const juce::var&)> loadInstrument;
 
     juce::String getDocumentTitle() override;
 

@@ -33,9 +33,8 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
 
     alternateBox.addItemList ({ "None", "Root", "Octave", "Block chord", "Rolled chord" }, 1);
     alternateBox.setTooltip ("What the other staff shows under or over every chord");
-    alternateBox.onChange = [this] { score.setAlternateStaff ((music::AlternateStaff) (alternateBox.getSelectedId() - 1)); };
+    alternateBox.onChange = [this] { score.setAlternateStaff (part, (music::AlternateStaff) (alternateBox.getSelectedId() - 1)); };
 
-    alternateHint.setText ("For every chord", juce::dontSendNotification);
     alternateHint.setFont (juce::FontOptions (12.0f));
     alternateHint.setColour (juce::Label::textColourId, controls::secondaryText);
     alternateHint.setBorderSize ({});
@@ -52,6 +51,12 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
     removeMeasureButton.setWantsKeyboardFocus (false);
 
     score.addChangeListener (this);
+    update();
+}
+
+void ScorePanel::setPart (int newPart)
+{
+    part = newPart;
     update();
 }
 
@@ -106,6 +111,7 @@ void ScorePanel::update()
     keyBox.setSelectedId (score.getKeyIndex() + 1, juce::dontSendNotification);
     signatureLabel.setText (music::getKeySignatureText (score.getKey()), juce::dontSendNotification);
     timeSignatureBox.setSelectedId (score.getBeatsPerMeasure(), juce::dontSendNotification);
-    alternateBox.setSelectedId ((int) score.getAlternateStaff() + 1, juce::dontSendNotification);
+    alternateBox.setSelectedId ((int) score.getAlternateStaff (part) + 1, juce::dontSendNotification);
+    alternateHint.setText ("For every chord in part " + juce::String (part + 1), juce::dontSendNotification);
     removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
 }

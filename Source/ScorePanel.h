@@ -6,8 +6,8 @@
 
 #include <functional>
 
-/** The settings for the whole score: its key, time signature, what the alternate staff shows,
-    and the number of measures.
+/** The settings for the whole score: its key, time signature and number of measures, and what
+    the alternate staff shows in the active part.
 */
 class ScorePanel final : public juce::Component,
                          private juce::ChangeListener
@@ -18,6 +18,9 @@ public:
 
     std::function<void()> onAddMeasure, onRemoveMeasure;
 
+    /** Chooses the part whose alternate staff the panel shows and sets. */
+    void setPart (int);
+
     int getIdealHeight() const;
     void resized() override;
 
@@ -26,6 +29,7 @@ private:
     void update();
 
     Score& score;
+    int part = 0;
 
     juce::Label keyHeading, signatureLabel, timeSignatureHeading, alternateHeading, alternateHint, measuresHeading;
     juce::ComboBox keyBox, timeSignatureBox, alternateBox;
