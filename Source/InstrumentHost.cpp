@@ -83,7 +83,7 @@ int InstrumentHost::getBlockSize() const
 }
 
 //==============================================================================
-void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure)
+void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure, bool loop)
 {
     double currentSampleRate = 0.0;
 
@@ -95,22 +95,73 @@ void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure
     if (currentSampleRate <= 0.0)
         return;
 
-    auto events = createNoteEvents (score, firstMeasure, lastMeasure, currentSampleRate);
-    const auto beats = score.getBeatsPerMeasure();
-    const auto seconds = (double) (lastMeasure - firstMeasure + 1) * score.getSecondsPerMeasure();
+    auto newPassage = createPassage (score, firstMeasure, lastMeasure, currentSampleRate);
 
+    {
+        const juce::ScopedLock sl (lock);
+
+        std::swap (passage, newPassage);
+        hasNextPassage = false;
+        nextNoteEvent = 0;
+        position = 0;
+        nextPosition = 0;
+        looping = loop;
+        playing = true;
+        releaseScoreNotes = true;
+        playbackPosition = passage.firstBeat;
+    }
+
+    // The old passage is freed here, outside the lock.
+}
+
+void InstrumentHost::updateLoop (const Score& score, int firstMeasure, int lastMeasure)
+{
+    double currentSampleRate = 0.0;
+
+    {
+        const juce::ScopedLock sl (lock);
+
+        if (! playing)
+            return;
+
+        currentSampleRate = sampleRate;
+    }
+
+    auto newPassage = createPassage (score, firstMeasure, lastMeasure, currentSampleRate);
+
+    {
+        const juce::ScopedLock sl (lock);
+
+        if (! playing)
+            return;
+
+        std::swap (nextPassage, newPassage);
+        hasNextPassage = true;
+    }
+
+    // Whatever was waiting before is freed here, outside the lock.
+}
+
+InstrumentHost::Passage InstrumentHost::createPassage (const Score& score, int firstMeasure, int lastMeasure, double sampleRate)
+{
+    Passage result;
+    result.events = createNoteEvents (score, firstMeasure, lastMeasure, sampleRate);
+    result.length = (int64_t) std::llround ((double) (lastMeasure - firstMeasure + 1) * score.getSecondsPerMeasure() * sampleRate);
+    result.beatsPerMeasure = score.getBeatsPerMeasure();
+    result.secondsPerBeat = score.getSecondsPerMeasure() / result.beatsPerMeasure;
+    result.firstBeat = (double) (firstMeasure * result.beatsPerMeasure);
+
+    // Nothing sounds past the end, so a loop's notes are all finished before it starts again.
+    for (auto& event : result.events)
+        event.sample = juce::jmin (event.sample, result.length);
+
+    return result;
+}
+
+void InstrumentHost::setLooping (bool shouldLoop)
+{
     const juce::ScopedLock sl (lock);
-
-    noteEvents.swap (events);
-    nextNoteEvent = 0;
-    position = 0;
-    endPosition = (int64_t) std::llround (seconds * sampleRate);
-    secondsPerBeat = score.getSecondsPerMeasure() / beats;
-    beatsPerMeasure = beats;
-    firstBeat = (double) (firstMeasure * beats);
-    playing = true;
-    releaseScoreNotes = true;
-    playbackPosition = firstBeat;
+    looping = shouldLoop;
 }
 
 void InstrumentHost::stop()
@@ -292,19 +343,20 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
         }
     }
 
-    advancePlayback (numSamples);
+    advancePlayback();
 }
 
 //==============================================================================
 juce::Optional<juce::AudioPlayHead::PositionInfo> InstrumentHost::getPosition() const
 {
     const auto beats = getBeatsPlayed();
-    const auto beatsPerBar = (double) beatsPerMeasure;
+    const auto beatsPerBar = (double) passage.beatsPerMeasure;
+    const auto secondsPerBeat = passage.secondsPerBeat;
 
     PositionInfo info;
     info.setIsPlaying (playing);
     info.setBpm (60.0 / secondsPerBeat);
-    info.setTimeSignature (TimeSignature { beatsPerMeasure, 4 });
+    info.setTimeSignature (TimeSignature { passage.beatsPerMeasure, 4 });
     info.setPpqPosition (beats);
     info.setPpqPositionOfLastBarStart (std::floor (beats / beatsPerBar) * beatsPerBar);
     info.setTimeInSeconds (beats * secondsPerBeat);
@@ -314,7 +366,9 @@ juce::Optional<juce::AudioPlayHead::PositionInfo> InstrumentHost::getPosition() 
 
 double InstrumentHost::getBeatsPlayed() const noexcept
 {
-    return firstBeat + (double) position / (sampleRate * secondsPerBeat);
+    // A loop that starts again right at the start of the next block is shown back at the beginning.
+    const auto samples = looping && position >= passage.length ? position - passage.length : position;
+    return passage.firstBeat + (double) samples / (sampleRate * passage.secondsPerBeat);
 }
 
 void InstrumentHost::allocateInstrumentBuffer()
@@ -339,30 +393,54 @@ void InstrumentHost::addScoreEvents (juce::MidiBuffer& midi, int numSamples)
     if (! playing)
         return;
 
-    for (; nextNoteEvent < noteEvents.size(); ++nextNoteEvent)
-    {
-        const auto& event = noteEvents[nextNoteEvent];
-        const auto samplePosition = event.sample - position;
+    // Where this time through the measures started, relative to the start of the block
+    auto start = -position;
 
-        if (samplePosition >= numSamples)
+    for (;;)
+    {
+        for (; nextNoteEvent < passage.events.size(); ++nextNoteEvent)
+        {
+            const auto& event = passage.events[nextNoteEvent];
+            const auto samplePosition = start + event.sample;
+
+            if (samplePosition >= numSamples)
+                break;
+
+            midi.addEvent (event.isNoteOn ? juce::MidiMessage::noteOn (midiChannel, event.noteNumber, scoreVelocity)
+                                          : juce::MidiMessage::noteOff (midiChannel, event.noteNumber),
+                           (int) juce::jmax ((int64_t) 0, samplePosition));
+
+            scoreNotesOn[(size_t) event.noteNumber] = event.isNoteOn;
+        }
+
+        // When looping, the next time through can start part way through the block, once
+        // everything in this one has been played. It plays any changes made to the score since.
+        if (! looping || passage.length <= 0 || nextNoteEvent < passage.events.size() || start + passage.length >= numSamples)
             break;
 
-        midi.addEvent (event.isNoteOn ? juce::MidiMessage::noteOn (midiChannel, event.noteNumber, scoreVelocity)
-                                      : juce::MidiMessage::noteOff (midiChannel, event.noteNumber),
-                       (int) juce::jmax ((int64_t) 0, samplePosition));
+        start += passage.length;
+        nextNoteEvent = 0;
 
-        scoreNotesOn[(size_t) event.noteNumber] = event.isNoteOn;
+        if (hasNextPassage)
+        {
+            // Swapping, rather than moving, leaves the old one to be freed on the message thread.
+            std::swap (passage, nextPassage);
+            hasNextPassage = false;
+        }
     }
+
+    nextPosition = numSamples - start;
 }
 
-void InstrumentHost::advancePlayback (int numSamples)
+void InstrumentHost::advancePlayback()
 {
     if (! playing)
         return;
 
-    position += numSamples;
+    // addScoreEvents() has worked out where the next block starts, back at the beginning if it looped.
+    position = nextPosition;
 
-    if (position >= endPosition)
+    if (! looping && position >= passage.length)
     {
         playing = false;
         releaseScoreNotes = true;

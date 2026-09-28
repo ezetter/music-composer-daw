@@ -34,9 +34,21 @@ public:
     double getSampleRate() const;
     int getBlockSize() const;
 
-    /** Plays some measures of the score, as they are now. Does nothing unless the audio is running. */
-    void play (const Score&, int firstMeasure, int lastMeasure);
+    /** Plays some measures of the score, as they are now. Does nothing unless the audio is running.
+        When looping, they play over and over until stopped.
+    */
+    void play (const Score&, int firstMeasure, int lastMeasure, bool loop = false);
     void stop();
+
+    /** Whether playback goes back to the start of the measures it's playing when it reaches the
+        end of them, rather than stopping. This can change while they're playing.
+    */
+    void setLooping (bool);
+
+    /** Changes the measures being played to the score as it is now, from the next time through
+        when looping. Playing through once is left as it is.
+    */
+    void updateLoop (const Score&, int firstMeasure, int lastMeasure);
 
     /** How far playback has got, in beats from the start of the score, or nothing if it's stopped. */
     std::optional<double> getPlaybackPosition() const noexcept;
@@ -58,6 +70,17 @@ private:
         bool isNoteOn;
     };
 
+    /** Some measures of the score, ready to play. */
+    struct Passage
+    {
+        std::vector<NoteEvent> events;
+        int64_t length = 0;             // in samples
+        double secondsPerBeat = 0.5;
+        int beatsPerMeasure = 4;
+        double firstBeat = 0.0;         // where it starts, in beats from the start of the score
+    };
+
+    static Passage createPassage (const Score&, int firstMeasure, int lastMeasure, double sampleRate);
     static std::vector<NoteEvent> createNoteEvents (const Score&, int firstMeasure, int lastMeasure, double sampleRate);
 
     juce::Optional<PositionInfo> getPosition() const override;
@@ -65,7 +88,7 @@ private:
     double getBeatsPlayed() const noexcept;
     void allocateInstrumentBuffer();
     void addScoreEvents (juce::MidiBuffer&, int numSamples);
-    void advancePlayback (int numSamples);
+    void advancePlayback();
 
     juce::MidiKeyboardState keyboardState;
 
@@ -77,13 +100,13 @@ private:
     double sampleRate = 0.0;
     int blockSize = 0;
 
-    std::vector<NoteEvent> noteEvents;
+    Passage passage;                    // what's playing
+    Passage nextPassage;                // what the loop plays next time through, if hasNextPassage
+    bool hasNextPassage = false;
     size_t nextNoteEvent = 0;
-    int64_t position = 0;               // in samples since playback started, at the start of the block being played
-    int64_t endPosition = 0;
-    double secondsPerBeat = 0.5;
-    int beatsPerMeasure = 4;
-    double firstBeat = 0.0;             // where playback started, in beats from the start of the score
+    int64_t position = 0;               // in samples since this time through started, at the start of the block being played
+    int64_t nextPosition = 0;           // where the next block starts, once this one's been played
+    bool looping = false;
     bool playing = false;
     std::bitset<128> scoreNotesOn;      // notes from the score that are sounding
     bool releaseScoreNotes = false;     // whether they need turning off

@@ -17,6 +17,9 @@ namespace
     constexpr int highestKey = 108;
     constexpr int numWhiteKeys = 52;
 
+    // Where Loop is kept in the settings
+    const char* const loopKey = "loop";
+
     /** A number without trailing zeros, e.g. "120" or "92.5". */
     juce::String formatNumber (double number)
     {
@@ -45,8 +48,9 @@ void MainComponent::SidebarContent::paint (juce::Graphics& g)
     g.fillRect (sidebarPadding, dividerY, getWidth() - 2 * sidebarPadding, 1);
 }
 
-MainComponent::MainComponent (juce::PropertiesFile& settings)
-    : document (score, settings),
+MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
+    : settings (settingsToUse),
+      document (score, settings),
       instrumentPanel (instrumentHost, settings)
 {
     // The instrument, and its sound, are saved with the score.
@@ -56,6 +60,22 @@ MainComponent::MainComponent (juce::PropertiesFile& settings)
 
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
+
+    // Loop is remembered from one run of the app to the next.
+    playButton.setConnectedEdges (juce::Button::ConnectedOnRight);
+    loopButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    loopButton.setClickingTogglesState (true);
+    loopButton.setToggleState (settings.getBoolValue (loopKey), juce::dontSendNotification);
+    loopButton.setColour (juce::TextButton::buttonOnColourId, controls::accentLight);
+    loopButton.setColour (juce::TextButton::textColourOnId, controls::accent);
+    loopButton.setTooltip ("Play the score over and over, rather than stopping at the end");
+    loopButton.onClick = [this]
+    {
+        settings.setValue (loopKey, loopButton.getToggleState());
+
+        if (playingWholeScore)
+            instrumentHost.setLooping (loopButton.getToggleState());
+    };
 
     tempoLabel.setText ("BPM", juce::dontSendNotification);
     tempoLabel.setFont (juce::FontOptions (12.5f));
@@ -79,8 +99,9 @@ MainComponent::MainComponent (juce::PropertiesFile& settings)
     // Clicking a button shouldn't take the keyboard focus away from the piano, which the
     // computer keyboard can play too.
     playButton.setWantsKeyboardFocus (false);
+    loopButton.setWantsKeyboardFocus (false);
 
-    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &tempoLabel, &tempoEditor,
+    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &loopButton, &tempoLabel, &tempoEditor,
                                                                      &notesButton, &chordsButton, &instrumentPanel })
         addAndMakeVisible (component);
 
@@ -165,6 +186,7 @@ void MainComponent::resized()
 
     auto toolbar = bounds.removeFromTop (toolbarHeight).reduced (12, 8);
     playButton.setBounds (toolbar.removeFromLeft (80));
+    loopButton.setBounds (toolbar.removeFromLeft (64));
     toolbar.removeFromLeft (16);
     tempoLabel.setBounds (toolbar.removeFromLeft (34));
     toolbar.removeFromLeft (4);
@@ -240,6 +262,10 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     if (selectedMeasure.has_value() && *selectedMeasure >= score.getNumMeasures())
         selectMeasure ({});
 
+    // A loop plays changes to the score from the next time through.
+    if (playingWholeScore && instrumentHost.getPlaybackPosition().has_value())
+        instrumentHost.updateLoop (score, 0, score.getNumMeasures() - 1);
+
     showHeldNotes();
 }
 
@@ -300,7 +326,7 @@ void MainComponent::measureClicked (int measure)
     selectMeasure (measure);
 
     if (hasNotes (score, measure))
-        play (measure, measure);
+        play (measure, measure, false);
 }
 
 void MainComponent::scrollToMeasure (int measure)
@@ -347,13 +373,14 @@ void MainComponent::togglePlayback()
     }
     else
     {
-        play (0, score.getNumMeasures() - 1);
+        play (0, score.getNumMeasures() - 1, true);
     }
 }
 
-void MainComponent::play (int firstMeasure, int lastMeasure)
+void MainComponent::play (int firstMeasure, int lastMeasure, bool wholeScore)
 {
-    instrumentHost.play (score, firstMeasure, lastMeasure);
+    playingWholeScore = wholeScore;
+    instrumentHost.play (score, firstMeasure, lastMeasure, wholeScore && loopButton.getToggleState());
     startTimerHz (30);
     showPlaybackPosition();
 }

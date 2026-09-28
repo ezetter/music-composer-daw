@@ -76,7 +76,8 @@ private:
     void scrollToMeasure (int measure);
     void pianoKeyClicked (int midiNote);
     void togglePlayback();
-    void play (int firstMeasure, int lastMeasure);
+    /** Plays some measures. The whole score loops if Loop is on; a measure played on its own doesn't. */
+    void play (int firstMeasure, int lastMeasure, bool wholeScore);
     void showPlaybackPosition();
     void addMeasure();
     void removeMeasure();
@@ -85,6 +86,7 @@ private:
     void scoreReplaced();
     void showDocumentTitle();
 
+    juce::PropertiesFile& settings;
     juce::AudioDeviceManager audioDeviceManager;
     InstrumentHost instrumentHost;
     Score score;
@@ -92,6 +94,7 @@ private:
     juce::ApplicationCommandManager commandManager;
 
     juce::TextButton playButton { "Play" };
+    juce::TextButton loopButton { "Loop" };
     juce::Label tempoLabel;
     juce::TextEditor tempoEditor;
     juce::TextButton notesButton { "Notes" };
@@ -110,6 +113,7 @@ private:
 
     InputMode inputMode = InputMode::notes;
     std::optional<int> selectedMeasure;
+    bool playingWholeScore = false;
     juce::Component::SafePointer<juce::Component> keyListenerTarget;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
