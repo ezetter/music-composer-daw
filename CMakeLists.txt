@@ -17,6 +17,8 @@ FetchContent_MakeAvailable(JUCE)
 juce_add_gui_app(AnthropoceneMusic
     PRODUCT_NAME "Anthropocene Music"
     COMPANY_NAME "Anthropocene Music"
+    ICON_BIG Resources/Icon.png         # a staff with two quarter notes
+    ICON_SMALL Resources/Icon.png
     BUNDLE_ID "com.anthropocene-music.app")
 
 target_sources(AnthropoceneMusic

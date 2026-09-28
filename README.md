@@ -144,6 +144,7 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | `Source/MidiInputs.*` | Connects MIDI controllers, as they're plugged in, and the MIDI menu's settings |
 | `Source/InstrumentPanel.*` | Loads a part's instrument and opens its editor, and saves and loads it with the score |
 | `Source/PluginWindow.*` | The window for an instrument's editor |
+| `Resources/Icon.png` | The app's icon, a staff with two quarter notes, from which the build makes the Mac icon |
 
 ## Licences
 
