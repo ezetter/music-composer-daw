@@ -87,7 +87,7 @@ The chord panel has the Chord Progression Builder's settings for one chord:
 6. **Octave** moves the chord down or up an octave.
 7. **Treble clef / Bass clef** is the staff the chord is written on. Its lowest note falls in C4–B4 on the treble staff and E2–D3 on the bass.
 8. **Chord type**:
-   - **Block**: a chord filling the measure.
+   - **Block**: a chord held for the whole measure, written at its start so it lines up with a quarter note on the first beat of the other staff.
    - **Arpeggio (asc)** and **Arpeggio (desc)**: single notes, low to high or high to low, padded with rests. Quarter notes are used if they fit, otherwise eighths or sixteenths, beamed a beat at a time.
    - **Random**: the notes in a random order, filling every beat without playing any note twice in a row. **Reshuffle** picks a new order.
    - **Rolled chord**: a block chord with the wavy roll sign.

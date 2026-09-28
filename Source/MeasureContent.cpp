@@ -48,8 +48,10 @@ namespace
 
         if (! music::isMelodic (measureChord.style.type))
         {
+            // Held for the whole measure, written at its start so it lines up with the first
+            // beat of anything on the other staff.
             content.events.push_back ({ 0.0, getFullMeasureDuration (beatsPerMeasure), chord.tones,
-                                        measureChord.style.type == music::ChordType::rolled, true });
+                                        measureChord.style.type == music::ChordType::rolled, false });
             return content;
         }
 
@@ -149,16 +151,14 @@ MeasureContent getMeasureContent (const Score& score, int measure)
 
             if (score.chordUsesStaff (measure, otherStaff))
             {
-                // Held for the whole measure: centred under a block or rolled chord, and on the
-                // downbeat with the first note of an arpeggio. With all its notes taken out by
-                // hand, it's a whole-measure rest, rather than the quarter notes it hides.
+                // Held for the whole measure, from the downbeat, like the chord. With all its notes
+                // taken out by hand, it's a whole-measure rest, rather than the quarter notes it hides.
                 auto& alternate = content.staves[(size_t) otherStaff];
                 alternate.source = StaffContent::Source::alternate;
 
                 if (auto tones = score.getAlternateTones (measure); ! tones.empty())
                     alternate.events.push_back ({ 0.0, getFullMeasureDuration (score.getBeatsPerMeasure()), std::move (tones),
-                                                  score.getAlternateStaff() == music::AlternateStaff::rolledChord,
-                                                  ! music::isMelodic (style.type) });
+                                                  score.getAlternateStaff() == music::AlternateStaff::rolledChord, false });
                 else
                     alternate.events.push_back ({ 0.0, Duration::whole, {}, false, true });
                 filled[(size_t) otherStaff] = true;
@@ -171,19 +171,6 @@ MeasureContent getMeasureContent (const Score& score, int measure)
     for (auto staff : { Staff::treble, Staff::bass })
         if (! filled[(size_t) staff])
             content.staves[(size_t) staff] = getNotesContent (score, staff, measure, keyAlterations);
-
-    // A block or rolled chord sits in the middle of its measure, unless there are notes on the
-    // other staff, when it lines up with the one on the first beat.
-    if (content.chord.has_value())
-    {
-        const auto& other = content.staves[(size_t) music::getOtherStaff (content.chordStyle.staff)];
-        const auto otherHasNotes = other.source == StaffContent::Source::notes
-                                && std::any_of (other.events.begin(), other.events.end(), [] (const StaffEvent& e) { return ! e.isRest(); });
-
-        if (otherHasNotes)
-            for (auto& event : content.staves[(size_t) content.chordStyle.staff].events)
-                event.centred = false;
-    }
 
     return content;
 }
