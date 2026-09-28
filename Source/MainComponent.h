@@ -118,6 +118,9 @@ private:
     */
     void setActivePart (int part);
 
+    /** Gives the other part the active part's chords, asking first if it has notes of its own. */
+    void copyProgression();
+
     /** Opens the chord window for a measure of a part, to add a chord or edit the one it has.
         The part becomes the active one.
     */

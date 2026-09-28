@@ -15,6 +15,7 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
     controls::makeHeading (keyHeading, "Key");
     controls::makeHeading (timeSignatureHeading, "Time signature");
     controls::makeHeading (alternateHeading, "Alternate staff");
+    controls::makeHeading (progressionHeading, "Progression");
 
     for (const auto& key : music::getMajorKeys())
         keyBox.addItem (music::getKeyName (key), keyBox.getNumItems() + 1);
@@ -34,12 +35,20 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
     alternateBox.setTooltip ("What the other staff shows under or over every chord");
     alternateBox.onChange = [this] { score.setAlternateStaff (part, (music::AlternateStaff) (alternateBox.getSelectedId() - 1)); };
 
-    alternateHint.setFont (juce::FontOptions (12.0f));
-    alternateHint.setColour (juce::Label::textColourId, controls::secondaryText);
-    alternateHint.setBorderSize ({});
+    for (auto* hint : { &alternateHint, &progressionHint })
+    {
+        hint->setFont (juce::FontOptions (12.0f));
+        hint->setColour (juce::Label::textColourId, controls::secondaryText);
+        hint->setBorderSize ({});
+        hint->setJustificationType (juce::Justification::topLeft);
+    }
+
+    copyProgressionButton.setWantsKeyboardFocus (false);
+    copyProgressionButton.onClick = [this] { if (onCopyProgression != nullptr) onCopyProgression(); };
 
     for (auto* component : std::initializer_list<juce::Component*> { &keyHeading, &keyBox, &signatureLabel, &timeSignatureHeading,
-                                                                     &timeSignatureBox, &alternateHeading, &alternateBox, &alternateHint })
+                                                                     &timeSignatureBox, &alternateHeading, &alternateBox, &alternateHint,
+                                                                     &progressionHeading, &copyProgressionButton, &progressionHint })
         addAndMakeVisible (component);
 
     score.addChangeListener (this);
@@ -59,7 +68,7 @@ ScorePanel::~ScorePanel()
 
 int ScorePanel::getIdealHeight() const
 {
-    return 3 * (headingHeight + 2) + 3 * controlHeight + 2 * (16 + 2) + 2 * sectionGap;
+    return 4 * (headingHeight + 2) + 4 * controlHeight + 2 * (16 + 2) + 2 + 32 + 3 * sectionGap;
 }
 
 void ScorePanel::resized()
@@ -83,6 +92,13 @@ void ScorePanel::resized()
     alternateBox.setBounds (bounds.removeFromTop (controlHeight));
     bounds.removeFromTop (2);
     alternateHint.setBounds (bounds.removeFromTop (16));
+    bounds.removeFromTop (sectionGap);
+
+    progressionHeading.setBounds (bounds.removeFromTop (headingHeight));
+    bounds.removeFromTop (2);
+    copyProgressionButton.setBounds (bounds.removeFromTop (controlHeight));
+    bounds.removeFromTop (2);
+    progressionHint.setBounds (bounds.removeFromTop (32));
 }
 
 void ScorePanel::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -97,4 +113,12 @@ void ScorePanel::update()
     timeSignatureBox.setSelectedId (score.getBeatsPerMeasure(), juce::dontSendNotification);
     alternateBox.setSelectedId ((int) score.getAlternateStaff (part) + 1, juce::dontSendNotification);
     alternateHint.setText ("For every chord in part " + juce::String (part + 1), juce::dontSendNotification);
+
+    // The progression goes from this part to the other.
+    const auto from = juce::String (part + 1), to = juce::String ((part + 1) % Score::numParts + 1);
+    copyProgressionButton.setButtonText ("Copy Progression to Part " + to);
+    copyProgressionButton.setEnabled (score.hasChords (part));
+    copyProgressionButton.setTooltip ("Give part " + to + " part " + from + "'s chords, in place of its own notes and chords");
+    progressionHint.setText ("Replaces part " + to + "'s notes and chords with part " + from + "'s chords",
+                             juce::dontSendNotification);
 }

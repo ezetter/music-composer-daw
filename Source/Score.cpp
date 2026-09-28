@@ -301,6 +301,47 @@ void Score::reshuffle (int part, int measure)
     sendSynchronousChangeMessage();
 }
 
+//==============================================================================
+bool Score::hasNotes (int part) const
+{
+    for (const auto& measure : parts[(size_t) part].measures)
+        for (const auto& staff : measure.notes)
+            for (const auto& notes : staff)
+                if (! notes.empty())
+                    return true;
+
+    return hasChords (part);
+}
+
+bool Score::hasChords (int part) const
+{
+    const auto& measures = parts[(size_t) part].measures;
+    return std::any_of (measures.begin(), measures.end(), [] (const Measure& m) { return m.chord.has_value() && m.chord->hasNotes(); });
+}
+
+void Score::copyChords (int fromPart, int toPart)
+{
+    jassert (fromPart != toPart);
+
+    const auto& from = parts[(size_t) fromPart];
+    auto& to = parts[(size_t) toPart];
+
+    for (size_t m = 0; m < to.measures.size(); ++m)
+    {
+        auto& measure = to.measures[m];
+        measure.notes = {};
+        measure.chord = from.measures[m].chord;
+
+        // Notes set by hand were for the other part's alternate staff.
+        if (measure.chord.has_value() && from.alternateStaff != to.alternateStaff)
+            measure.chord->alternateNotes.reset();
+
+        tidyChord (measure);
+    }
+
+    sendSynchronousChangeMessage();
+}
+
 void Score::tidyChord (Measure& measure, bool reshuffleRandomOrder)
 {
     if (! measure.chord.has_value())

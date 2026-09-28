@@ -203,6 +203,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     staffSystems.onAddMeasure = [this] { addMeasure(); };
     staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
+    scorePanel.onCopyProgression = [this] { copyProgression(); };
     sidebarContent.addAndMakeVisible (scorePanel);
     sidebar.setViewedComponent (&sidebarContent, false);
     sidebar.setScrollBarsShown (true, false);
@@ -437,6 +438,38 @@ void MainComponent::setActivePart (int part)
     // The chord window is for the active part's chords.
     if (const auto* editor = getChordEditor(); editor != nullptr && editor->getPart() != part)
         closeChordEditor();
+}
+
+void MainComponent::copyProgression()
+{
+    const auto from = activePart, to = (activePart + 1) % Score::numParts;
+
+    if (! score.hasChords (from))
+        return;
+
+    // A part with nothing in it can take the progression straight away.
+    if (! score.hasNotes (to))
+    {
+        score.copyChords (from, to);
+        return;
+    }
+
+    const auto fromName = "part " + juce::String (from + 1), toName = "part " + juce::String (to + 1);
+
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                      .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                      .withTitle ("Replace " + toName + "'s notes?")
+                                      .withMessage ("Copying " + fromName + "'s chord progression to " + toName + " replaces the notes and chords "
+                                                    + toName + " has now.")
+                                      .withButton ("Replace")
+                                      .withButton ("Cancel")
+                                      .withAssociatedComponent (this),
+                                  [safeThis = juce::Component::SafePointer (this), from, to] (int result)
+                                  {
+                                      // Replace is 1, and Cancel 0.
+                                      if (safeThis != nullptr && result == 1)
+                                          safeThis->score.copyChords (from, to);
+                                  });
 }
 
 void MainComponent::showPartTitles()

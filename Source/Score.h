@@ -164,6 +164,21 @@ public:
     void reshuffle (int part, int measure);
 
     //==============================================================================
+    /** Whether a part has any quarter notes, even ones hidden by the time signature or the
+        alternate staff, or any chords with notes.
+    */
+    bool hasNotes (int part) const;
+
+    /** Whether a part has any chords with notes. */
+    bool hasChords (int part) const;
+
+    /** Gives one part the other's chord progression: measure by measure, the same chords, or
+        none, and no quarter notes of its own. Its alternate staff setting stays as it is; notes
+        set by hand on the alternate staff come too if both parts' alternate staffs are the same.
+    */
+    void copyChords (int fromPart, int toPart);
+
+    //==============================================================================
     /** Replaces the score with a new, empty one, with nothing in either part. */
     void clear();
 
