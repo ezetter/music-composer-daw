@@ -22,7 +22,9 @@ The window has a toolbar along the top, the score's settings on the left, the tw
 
 ### Parts
 
-The score has two parts. They share the key, time signature, tempo and measures, and play together in time, but each has its own notes, chords, alternate staff and instrument. Part 1's staves are at the top and part 2's below; their measures line up, spaced to fit what's in either part. Each part's name and instrument are written at its top left. Each part's staves take only the height their music needs: the chord buttons sit just over the chord names, which sit just over the highest notes, and the space above and below grows only when notes reach far beyond the staves.
+The score has two parts. They share the key, time signature, tempo and measures, and play together in time, but each has its own notes, chords, alternate staff and instrument. Part 1's staves are at the top and part 2's below; their measures line up, spaced to fit what's in either part. Each part's name and instrument are written at its top left.
+
+To the right of the last measure, between the two parts' staves, **+** adds a measure at the end and **−** takes the last one away, in both parts; **−** is disabled when there's only one. Adding a measure scrolls to the end, so **+** stays in view. Scroll sideways with a trackpad, the mouse wheel, or the scroll bar. Each part's staves take only the height their music needs: the chord buttons sit just over the chord names, which sit just over the highest notes, and the space above and below grows only when notes reach far beyond the staves.
 
 One part is **active**, marked by a blue bar beside its staves. The piano and MIDI controllers play the active part's instrument, and the toolbar's instrument controls and the sidebar's **Alternate staff** are the active part's. Choose it with **Part 1 / Part 2** in the toolbar, or click in a part's staves or its chord buttons. Keys held down when another part becomes active are let go; the score's notes play on.
 
@@ -63,7 +65,6 @@ The **File** menu saves and opens scores:
 | **Key** | The 15 major keys, C♭ to C♯. Sets the key signature, what the chord window's numerals mean, and the sharps and flats of notes you click in. Chords follow their numerals into a new key; notes keep their pitches and get accidentals if they need them. |
 | **Time signature** | 2/4, 3/4 or 4/4. Notes on beats that no longer fit are kept, and come back if you go back to more beats. |
 | **Alternate staff** | For the active part, what every chord puts on the other staff: **None**, the chord's **Root**, the root in an **Octave**, or the whole chord as a **Block chord** or **Rolled chord**, held for the measure. It applies to all the chords in the part, on whichever staff each one isn't; each part has its own. Quarter notes under or over a chord are hidden while there's an alternate staff, rather than lost, and come back with None. Changing it puts any alternate-staff notes you've changed by hand back to what the chords give. Scores saved before this was one setting open with the alternate staff most of their chords had. |
-| **Measures** | **Add Measure** and **Remove Measure** change the length of the score. Scroll sideways with a trackpad, the mouse wheel, or the scroll bar. |
 
 ### Notes
 

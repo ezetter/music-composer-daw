@@ -15,7 +15,6 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
     controls::makeHeading (keyHeading, "Key");
     controls::makeHeading (timeSignatureHeading, "Time signature");
     controls::makeHeading (alternateHeading, "Alternate staff");
-    controls::makeHeading (measuresHeading, "Measures");
 
     for (const auto& key : music::getMajorKeys())
         keyBox.addItem (music::getKeyName (key), keyBox.getNumItems() + 1);
@@ -39,16 +38,9 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
     alternateHint.setColour (juce::Label::textColourId, controls::secondaryText);
     alternateHint.setBorderSize ({});
 
-    addMeasureButton.onClick = [this] { if (onAddMeasure != nullptr) onAddMeasure(); };
-    removeMeasureButton.onClick = [this] { if (onRemoveMeasure != nullptr) onRemoveMeasure(); };
-
     for (auto* component : std::initializer_list<juce::Component*> { &keyHeading, &keyBox, &signatureLabel, &timeSignatureHeading,
-                                                                     &timeSignatureBox, &alternateHeading, &alternateBox, &alternateHint, &measuresHeading, &addMeasureButton,
-                                                                     &removeMeasureButton })
+                                                                     &timeSignatureBox, &alternateHeading, &alternateBox, &alternateHint })
         addAndMakeVisible (component);
-
-    addMeasureButton.setWantsKeyboardFocus (false);
-    removeMeasureButton.setWantsKeyboardFocus (false);
 
     score.addChangeListener (this);
     update();
@@ -67,7 +59,7 @@ ScorePanel::~ScorePanel()
 
 int ScorePanel::getIdealHeight() const
 {
-    return 4 * (headingHeight + 2) + 3 * controlHeight + 2 * (16 + 2) + 26 + 3 * sectionGap;
+    return 3 * (headingHeight + 2) + 3 * controlHeight + 2 * (16 + 2) + 2 * sectionGap;
 }
 
 void ScorePanel::resized()
@@ -91,14 +83,6 @@ void ScorePanel::resized()
     alternateBox.setBounds (bounds.removeFromTop (controlHeight));
     bounds.removeFromTop (2);
     alternateHint.setBounds (bounds.removeFromTop (16));
-    bounds.removeFromTop (sectionGap);
-
-    measuresHeading.setBounds (bounds.removeFromTop (headingHeight));
-    bounds.removeFromTop (2);
-    auto buttons = bounds.removeFromTop (26);
-    const auto buttonWidth = (buttons.getWidth() - 8) / 2;
-    addMeasureButton.setBounds (buttons.removeFromLeft (buttonWidth));
-    removeMeasureButton.setBounds (buttons.removeFromRight (buttonWidth));
 }
 
 void ScorePanel::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -113,5 +97,4 @@ void ScorePanel::update()
     timeSignatureBox.setSelectedId (score.getBeatsPerMeasure(), juce::dontSendNotification);
     alternateBox.setSelectedId ((int) score.getAlternateStaff (part) + 1, juce::dontSendNotification);
     alternateHint.setText ("For every chord in part " + juce::String (part + 1), juce::dontSendNotification);
-    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
 }

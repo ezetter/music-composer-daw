@@ -45,10 +45,13 @@ public:
     static constexpr int minimumHeight = 640;
 
 private:
-    /** The parts' staff systems, one above the other, their measures lined up. */
+    /** The parts' staff systems, one above the other, their measures lined up, with + and −
+        buttons after the last measure for adding and removing measures.
+    */
     struct StaffSystems final : public juce::Component
     {
         explicit StaffSystems (Score&);
+        ~StaffSystems() override;
 
         /** At least this tall, to fill the view it's in. */
         void setMinimumHeight (int);
@@ -58,12 +61,19 @@ private:
         /** Called when the systems move or change size. */
         std::function<void()> onLayoutChanged;
 
+        /** Called when + or − is clicked. */
+        std::function<void()> onAddMeasure, onRemoveMeasure;
+
     private:
         void childBoundsChanged (juce::Component*) override;
         void layOut();
 
+        Score& score;
         int minimumHeight = 0;
         bool layingOut = false;
+
+        controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
+        juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
     };
 
     /** A viewport that says when it scrolls. */

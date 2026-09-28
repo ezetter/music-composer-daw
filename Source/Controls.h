@@ -95,4 +95,32 @@ namespace controls
             return label;
         }
     };
+
+    /** Draws buttons as small circles, for single symbols such as + and −. */
+    struct RoundButtonLookAndFeel final : public juce::LookAndFeel_V4
+    {
+        RoundButtonLookAndFeel() : LookAndFeel_V4 (getLightColourScheme()) {}
+
+        void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&,
+                                   bool highlighted, bool down) override
+        {
+            const auto bounds = button.getLocalBounds().toFloat().reduced (1.5f);
+            const auto diameter = juce::jmin (bounds.getWidth(), bounds.getHeight());
+            const auto circle = juce::Rectangle<float> (diameter, diameter).withCentre (bounds.getCentre());
+
+            g.setColour (! button.isEnabled() ? juce::Colours::white
+                         : down                ? accentLight.darker (0.08f)
+                         : highlighted         ? accentLight
+                                               : juce::Colours::white);
+            g.fillEllipse (circle);
+
+            g.setColour (button.isEnabled() ? accent.withAlpha (0.55f) : juce::Colours::black.withAlpha (0.12f));
+            g.drawEllipse (circle, 1.2f);
+        }
+
+        juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override
+        {
+            return juce::FontOptions ((float) buttonHeight * 0.7f);
+        }
+    };
 }

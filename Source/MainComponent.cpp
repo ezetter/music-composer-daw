@@ -13,6 +13,8 @@ namespace
     constexpr int volumeColumnWidth = 64;
     constexpr int volumeDialSize = 44;
     constexpr int volumeTextHeight = 16;
+    constexpr int measureButtonSize = 28;
+    constexpr int measureButtonsWidth = 44;     // after the final barline, for + and −
 
     // A full 88-key piano, A0 to C8
     constexpr int lowestKey = 21;
@@ -45,6 +47,7 @@ namespace
 
 //==============================================================================
 MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
+    : score (scoreToShow)
 {
     for (int part = 0; part < Score::numParts; ++part)
     {
@@ -52,7 +55,27 @@ MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
         addAndMakeVisible (*views[(size_t) part]);
     }
 
+    // + adds a measure at the end and − takes the last one away, in both parts.
+    addMeasureButton.setTooltip ("Add a measure at the end");
+    removeMeasureButton.setTooltip ("Remove the last measure");
+    addMeasureButton.onClick = [this] { if (onAddMeasure != nullptr) onAddMeasure(); };
+    removeMeasureButton.onClick = [this] { if (onRemoveMeasure != nullptr) onRemoveMeasure(); };
+
+    for (auto* button : { &addMeasureButton, &removeMeasureButton })
+    {
+        button->setLookAndFeel (&roundButtonLookAndFeel);
+        button->setColour (juce::TextButton::textColourOffId, controls::accent);
+        button->setWantsKeyboardFocus (false);
+        addAndMakeVisible (button);
+    }
+
     layOut();
+}
+
+MainComponent::StaffSystems::~StaffSystems()
+{
+    for (auto* button : { &addMeasureButton, &removeMeasureButton })
+        button->setLookAndFeel (nullptr);
 }
 
 void MainComponent::StaffSystems::setMinimumHeight (int height)
@@ -89,7 +112,16 @@ void MainComponent::StaffSystems::layOut()
         y += height;
     }
 
-    setSize (width, juce::jmax (y, minimumHeight));
+    setSize (width + measureButtonsWidth, juce::jmax (y, minimumHeight));
+
+    // + over −, just past the final barline, halfway between the first part's staves and the second's
+    const auto gapTop = views[0]->getBounds().getY() + views[0]->getStavesRange().getEnd();
+    const auto gapBottom = views[1]->getBounds().getY() + views[1]->getStavesRange().getStart();
+    const auto centre = juce::Point<int> (width + measureButtonsWidth / 2 - 8, (gapTop + gapBottom) / 2);
+
+    addMeasureButton.setBounds (juce::Rectangle<int> (measureButtonSize, measureButtonSize).withCentre (centre.translated (0, -measureButtonSize / 2 - 3)));
+    removeMeasureButton.setBounds (juce::Rectangle<int> (measureButtonSize, measureButtonSize).withCentre (centre.translated (0, measureButtonSize / 2 + 3)));
+    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
 
     if (onLayoutChanged != nullptr)
         onLayoutChanged();
@@ -164,8 +196,8 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
                                                                      &partButtons[0], &partButtons[1] })
         addAndMakeVisible (component);
 
-    scorePanel.onAddMeasure = [this] { addMeasure(); };
-    scorePanel.onRemoveMeasure = [this] { removeMeasure(); };
+    staffSystems.onAddMeasure = [this] { addMeasure(); };
+    staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
     sidebarContent.addAndMakeVisible (scorePanel);
     sidebar.setViewedComponent (&sidebarContent, false);
     sidebar.setScrollBarsShown (true, false);
@@ -250,7 +282,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     setActivePart (0);
     showPartTitles();
-    setSize (1564, 920);    // wide enough for four measures of most music
+    setSize (1610, 920);    // wide enough for four measures of most music, and the + and − after them
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate
