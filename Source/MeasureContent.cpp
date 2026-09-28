@@ -145,18 +145,23 @@ MeasureContent getMeasureContent (const Score& score, int measure)
             content.staves[(size_t) style.staff] = getChordContent (*chord, *measureChord, score.getBeatsPerMeasure());
             filled[(size_t) style.staff] = true;
 
-            const auto alternateTones = score.getAlternateTones (measure);
+            const auto otherStaff = music::getOtherStaff (style.staff);
 
-            if (! alternateTones.empty())
+            if (score.chordUsesStaff (measure, otherStaff))
             {
                 // Held for the whole measure: centred under a block or rolled chord, and on the
-                // downbeat with the first note of an arpeggio.
-                auto& alternate = content.staves[(size_t) music::getOtherStaff (style.staff)];
+                // downbeat with the first note of an arpeggio. With all its notes taken out by
+                // hand, it's a whole-measure rest, rather than the quarter notes it hides.
+                auto& alternate = content.staves[(size_t) otherStaff];
                 alternate.source = StaffContent::Source::alternate;
-                alternate.events.push_back ({ 0.0, getFullMeasureDuration (score.getBeatsPerMeasure()), alternateTones,
-                                              style.alternate == music::AlternateStaff::rolledChord,
-                                              ! music::isMelodic (style.type) });
-                filled[(size_t) music::getOtherStaff (style.staff)] = true;
+
+                if (auto tones = score.getAlternateTones (measure); ! tones.empty())
+                    alternate.events.push_back ({ 0.0, getFullMeasureDuration (score.getBeatsPerMeasure()), std::move (tones),
+                                                  score.getAlternateStaff() == music::AlternateStaff::rolledChord,
+                                                  ! music::isMelodic (style.type) });
+                else
+                    alternate.events.push_back ({ 0.0, Duration::whole, {}, false, true });
+                filled[(size_t) otherStaff] = true;
             }
         }
     }

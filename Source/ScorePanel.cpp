@@ -14,6 +14,7 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
 {
     controls::makeHeading (keyHeading, "Key");
     controls::makeHeading (timeSignatureHeading, "Time signature");
+    controls::makeHeading (alternateHeading, "Alternate staff");
     controls::makeHeading (measuresHeading, "Measures");
 
     for (const auto& key : music::getMajorKeys())
@@ -30,11 +31,20 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
 
     timeSignatureBox.onChange = [this] { score.setBeatsPerMeasure (timeSignatureBox.getSelectedId()); };
 
+    alternateBox.addItemList ({ "None", "Root", "Octave", "Block chord", "Rolled chord" }, 1);
+    alternateBox.setTooltip ("What the other staff shows under or over every chord");
+    alternateBox.onChange = [this] { score.setAlternateStaff ((music::AlternateStaff) (alternateBox.getSelectedId() - 1)); };
+
+    alternateHint.setText ("For every chord", juce::dontSendNotification);
+    alternateHint.setFont (juce::FontOptions (12.0f));
+    alternateHint.setColour (juce::Label::textColourId, controls::secondaryText);
+    alternateHint.setBorderSize ({});
+
     addMeasureButton.onClick = [this] { if (onAddMeasure != nullptr) onAddMeasure(); };
     removeMeasureButton.onClick = [this] { if (onRemoveMeasure != nullptr) onRemoveMeasure(); };
 
     for (auto* component : std::initializer_list<juce::Component*> { &keyHeading, &keyBox, &signatureLabel, &timeSignatureHeading,
-                                                                     &timeSignatureBox, &measuresHeading, &addMeasureButton,
+                                                                     &timeSignatureBox, &alternateHeading, &alternateBox, &alternateHint, &measuresHeading, &addMeasureButton,
                                                                      &removeMeasureButton })
         addAndMakeVisible (component);
 
@@ -52,7 +62,7 @@ ScorePanel::~ScorePanel()
 
 int ScorePanel::getIdealHeight() const
 {
-    return 3 * (headingHeight + 2) + 2 * controlHeight + 16 + 2 + 26 + 2 * sectionGap;
+    return 4 * (headingHeight + 2) + 3 * controlHeight + 2 * (16 + 2) + 26 + 3 * sectionGap;
 }
 
 void ScorePanel::resized()
@@ -69,6 +79,13 @@ void ScorePanel::resized()
     timeSignatureHeading.setBounds (bounds.removeFromTop (headingHeight));
     bounds.removeFromTop (2);
     timeSignatureBox.setBounds (bounds.removeFromTop (controlHeight).removeFromLeft (100));
+    bounds.removeFromTop (sectionGap);
+
+    alternateHeading.setBounds (bounds.removeFromTop (headingHeight));
+    bounds.removeFromTop (2);
+    alternateBox.setBounds (bounds.removeFromTop (controlHeight));
+    bounds.removeFromTop (2);
+    alternateHint.setBounds (bounds.removeFromTop (16));
     bounds.removeFromTop (sectionGap);
 
     measuresHeading.setBounds (bounds.removeFromTop (headingHeight));
@@ -89,5 +106,6 @@ void ScorePanel::update()
     keyBox.setSelectedId (score.getKeyIndex() + 1, juce::dontSendNotification);
     signatureLabel.setText (music::getKeySignatureText (score.getKey()), juce::dontSendNotification);
     timeSignatureBox.setSelectedId (score.getBeatsPerMeasure(), juce::dontSendNotification);
+    alternateBox.setSelectedId ((int) score.getAlternateStaff() + 1, juce::dontSendNotification);
     removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
 }

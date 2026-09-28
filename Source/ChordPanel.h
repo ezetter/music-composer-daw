@@ -9,7 +9,7 @@
 #include <optional>
 
 /** Defines the chord in one measure, with the same settings as the Chord Progression Builder's
-    chord panels, plus the clef, chord type and alternate staff it's written with.
+    chord panels, plus the clef and chord type it's written with.
 */
 class ChordPanel final : public juce::Component,
                          private juce::ChangeListener
@@ -47,8 +47,8 @@ private:
     std::array<juce::TextButton, 4> positionButtons;
     std::array<juce::TextButton, 3> octaveButtons;
     juce::TextButton trebleButton { "Treble clef" }, bassButton { "Bass clef" };
-    juce::Label chordTypeHeading, alternateHeading;
-    juce::ComboBox chordTypeBox, alternateBox;
+    juce::Label chordTypeHeading;
+    juce::ComboBox chordTypeBox;
     juce::TextButton reshuffleButton { "Reshuffle" };
     juce::Label nameLabel, notesLabel, fitLabel, keyboardNotesLabel;
     juce::TextButton clearButton { "Clear Chord" };

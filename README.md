@@ -54,6 +54,7 @@ The **File** menu saves and opens scores:
 | --- | --- |
 | **Key** | The 15 major keys, C♭ to C♯. Sets the key signature, what the chord panel's numerals mean, and the sharps and flats of notes you click in. Chords follow their numerals into a new key; notes keep their pitches and get accidentals if they need them. |
 | **Time signature** | 2/4, 3/4 or 4/4. Notes on beats that no longer fit are kept, and come back if you go back to more beats. |
+| **Alternate staff** | What every chord puts on the other staff: **None**, the chord's **Root**, the root in an **Octave**, or the whole chord as a **Block chord** or **Rolled chord**, held for the measure. It applies to all the chords in the score, on whichever staff each one isn't. Quarter notes under or over a chord are hidden while there's an alternate staff, rather than lost, and come back with None. Changing it puts any alternate-staff notes you've changed by hand back to what the chords give. Scores saved before this was one setting open with the alternate staff most of their chords had. |
 | **Measures** | **Add Measure** and **Remove Measure** change the length of the score. Scroll sideways with a trackpad, the mouse wheel, or the scroll bar. |
 
 ### Notes
@@ -90,9 +91,7 @@ The chord panel has the Chord Progression Builder's settings for one chord:
    - **Arpeggio (asc)** and **Arpeggio (desc)**: single notes, low to high or high to low, padded with rests. Quarter notes are used if they fit, otherwise eighths or sixteenths, beamed a beat at a time.
    - **Random**: the notes in a random order, filling every beat without playing any note twice in a row. **Reshuffle** picks a new order.
    - **Rolled chord**: a block chord with the wavy roll sign.
-9. **Alternate staff** puts notes on the other staff: the chord's **Root**, the root in an **Octave**, or the whole chord as a **Block chord** or **Rolled chord**, held for the measure.
-
-Each chord keeps its own clef, chord type and alternate staff. A measure's first chord starts with the ones chosen last. A chord replaces any quarter notes on the staves it uses, and **Clear Chord** empties the measure.
+Each chord keeps its own clef and chord type. A measure's first chord starts with the ones chosen last. A chord replaces any quarter notes on its staff, and **Clear Chord** empties the measure.
 
 Under the settings, the panel lists the chord's name and position, its notes from low to high, and whether they're in the key.
 

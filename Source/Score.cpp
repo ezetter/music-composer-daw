@@ -73,6 +73,21 @@ void Score::setBeatsPerMeasure (int newBeatsPerMeasure)
     sendSynchronousChangeMessage();
 }
 
+void Score::setAlternateStaff (music::AlternateStaff newAlternateStaff)
+{
+    if (newAlternateStaff == alternateStaff)
+        return;
+
+    alternateStaff = newAlternateStaff;
+
+    // Notes set by hand were for the old alternate staff.
+    for (auto& measure : measures)
+        if (measure.chord.has_value())
+            measure.chord->alternateNotes.reset();
+
+    sendSynchronousChangeMessage();
+}
+
 void Score::setBeatsPerMinute (double newBeatsPerMinute)
 {
     jassert (newBeatsPerMinute >= minBeatsPerMinute && newBeatsPerMinute <= maxBeatsPerMinute);
@@ -181,7 +196,7 @@ bool Score::chordUsesStaff (int measure, Staff staff) const
     const auto* chord = getChord (measure);
 
     return chord != nullptr && chord->hasNotes()
-        && (chord->style.staff == staff || chord->style.alternate != music::AlternateStaff::none);
+        && (chord->style.staff == staff || alternateStaff != music::AlternateStaff::none);
 }
 
 void Score::toggleChordNote (int measure, int midiNote, const ChordStyle& styleForNewChord)
@@ -213,7 +228,7 @@ void Score::toggleAlternateNote (int measure, const music::KeyboardNote& note)
 {
     auto& target = measures[(size_t) measure];
 
-    if (! target.chord.has_value() || ! target.chord->hasNotes() || target.chord->style.alternate == music::AlternateStaff::none)
+    if (! target.chord.has_value() || ! target.chord->hasNotes() || alternateStaff == music::AlternateStaff::none)
         return;
 
     auto& chord = *target.chord;
@@ -241,14 +256,14 @@ std::vector<music::Tone> Score::getAlternateTones (int measure) const
 {
     const auto* chord = getChord (measure);
 
-    if (chord == nullptr || chord->style.alternate == music::AlternateStaff::none)
+    if (chord == nullptr || alternateStaff == music::AlternateStaff::none)
         return {};
 
     if (chord->alternateNotes.has_value())
         return music::createTones (getKey(), *chord->alternateNotes);
 
     if (const auto notes = getChordNotes (measure))
-        return music::getAlternateTones (getKey(), *notes, chord->style.staff, chord->style.alternate);
+        return music::getAlternateTones (getKey(), *notes, chord->style.staff, alternateStaff);
 
     return {};
 }
@@ -269,11 +284,10 @@ void Score::tidyChord (Measure& measure, bool reshuffleRandomOrder)
     if (! chord.hasNotes())
         return;
 
-    // The chord replaces the quarter notes on the staves it uses.
-    for (auto staff : { Staff::treble, Staff::bass })
-        if (chord.style.staff == staff || chord.style.alternate != music::AlternateStaff::none)
-            for (auto& notes : measure.notes[(size_t) staff])
-                notes.clear();
+    // The chord replaces the quarter notes on its staff. The ones on the alternate staff are
+    // only hidden, since the alternate staff can be turned off for the whole score at once.
+    for (auto& notes : measure.notes[(size_t) chord.style.staff])
+        notes.clear();
 
     if (chord.style.type != music::ChordType::random)
         return;
@@ -297,7 +311,7 @@ void Score::tidyChord (Measure& measure, bool reshuffleRandomOrder)
 namespace
 {
     constexpr auto formatName = "Anthropocene Music score";
-    constexpr int formatVersion = 1;
+    constexpr int formatVersion = 2;    // 2: the alternate staff is the score's, not each chord's
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -349,6 +363,7 @@ void Score::clear()
     keyIndex = 0;
     beatsPerMeasure = 4;
     beatsPerMinute = 120.0;
+    alternateStaff = music::AlternateStaff::none;
     sendSynchronousChangeMessage();
 }
 
@@ -360,6 +375,7 @@ juce::var Score::toJSON() const
     root->setProperty ("key", keyIndex);
     root->setProperty ("beatsPerMeasure", beatsPerMeasure);
     root->setProperty ("beatsPerMinute", beatsPerMinute);
+    root->setProperty ("alternateStaff", (int) alternateStaff);
 
     juce::Array<juce::var> measureList;
 
@@ -398,7 +414,6 @@ juce::var Score::toJSON() const
             chordObject->setProperty ("octave", chord.spec.octave);
             chordObject->setProperty ("staff", chord.style.staff == Staff::treble ? "treble" : "bass");
             chordObject->setProperty ("type", (int) chord.style.type);
-            chordObject->setProperty ("alternate", (int) chord.style.alternate);
 
             if (chord.keyboardNotes.has_value())
                 chordObject->setProperty ("keyboardNotes", notesToJSON (*chord.keyboardNotes));
@@ -433,6 +448,7 @@ juce::Result Score::loadJSON (const juce::var& json)
         return juce::Result::fail ("The score has no measures.");
 
     std::vector<Measure> loaded;
+    std::vector<music::AlternateStaff> chordAlternates;     // each chord's own, in scores from before version 2
 
     for (const auto& item : *measureList)
     {
@@ -468,7 +484,7 @@ juce::Result Score::loadJSON (const juce::var& json)
             chord.spec.octave = readInt (c.getProperty ("octave", {}), -1, 1, 0);
             chord.style.staff = c.getProperty ("staff", {}).toString() == "bass" ? Staff::bass : Staff::treble;
             chord.style.type = (music::ChordType) readInt (c.getProperty ("type", {}), 0, 4, 0);
-            chord.style.alternate = (music::AlternateStaff) readInt (c.getProperty ("alternate", {}), 0, 4, 0);
+            chordAlternates.push_back ((music::AlternateStaff) readInt (c.getProperty ("alternate", {}), 0, 4, 0));
             chord.keyboardNotes = readKeyboardNotes (c.getProperty ("keyboardNotes", {}));
             chord.alternateNotes = readKeyboardNotes (c.getProperty ("alternateNotes", {}));
 
@@ -502,6 +518,28 @@ juce::Result Score::loadJSON (const juce::var& json)
 
     const auto tempo = (double) json.getProperty ("beatsPerMinute", 120.0);
     beatsPerMinute = tempo >= minBeatsPerMinute && tempo <= maxBeatsPerMinute ? tempo : 120.0;
+
+    if (json.hasProperty ("alternateStaff"))
+    {
+        alternateStaff = (music::AlternateStaff) readInt (json.getProperty ("alternateStaff", {}), 0, 4, 0);
+    }
+    else
+    {
+        // Each chord had its own alternate staff, so use the one most of them had. The others'
+        // notes set by hand were for a different alternate staff.
+        std::array<int, 5> counts {};
+
+        for (auto alternate : chordAlternates)
+            ++counts[(size_t) alternate];
+
+        alternateStaff = (music::AlternateStaff) std::distance (counts.begin(), std::max_element (counts.begin(), counts.end()));
+        size_t chordIndex = 0;
+
+        for (auto& measure : measures)
+            if (measure.chord.has_value())
+                if (chordAlternates[chordIndex++] != alternateStaff)
+                    measure.chord->alternateNotes.reset();
+    }
 
     // A saved random order is kept if it still fits its chord, and made again if not.
     for (auto& measure : measures)

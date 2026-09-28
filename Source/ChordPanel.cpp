@@ -26,7 +26,6 @@ ChordPanel::ChordPanel (Score& scoreToEdit)
 {
     controls::makeHeading (title, "Chord");
     controls::makeHeading (chordTypeHeading, "Chord type");
-    controls::makeHeading (alternateHeading, "Alternate staff");
 
     hintLabel.setFont (juce::FontOptions (12.5f));
     hintLabel.setColour (juce::Label::textColourId, controls::secondaryText);
@@ -127,12 +126,6 @@ ChordPanel::ChordPanel (Score& scoreToEdit)
     reshuffleButton.setTooltip ("Picks a new random order");
     reshuffleButton.onClick = [this] { if (measure.has_value()) score.reshuffle (*measure); };
 
-    alternateBox.addItemList ({ "None", "Root", "Octave", "Block chord", "Rolled chord" }, 1);
-    alternateBox.onChange = [this]
-    {
-        edit ([this] (MeasureChord& c) { c.style.alternate = (music::AlternateStaff) (alternateBox.getSelectedId() - 1); });
-    };
-
     for (auto* label : { &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel })
     {
         label->setBorderSize ({});
@@ -151,7 +144,7 @@ ChordPanel::ChordPanel (Score& scoreToEdit)
              &title, &hintLabel, &flatButton, &majorButton, &minorButton, &alterButton, &numeralBox, &addedNoteBox,
              &positionButtons[0], &positionButtons[1], &positionButtons[2], &positionButtons[3],
              &octaveButtons[0], &octaveButtons[1], &octaveButtons[2], &trebleButton, &bassButton,
-             &chordTypeHeading, &chordTypeBox, &reshuffleButton, &alternateHeading, &alternateBox,
+             &chordTypeHeading, &chordTypeBox, &reshuffleButton,
              &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel, &clearButton })
         addAndMakeVisible (component);
 
@@ -195,9 +188,8 @@ void ChordPanel::edit (const std::function<void (MeasureChord&)>& change)
     change (chord);
     lastStyle = chord.style;
 
-    // A different chord, or a different alternate staff, gives the alternate staff its own notes again.
-    if (chord.spec != before.spec || chord.keyboardNotes != before.keyboardNotes
-        || chord.style.staff != before.style.staff || chord.style.alternate != before.style.alternate)
+    // A different chord, or a chord on the other staff, gives the alternate staff its own notes again.
+    if (chord.spec != before.spec || chord.keyboardNotes != before.keyboardNotes || chord.style.staff != before.style.staff)
         chord.alternateNotes.reset();
 
     score.setChord (*measure, chord);
@@ -218,7 +210,7 @@ void ChordPanel::update()
 
     for (auto* component : std::initializer_list<juce::Component*> {
              &flatButton, &majorButton, &minorButton, &alterButton, &numeralBox, &addedNoteBox,
-             &trebleButton, &bassButton, &chordTypeBox, &alternateBox })
+             &trebleButton, &bassButton, &chordTypeBox })
         component->setEnabled (editable);
 
     flatButton.setToggleState (spec.flat, juce::dontSendNotification);
@@ -270,7 +262,6 @@ void ChordPanel::update()
     trebleButton.setToggleState (style.staff == Staff::treble, juce::dontSendNotification);
     bassButton.setToggleState (style.staff == Staff::bass, juce::dontSendNotification);
     chordTypeBox.setSelectedId ((int) style.type + 1, juce::dontSendNotification);
-    alternateBox.setSelectedId ((int) style.alternate + 1, juce::dontSendNotification);
     reshuffleButton.setVisible (style.type == music::ChordType::random);
     reshuffleButton.setEnabled (editable && chord != nullptr && chord->hasNotes());
 
@@ -325,7 +316,7 @@ int ChordPanel::getIdealHeight() const
     // Enough for the hint and the keyboard notes too, which only show some of the time.
     return 24 + 38 + gap
          + 3 * (rowHeight + gap) + 3 * (segmentHeight + gap)
-         + sectionGap - gap + 2 * (headingHeight + 2 + rowHeight) + 8
+         + sectionGap - gap + headingHeight + 2 + rowHeight
          + sectionGap + 3 * infoLineHeight + 34
          + 8 + 26;
 }
@@ -385,11 +376,6 @@ void ChordPanel::resized()
     }
 
     chordTypeBox.setBounds (typeRow);
-    bounds.removeFromTop (8);
-
-    alternateHeading.setBounds (bounds.removeFromTop (headingHeight));
-    bounds.removeFromTop (2);
-    alternateBox.setBounds (bounds.removeFromTop (rowHeight));
     bounds.removeFromTop (sectionGap);
 
     nameLabel.setBounds (bounds.removeFromTop (infoLineHeight));

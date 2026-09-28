@@ -6,7 +6,9 @@
 
 #include <functional>
 
-/** The settings for the whole score: its key, time signature and number of measures. */
+/** The settings for the whole score: its key, time signature, what the alternate staff shows,
+    and the number of measures.
+*/
 class ScorePanel final : public juce::Component,
                          private juce::ChangeListener
 {
@@ -25,8 +27,8 @@ private:
 
     Score& score;
 
-    juce::Label keyHeading, signatureLabel, timeSignatureHeading, measuresHeading;
-    juce::ComboBox keyBox, timeSignatureBox;
+    juce::Label keyHeading, signatureLabel, timeSignatureHeading, alternateHeading, alternateHint, measuresHeading;
+    juce::ComboBox keyBox, timeSignatureBox, alternateBox;
     juce::TextButton addMeasureButton { "Add Measure" };
     juce::TextButton removeMeasureButton { "Remove Measure" };
 

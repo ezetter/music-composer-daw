@@ -21,14 +21,13 @@ struct Note
     bool operator== (const Note&) const = default;
 };
 
-/** How a measure's chord is written: which staff it's on, as what type of chord, and what the
-    other staff shows.
+/** How a measure's chord is written: which staff it's on, and as what type of chord. What the
+    other staff shows is up to the score, for every chord alike.
 */
 struct ChordStyle
 {
     Staff staff = Staff::treble;
     music::ChordType type = music::ChordType::block;
-    music::AlternateStaff alternate = music::AlternateStaff::none;
 
     bool operator== (const ChordStyle&) const = default;
 };
@@ -85,6 +84,15 @@ public:
 
     static constexpr double minBeatsPerMinute = 20.0, maxBeatsPerMinute = 300.0;
 
+    /** What the staff a chord isn't on shows, for every chord in the score. */
+    music::AlternateStaff getAlternateStaff() const noexcept { return alternateStaff; }
+
+    /** Changes what the alternate staff shows, for every chord. Notes set by hand on the
+        alternate staff go back to what their chords give it. Quarter notes on the alternate
+        staff in a chord's measure are hidden rather than lost, and come back with None.
+    */
+    void setAlternateStaff (music::AlternateStaff);
+
     /** How long a measure lasts when it plays, at the tempo. */
     double getSecondsPerMeasure() const noexcept { return beatsPerMeasure * 60.0 / beatsPerMinute; }
 
@@ -114,15 +122,15 @@ public:
     /** The measure's chord, or null if it doesn't have one. */
     const MeasureChord* getChord (int measure) const;
 
-    /** Sets or removes a measure's chord. A chord with notes replaces the quarter notes on the
-        staves it uses.
+    /** Sets or removes a measure's chord. A chord with notes replaces the quarter notes on its
+        staff, and hides the ones on the alternate staff, if there is one.
     */
     void setChord (int measure, std::optional<MeasureChord>);
 
     /** The notes and names of a measure's chord in the current key, if it has any notes. */
     std::optional<music::Chord> getChordNotes (int measure) const;
 
-    /** Whether a measure's chord puts notes on a staff. */
+    /** Whether a measure's chord puts notes on a staff, as the chord or the alternate staff. */
     bool chordUsesStaff (int measure, Staff) const;
 
     /** Adds a note to a measure's chord, or takes it out if it's already there, as setting the
@@ -167,5 +175,6 @@ private:
     int keyIndex = 0;
     int beatsPerMeasure = 4;
     double beatsPerMinute = 120.0;
+    music::AlternateStaff alternateStaff = music::AlternateStaff::none;
     juce::Random random;
 };
