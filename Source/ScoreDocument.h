@@ -4,7 +4,8 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
-/** Saves the score to a file and loads it back, and keeps track of whether it has unsaved changes.
+/** Saves the score to a file, with the instrument it's played on, and loads it back, and keeps
+    track of whether it has unsaved changes.
 
     Listeners hear when the file or the unsaved state changes, e.g. to update the window's title.
 */
@@ -19,6 +20,14 @@ public:
     void startNewScore();
 
     static constexpr auto fileExtension = ".amscore";
+
+    /** Supplies the instrument and its settings to save with the score, as JSON. */
+    std::function<juce::var()> getInstrumentToSave;
+
+    /** Loads the instrument an opened score was saved with, given the JSON getInstrumentToSave
+        gave, or void if it was saved without one.
+    */
+    std::function<void (const juce::var&)> loadInstrument;
 
     juce::String getDocumentTitle() override;
 

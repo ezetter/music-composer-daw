@@ -26,7 +26,7 @@ The window has a toolbar along the top, the score's and chords' settings on the 
 - **BPM** sets the tempo in quarter notes per minute, from 20 to 300, fractions allowed. The default is 120. A change applies from the next Play.
 - **Notes / Chords** chooses what clicking the staff does. See below.
 - **Load Instrument…** loads a VST3 instrument, such as one from `/Library/Audio/Plug-Ins/VST3`. **Show Editor** opens the instrument's own window, where you can choose its sounds.
-- The instrument is loaded again the next time the app starts, with the sound it had. It's saved when you load it, when you close its editor, and when you quit, in `~/Library/Application Support/Anthropocene Music`. If it can't be loaded, say because it's been uninstalled, the app tells you and forgets it.
+- The instrument is saved with the score (see [Saving and opening](#saving-and-opening)). It's also loaded again the next time the app starts, with the sound it had. It's saved when you load it, when you close its editor, and when you quit, in `~/Library/Application Support/Anthropocene Music`. If it can't be loaded, say because it's been uninstalled, the app tells you and forgets it.
 
 ### Saving and opening
 
@@ -39,8 +39,10 @@ The **File** menu saves and opens scores:
 | **Save** | ⌘S | Saves the score to its file, asking for a name the first time. |
 | **Save As…** | ⇧⌘S | Saves the score to a new file, which it then keeps using. |
 
-- Scores are saved as `.amscore` files, which are JSON. A file keeps everything about the score: the key, time signature, tempo, the measures and their notes, and each measure's chord with all its settings. That includes notes you've added to or taken out of a chord, and the order a Random chord plays in. Notes on beats hidden by a shorter time signature are kept too.
-- The instrument isn't part of the score. It stays as it is when you open a different score.
+- Scores are saved as `.amscore` files, which are JSON. A file keeps everything about the score, and the instrument it's played on: the key, time signature, tempo, the measures and their notes, and each measure's chord with all its settings. That includes notes you've added to or taken out of a chord, and the order a Random chord plays in. Notes on beats hidden by a shorter time signature are kept too.
+- The instrument is saved with the score, with its sound: whatever you've chosen in its editor. Opening the score loads that instrument again, or just gives it the saved sound if it's the one already loaded. An instrument's sound can be large, so a score can be too; Pigments adds about half a megabyte.
+- Loading a different instrument, or changing its sound in its editor, counts as a change that needs saving. A change made in the editor shows once you close it, or when you're about to start a new score, open one, or quit.
+- If a score's instrument can't be loaded, say because it isn't installed, the score still opens, you're told, and the instrument you had stays loaded. A score saved without an instrument also leaves the one you have as it is, and so does New.
 - The window's title shows the score's name, and "Edited" when it has changes that haven't been saved. Before New, Open, or quitting (including closing the window), you're asked whether to save them.
 - If a file can't be opened, because it isn't a score, you're told why and the current score stays as it was. A score with values out of range, say from editing the file by hand, opens with those values set back to their defaults.
 - A newly opened or new score starts in Notes mode, scrolled to the beginning, with nothing selected.
@@ -124,7 +126,7 @@ Click or drag across the piano keys to play the instrument yourself. Once the pi
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls |
 | `Source/InstrumentHost.*` | Hosts the instrument plugin, and plays it from the piano and the score |
-| `Source/InstrumentPanel.*` | Loads instruments and opens their editors |
+| `Source/InstrumentPanel.*` | Loads instruments and opens their editors, and saves and loads them with the score |
 | `Source/PluginWindow.*` | The window for an instrument's editor |
 
 ## Licences

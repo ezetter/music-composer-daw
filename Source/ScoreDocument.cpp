@@ -43,12 +43,22 @@ juce::Result ScoreDocument::loadDocument (const juce::File& file)
     replacingScore = true;
     const auto result = score.loadJSON (json);
     replacingScore = false;
+
+    if (result.wasOk() && loadInstrument != nullptr)
+        loadInstrument (json.getProperty ("instrument", {}));
+
     return result;
 }
 
 juce::Result ScoreDocument::saveDocument (const juce::File& file)
 {
-    if (file.replaceWithText (juce::JSON::toString (score.toJSON())))
+    auto json = score.toJSON();
+
+    if (getInstrumentToSave != nullptr)
+        if (const auto instrument = getInstrumentToSave(); ! instrument.isVoid())
+            json.getDynamicObject()->setProperty ("instrument", instrument);
+
+    if (file.replaceWithText (juce::JSON::toString (json)))
         return juce::Result::ok();
 
     return juce::Result::fail ("Couldn't write to " + file.getFullPathName());

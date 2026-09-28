@@ -49,6 +49,11 @@ MainComponent::MainComponent (juce::PropertiesFile& settings)
     : document (score, settings),
       instrumentPanel (instrumentHost, settings)
 {
+    // The instrument, and its sound, are saved with the score.
+    document.getInstrumentToSave = [this] { return instrumentPanel.saveToJSON(); };
+    document.loadInstrument = [this] (const juce::var& json) { instrumentPanel.loadFromJSON (json); };
+    instrumentPanel.onInstrumentChanged = [this] { document.changed(); };
+
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
 
@@ -491,6 +496,9 @@ bool MainComponent::perform (const InvocationInfo& invocation)
 
 void MainComponent::saveChangesThen (std::function<void()> action)
 {
+    // The instrument's sound may have been changed in its editor, which might still be open.
+    instrumentPanel.checkForSoundChanges();
+
     document.saveIfNeededAndUserAgreesAsync ([safeThis = juce::Component::SafePointer (this), action] (juce::FileBasedDocument::SaveResult result)
     {
         if (safeThis != nullptr && result == juce::FileBasedDocument::savedOk)
