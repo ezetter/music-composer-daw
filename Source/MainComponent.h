@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ChordPanel.h"
+#include "ChordEditor.h"
 #include "InstrumentHost.h"
 #include "InstrumentPanel.h"
 #include "MidiInputs.h"
@@ -44,15 +44,6 @@ public:
     static constexpr int minimumHeight = 640;
 
 private:
-    using InputMode = StaffView::InputMode;
-
-    /** Holds the sidebar's panels, with a line between them. */
-    struct SidebarContent final : public juce::Component
-    {
-        void paint (juce::Graphics&) override;
-        int dividerY = 0;
-    };
-
     enum Commands
     {
         newScore = 1,
@@ -71,14 +62,18 @@ private:
     using juce::Component::keyPressed;
     bool keyPressed (const juce::KeyPress&, juce::Component*) override;
 
-    void setInputMode (InputMode);
-    void selectMeasure (std::optional<int>);
-    void measureClicked (int measure);
+
+    /** Opens the chord window for a measure, to add a chord or edit the one it has. */
+    void editChord (int measure);
+
+    /** The chord being edited, if the chord window is open. */
+    ChordEditor* getChordEditor() const;
+
+    /** Closes the chord window, if it's open, without changing the chord. */
+    void closeChordEditor();
     void scrollToMeasure (int measure);
     void pianoKeyClicked (int midiNote);
     void togglePlayback();
-    /** Plays some measures. The whole score loops if Loop is on; a measure played on its own doesn't. */
-    void play (int firstMeasure, int lastMeasure, bool wholeScore);
     void showPlaybackPosition();
     void addMeasure();
     void removeMeasure();
@@ -102,13 +97,10 @@ private:
     juce::TextButton loopButton { "Loop" };
     juce::Label tempoLabel;
     juce::TextEditor tempoEditor;
-    juce::TextButton notesButton { "Notes" };
-    juce::TextButton chordsButton { "Chords" };
     InstrumentPanel instrumentPanel;
 
     ScorePanel scorePanel { score };
-    ChordPanel chordPanel { score };
-    SidebarContent sidebarContent;
+    juce::Component sidebarContent;
     juce::Viewport sidebar;
 
     StaffView staffView { score };
@@ -116,10 +108,11 @@ private:
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 
-    InputMode inputMode = InputMode::notes;
-    std::optional<int> selectedMeasure;
-    bool playingWholeScore = false;
+    ChordStyle lastChordStyle;          // what a new chord starts with: whichever was chosen last
     juce::Component::SafePointer<juce::Component> keyListenerTarget;
+
+    // Last, so it goes before the score it edits
+    std::unique_ptr<ChordWindow> chordWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

@@ -23,7 +23,8 @@ namespace
     constexpr float staffHeight = 4.0f;
     constexpr float staffGap = 7.0f;            // from the treble staff's bottom line to the bass staff's top line
     constexpr float noteRoom = 6.0f;            // above and below the system, for ledger lines
-    constexpr float marginAbove = noteRoom + 2.5f;      // with a row for chord names
+    constexpr float chordButtonRow = 3.0f;      // at the very top, for each measure's Add Chord or Edit Chord button
+    constexpr float marginAbove = noteRoom + 2.5f + chordButtonRow;     // with a row for chord names
     constexpr float marginBelow = noteRoom + 3.5f;      // with a row for Roman numerals
 
     // Line thicknesses and notehead metrics, from Bravura's metadata
@@ -309,18 +310,6 @@ int StaffView::getContentHeight()
     return (int) std::ceil ((marginAbove + staffHeight + staffGap + staffHeight + marginBelow) * staffSpace);
 }
 
-void StaffView::setInputMode (InputMode newMode)
-{
-    if (newMode == inputMode)
-        return;
-
-    inputMode = newMode;
-    setHoverNote ({});
-    setHoverMeasure ({});
-    setMouseCursor (inputMode == InputMode::chords ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
-    repaint();
-}
-
 void StaffView::setSelectedMeasure (std::optional<int> measure)
 {
     if (measure == selectedMeasure)
@@ -333,6 +322,8 @@ void StaffView::setSelectedMeasure (std::optional<int> measure)
 
     if (selectedMeasure.has_value())
         repaint (getMeasureBox (*selectedMeasure).toNearestInt().expanded (2));
+
+    updateChordButtons();
 }
 
 //==============================================================================
@@ -436,6 +427,7 @@ void StaffView::changeListenerCallback (juce::ChangeBroadcaster*)
         selectedMeasure.reset();
 
     setSize (getContentWidth(), getHeight());
+    updateChordButtons();
     repaint();
 }
 
@@ -606,11 +598,6 @@ void StaffView::paint (juce::Graphics& g)
             g.fillRoundedRectangle (box, 0.7f * staffSpace);
             g.setColour (selectionColour);
             g.drawRoundedRectangle (box.reduced (1.0f), 0.7f * staffSpace, 2.0f);
-        }
-        else if (measure == hoverMeasure)
-        {
-            g.setColour (selectionColour.withAlpha (0.06f));
-            g.fillRoundedRectangle (getMeasureBox (measure), 0.7f * staffSpace);
         }
     }
 
@@ -839,11 +826,11 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
         beams.push_back (beamed);
     }
 
-    // In notes mode, the note under the pointer is red, to show a click will take it out. A chord's
+    // The note under the pointer is red, to show a click will take it out. A chord's
     // notes are taken out wherever they are in the measure; a quarter note only on its own beat.
     std::optional<int> highlightedPosition;
 
-    if (inputMode == InputMode::notes && hoverNote.has_value() && ! hoverHintHidden
+    if (hoverNote.has_value() && ! hoverHintHidden
         && hoverNote->staff == staff && hoverNote->measure == measure)
         highlightedPosition = hoverNote->pitch.step - getBottomLineStep (staff);
 
@@ -1109,7 +1096,7 @@ std::optional<music::Tone> StaffView::findNoteUnder (const Note& note) const
 
 void StaffView::drawHoverNote (juce::Graphics& g) const
 {
-    if (inputMode != InputMode::notes || ! hoverNote.has_value() || hoverHintHidden
+    if (! hoverNote.has_value() || hoverHintHidden
         || hoverNote->measure >= score.getNumMeasures() || hoverNote->beat >= score.getBeatsPerMeasure())
         return;
 
@@ -1133,16 +1120,12 @@ void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float ce
 //==============================================================================
 void StaffView::mouseMove (const juce::MouseEvent& e)
 {
-    if (inputMode == InputMode::notes)
-        setHoverNote (getNoteAt (e.position));
-    else
-        setHoverMeasure (getMeasureAt (e.position));
+    setHoverNote (getNoteAt (e.position));
 }
 
 void StaffView::mouseExit (const juce::MouseEvent&)
 {
     setHoverNote ({});
-    setHoverMeasure ({});
 }
 
 void StaffView::mouseDown (const juce::MouseEvent& e)
@@ -1150,38 +1133,31 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     if (e.mods.isPopupMenu())
         return;
 
-    if (inputMode == InputMode::notes)
+    if (const auto note = getNoteAt (e.position))
     {
-        if (const auto note = getNoteAt (e.position))
+        // On a staff with a chord's notes, clicking one of them takes it out of the chord, and
+        // clicking anywhere else adds a note to them.
+        if (score.chordUsesStaff (note->measure, note->staff))
         {
-            // On a staff with a chord's notes, clicking one of them takes it out of the chord, and
-            // clicking anywhere else adds a note to them.
-            if (score.chordUsesStaff (note->measure, note->staff))
-            {
-                const auto existing = findNoteUnder (*note);
-                const auto* chord = score.getChord (note->measure);
-                const music::KeyboardNote clicked { existing ? existing->midi : note->pitch.getMidiNoteNumber(),
-                                                    existing ? existing->pitch.getSpelling() : note->pitch.getSpelling() };
+            const auto existing = findNoteUnder (*note);
+            const auto* chord = score.getChord (note->measure);
+            const music::KeyboardNote clicked { existing ? existing->midi : note->pitch.getMidiNoteNumber(),
+                                                existing ? existing->pitch.getSpelling() : note->pitch.getSpelling() };
 
-                if (note->staff == chord->style.staff)
-                    score.toggleChordNote (note->measure, clicked.midi, chord->style);
-                else
-                    score.toggleAlternateNote (note->measure, clicked);
-            }
-            // Clicking a note takes it out, whatever its sharp or flat; clicking anywhere else adds one.
-            else if (score.hasNoteAt (note->staff, note->measure, note->beat, note->pitch.step))
-                score.removeNotesAt (note->staff, note->measure, note->beat, note->pitch.step);
+            if (note->staff == chord->style.staff)
+                score.toggleChordNote (note->measure, clicked.midi, chord->style);
             else
-                score.addNote (*note);
-
-            // Show what the click did, rather than what another click would do.
-            hoverHintHidden = true;
-            repaint (getBeatArea (note->measure, note->beat));
+                score.toggleAlternateNote (note->measure, clicked);
         }
-    }
-    else if (const auto measure = getMeasureAt (e.position); measure.has_value() && onMeasureClicked != nullptr)
-    {
-        onMeasureClicked (*measure);
+        // Clicking a note takes it out, whatever its sharp or flat; clicking anywhere else adds one.
+        else if (score.hasNoteAt (note->staff, note->measure, note->beat, note->pitch.step))
+            score.removeNotesAt (note->staff, note->measure, note->beat, note->pitch.step);
+        else
+            score.addNote (*note);
+
+        // Show what the click did, rather than what another click would do.
+        hoverHintHidden = true;
+        repaint (getBeatArea (note->measure, note->beat));
     }
 }
 
@@ -1201,16 +1177,45 @@ void StaffView::setHoverNote (std::optional<Note> note)
         repaint (getBeatArea (hoverNote->measure, hoverNote->beat));
 }
 
-void StaffView::setHoverMeasure (std::optional<int> measure)
+//==============================================================================
+void StaffView::resized()
 {
-    if (measure == hoverMeasure)
-        return;
+    updateChordButtons();
+}
 
-    if (hoverMeasure.has_value() && *hoverMeasure < (int) measureLayouts.size())
-        repaint (getMeasureBox (*hoverMeasure).toNearestInt().expanded (2));
+void StaffView::updateChordButtons()
+{
+    const auto numMeasures = score.getNumMeasures();
 
-    hoverMeasure = measure;
+    while (chordButtons.size() > numMeasures)
+        chordButtons.removeLast();
 
-    if (hoverMeasure.has_value())
-        repaint (getMeasureBox (*hoverMeasure).toNearestInt().expanded (2));
+    while (chordButtons.size() < numMeasures)
+    {
+        const auto measure = chordButtons.size();
+        auto* button = chordButtons.add (std::make_unique<juce::TextButton>());
+        button->setWantsKeyboardFocus (false);
+        button->setColour (juce::TextButton::buttonColourId, paperColour);
+        button->setColour (juce::TextButton::buttonOnColourId, selectionColour.withAlpha (0.15f));
+        button->setColour (juce::TextButton::textColourOffId, selectionColour);
+        button->setColour (juce::TextButton::textColourOnId, selectionColour);
+        button->onClick = [this, measure] { if (onChordButtonClicked != nullptr) onChordButtonClicked (measure); };
+        addAndMakeVisible (button);
+    }
+
+    // Each button sits at the top of its measure, over the chord's name.
+    const auto top = getStaffTop (Staff::treble) - (marginAbove - 0.6f) * staffSpace;
+
+    for (int measure = 0; measure < numMeasures; ++measure)
+    {
+        auto* button = chordButtons[measure];
+        const auto& layout = measureLayouts[(size_t) measure];
+        const auto hasChord = score.getChord (measure) != nullptr && score.getChord (measure)->hasNotes();
+        const auto width = juce::jmin (layout.width - 1.2f * staffSpace, 90.0f);
+
+        button->setButtonText (hasChord ? "Edit Chord" : "Add Chord");
+        button->setTooltip ((hasChord ? "Edit the chord in measure " : "Add a chord to measure ") + juce::String (measure + 1));
+        button->setToggleState (measure == selectedMeasure, juce::dontSendNotification);
+        button->setBounds (juce::Rectangle<float> (layout.x + (layout.width - width) / 2.0f, top, width, 2.0f * staffSpace).toNearestInt());
+    }
 }

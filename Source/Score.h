@@ -49,6 +49,8 @@ struct MeasureChord
     std::optional<std::vector<music::KeyboardNote>> alternateNotes;
 
     bool hasNotes() const { return ! spec.isEmpty() || keyboardNotes.has_value(); }
+
+    bool operator== (const MeasureChord&) const = default;
 };
 
 /** A piece of music on a grand staff, in one key and time signature. Listeners hear about
@@ -130,6 +132,14 @@ public:
     /** The notes and names of a measure's chord in the current key, if it has any notes. */
     std::optional<music::Chord> getChordNotes (int measure) const;
 
+    /** The notes and names a chord would have in this score's key, if it has any notes. */
+    std::optional<music::Chord> getChordNotes (const MeasureChord&) const;
+
+    /** Adds a note to a chord, or takes it out, in this score's key, as setting the chord's notes
+        on the piano does.
+    */
+    void toggleChordNote (MeasureChord&, int midiNote) const;
+
     /** Whether a measure's chord puts notes on a staff, as the chord or the alternate staff. */
     bool chordUsesStaff (int measure, Staff) const;
 
@@ -168,7 +178,6 @@ private:
         std::optional<MeasureChord> chord;
     };
 
-    std::optional<music::Chord> getChordNotes (const MeasureChord&) const;
     void tidyChord (Measure&, bool reshuffleRandomOrder = false);
 
     std::vector<Measure> measures = std::vector<Measure> (initialMeasures);

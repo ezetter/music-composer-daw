@@ -12,16 +12,14 @@
 
 /** Draws a score on a single grand staff that extends to the right as measures are added.
 
-    In notes mode, clicking the staff adds a note and clicking a note takes it out again: a
-    quarter note, or on a staff with a chord's notes, a note of the chord. In chords mode,
-    clicking a measure selects it, so its chord can be edited.
+    Clicking the staff adds a note and clicking a note takes it out again: a quarter note, or on
+    a staff with a chord's notes, a note of the chord. Above each measure is a button to add a
+    chord to it, or edit the one it has.
 */
 class StaffView final : public juce::Component,
                         private juce::ChangeListener
 {
 public:
-    enum class InputMode { notes, chords };
-
     explicit StaffView (Score&);
     ~StaffView() override;
 
@@ -29,15 +27,13 @@ public:
     int getContentWidth() const;
     static int getContentHeight();
 
-    void setInputMode (InputMode);
-
-    /** Outlines a measure as selected, or none. */
+    /** Outlines a measure as selected, e.g. while its chord is being edited, or none. */
     void setSelectedMeasure (std::optional<int>);
 
-    /** Called when a measure is clicked in chords mode. */
-    std::function<void (int measure)> onMeasureClicked;
+    /** Called when a measure's Add Chord or Edit Chord button is clicked. */
+    std::function<void (int measure)> onChordButtonClicked;
 
-    /** The note that clicking at this point would add in notes mode, if any. */
+    /** The note that clicking at this point would add, if any. */
     std::optional<Note> getNoteAt (juce::Point<float>) const;
 
     /** The measure at this point, if any. */
@@ -53,6 +49,7 @@ public:
     juce::Rectangle<int> getPlaybackArea() const;
 
     void paint (juce::Graphics&) override;
+    void resized() override;
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -73,6 +70,7 @@ private:
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void updateLayout();
+    void updateChordButtons();
 
     float getStaffTop (Staff) const;
     float getY (Staff, int staffPosition) const;
@@ -101,15 +99,13 @@ private:
     std::optional<music::Tone> findNoteUnder (const Note&) const;
 
     void setHoverNote (std::optional<Note>);
-    void setHoverMeasure (std::optional<int>);
 
     Score& score;
     MusicGlyphs glyphs;
-    InputMode inputMode = InputMode::notes;
     std::optional<Note> hoverNote;
     bool hoverHintHidden = false;       // after a click, until the pointer moves to another spot
-    std::optional<int> hoverMeasure;
     std::optional<int> selectedMeasure;
+    juce::OwnedArray<juce::TextButton> chordButtons;    // one above each measure
     std::optional<int> playingBeat;     // counted from the start of the score
 
     // Worked out whenever the score changes

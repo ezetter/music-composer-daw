@@ -1,7 +1,6 @@
 #include "MainComponent.h"
 
 #include "Controls.h"
-#include "MeasureContent.h"
 
 #include <algorithm>
 
@@ -33,22 +32,6 @@ namespace
 
         return text.trimCharactersAtEnd (".");
     }
-
-    bool hasNotes (const Score& score, int measure)
-    {
-        const auto content = getMeasureContent (score, measure);
-
-        return std::any_of (content.staves.begin(), content.staves.end(), [] (const StaffContent& staff)
-        {
-            return std::any_of (staff.events.begin(), staff.events.end(), [] (const StaffEvent& e) { return ! e.isRest(); });
-        });
-    }
-}
-
-void MainComponent::SidebarContent::paint (juce::Graphics& g)
-{
-    g.setColour (juce::Colours::black.withAlpha (0.1f));
-    g.fillRect (sidebarPadding, dividerY, getWidth() - 2 * sidebarPadding, 1);
 }
 
 MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
@@ -75,9 +58,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     loopButton.onClick = [this]
     {
         settings.setValue (loopKey, loopButton.getToggleState());
-
-        if (playingWholeScore)
-            instrumentHost.setLooping (loopButton.getToggleState());
+        instrumentHost.setLooping (loopButton.getToggleState());
     };
 
     tempoLabel.setText ("BPM", juce::dontSendNotification);
@@ -93,11 +74,6 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     tempoEditor.onReturnKey = [this] { tempoEdited (true); tempoEditor.giveAwayKeyboardFocus(); };
     tempoEditor.onFocusLost = [this] { tempoEdited (true); };
 
-    controls::makeSegmented ({ &notesButton, &chordsButton }, 1);
-    notesButton.setTooltip ("Click the staff to add quarter notes");
-    chordsButton.setTooltip ("Click a measure to add or change its chord");
-    notesButton.onClick = [this] { setInputMode (InputMode::notes); };
-    chordsButton.onClick = [this] { setInputMode (InputMode::chords); };
 
     // Clicking a button shouldn't take the keyboard focus away from the piano, which the
     // computer keyboard can play too.
@@ -105,18 +81,17 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     loopButton.setWantsKeyboardFocus (false);
 
     for (auto* component : std::initializer_list<juce::Component*> { &playButton, &loopButton, &tempoLabel, &tempoEditor,
-                                                                     &notesButton, &chordsButton, &instrumentPanel })
+                                                                     &instrumentPanel })
         addAndMakeVisible (component);
 
     scorePanel.onAddMeasure = [this] { addMeasure(); };
     scorePanel.onRemoveMeasure = [this] { removeMeasure(); };
     sidebarContent.addAndMakeVisible (scorePanel);
-    sidebarContent.addAndMakeVisible (chordPanel);
     sidebar.setViewedComponent (&sidebarContent, false);
     sidebar.setScrollBarsShown (true, false);
     addAndMakeVisible (sidebar);
 
-    staffView.onMeasureClicked = [this] (int measure) { measureClicked (measure); };
+    staffView.onChordButtonClicked = [this] (int measure) { editChord (measure); };
     staffViewport.setViewedComponent (&staffView, false);
     staffViewport.setScrollBarsShown (false, true);
     addAndMakeVisible (staffViewport);
@@ -143,7 +118,6 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     setApplicationCommandManagerToWatch (&commandManager);
     juce::MenuBarModel::setMacMainMenu (this);
 
-    setInputMode (InputMode::notes);
     setSize (1280, 820);
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
@@ -199,8 +173,6 @@ void MainComponent::resized()
     toolbar.removeFromLeft (4);
     tempoEditor.setBounds (toolbar.removeFromLeft (56));
     toolbar.removeFromLeft (20);
-    notesButton.setBounds (toolbar.removeFromLeft (76));
-    chordsButton.setBounds (toolbar.removeFromLeft (76));
     toolbar.removeFromLeft (20);
     instrumentPanel.setBounds (toolbar);
 
@@ -210,9 +182,7 @@ void MainComponent::resized()
     const auto contentWidth = sidebar.getMaximumVisibleWidth();
     const auto panelWidth = contentWidth - 2 * sidebarPadding;
     scorePanel.setBounds (sidebarPadding, sidebarPadding, panelWidth, scorePanel.getIdealHeight());
-    sidebarContent.dividerY = scorePanel.getBottom() + 14;
-    chordPanel.setBounds (sidebarPadding, sidebarContent.dividerY + 14, panelWidth, chordPanel.getIdealHeight());
-    sidebarContent.setSize (contentWidth, chordPanel.getBottom() + sidebarPadding);
+    sidebarContent.setSize (contentWidth, scorePanel.getBottom() + sidebarPadding);
 
     keyboard.setBounds (bounds.removeFromBottom (keyboardHeight));
     keyboard.setKeyWidth ((float) keyboard.getWidth() / (float) numWhiteKeys);
@@ -245,9 +215,9 @@ void MainComponent::parentHierarchyChanged()
 
 bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
 {
-    if (key == juce::KeyPress::escapeKey && selectedMeasure.has_value())
+    if (key == juce::KeyPress::escapeKey && getChordEditor() != nullptr)
     {
-        selectMeasure ({});
+        closeChordEditor();
         return true;
     }
 
@@ -266,74 +236,72 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     if (! tempoEditor.hasKeyboardFocus (false))
         tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
 
-    if (selectedMeasure.has_value() && *selectedMeasure >= score.getNumMeasures())
-        selectMeasure ({});
-
     // A loop plays changes to the score from the next time through.
-    if (playingWholeScore && instrumentHost.getPlaybackPosition().has_value())
+    if (instrumentHost.getPlaybackPosition().has_value())
         instrumentHost.updateLoop (score, 0, score.getNumMeasures() - 1);
 
     showHeldNotes();
 }
 
 //==============================================================================
-void MainComponent::setInputMode (InputMode mode)
+void MainComponent::editChord (int measure)
 {
-    const auto switchingToChords = mode == InputMode::chords && inputMode != InputMode::chords;
+    // One chord is edited at a time. The window stays where it was, if it's open already.
+    std::optional<juce::Point<int>> position;
 
-    inputMode = mode;
-    notesButton.setToggleState (mode == InputMode::notes, juce::dontSendNotification);
-    chordsButton.setToggleState (mode == InputMode::chords, juce::dontSendNotification);
-    staffView.setInputMode (mode);
+    if (chordWindow != nullptr && chordWindow->isVisible())
+        position = chordWindow->getPosition();
 
-    if (mode == InputMode::notes)
+    closeChordEditor();
+
+    auto editor = std::make_unique<ChordEditor> (score, measure, lastChordStyle);
+    auto* editorPointer = editor.get();
+
+    editor->onChordChanged = [this, editorPointer]
     {
-        selectMeasure ({});
-    }
-    else if (switchingToChords)
-    {
-        // Start on the first measure without any notes, or on the first measure if they all have some.
-        auto measure = 0;
+        lastChordStyle = editorPointer->getChord().style;
+        showHeldNotes();
+    };
 
-        for (int m = 0; m < score.getNumMeasures(); ++m)
+    editor->onFinished = [this, editorPointer]
+    {
+        // The editor has finished, but it's still busy, so its window goes once it's done.
+        if (chordWindow == nullptr || &chordWindow->getEditor() != editorPointer)
+            return;
+
+        chordWindow->setVisible (false);
+        staffView.setSelectedMeasure ({});
+        showHeldNotes();
+
+        juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this), editorPointer]
         {
-            if (! hasNotes (score, m))
-            {
-                measure = m;
-                break;
-            }
-        }
+            if (safeThis != nullptr && safeThis->chordWindow != nullptr && &safeThis->chordWindow->getEditor() == editorPointer)
+                safeThis->chordWindow = nullptr;
+        });
+    };
 
-        selectMeasure (measure);
-        scrollToMeasure (measure);
-    }
+    chordWindow = std::make_unique<ChordWindow> (std::move (editor), [this] { closeChordEditor(); });
 
-    chordPanel.setHint (mode == InputMode::notes ? "Switch to Chords above, then click a measure to give it a chord."
-                                                 : "Click a measure to add a chord to it, or to change its chord.");
-    showHeldNotes();
-}
+    // Over the sidebar, to start with, leaving the staff and the piano clear.
+    const auto sidebarArea = localAreaToGlobal (sidebar.getBounds());
+    chordWindow->setTopLeftPosition (position.value_or (sidebarArea.getTopLeft() + juce::Point<int> (8, 8)));
+    chordWindow->setVisible (true);
 
-void MainComponent::selectMeasure (std::optional<int> measure)
-{
-    selectedMeasure = measure;
     staffView.setSelectedMeasure (measure);
-    chordPanel.setMeasure (measure);
+    scrollToMeasure (measure);
     showHeldNotes();
 }
 
-void MainComponent::measureClicked (int measure)
+ChordEditor* MainComponent::getChordEditor() const
 {
-    // Clicking a measure selects it, and plays it; clicking it again lets it go.
-    if (selectedMeasure == measure)
-    {
-        selectMeasure ({});
-        return;
-    }
+    return chordWindow != nullptr && chordWindow->isVisible() ? &chordWindow->getEditor() : nullptr;
+}
 
-    selectMeasure (measure);
-
-    if (hasNotes (score, measure))
-        play (measure, measure, false);
+void MainComponent::closeChordEditor()
+{
+    chordWindow = nullptr;
+    staffView.setSelectedMeasure ({});
+    showHeldNotes();
 }
 
 void MainComponent::scrollToMeasure (int measure)
@@ -348,17 +316,17 @@ void MainComponent::scrollToMeasure (int measure)
 
 void MainComponent::pianoKeyClicked (int midiNote)
 {
-    // With a measure selected, a key adds its note to the measure's chord, or takes it out.
-    if (inputMode == InputMode::chords && selectedMeasure.has_value())
-        score.toggleChordNote (*selectedMeasure, midiNote, chordPanel.getStyleForNewChord());
+    // While a chord's being edited, a key adds its note to the chord, or takes it out.
+    if (auto* editor = getChordEditor())
+        editor->toggleNote (midiNote);
 }
 
 void MainComponent::showHeldNotes()
 {
     std::map<int, juce::String> heldNotes;
 
-    if (inputMode == InputMode::chords && selectedMeasure.has_value())
-        if (const auto chord = score.getChordNotes (*selectedMeasure))
+    if (const auto* editor = getChordEditor())
+        if (const auto chord = score.getChordNotes (editor->getChord()))
             for (const auto& tone : chord->tones)
                 heldNotes[tone.midi] = tone.getName();
 
@@ -380,16 +348,10 @@ void MainComponent::togglePlayback()
     }
     else
     {
-        play (0, score.getNumMeasures() - 1, true);
+        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState());
+        startTimerHz (30);
+        showPlaybackPosition();
     }
-}
-
-void MainComponent::play (int firstMeasure, int lastMeasure, bool wholeScore)
-{
-    playingWholeScore = wholeScore;
-    instrumentHost.play (score, firstMeasure, lastMeasure, wholeScore && loopButton.getToggleState());
-    startTimerHz (30);
-    showPlaybackPosition();
 }
 
 void MainComponent::showPlaybackPosition()
@@ -568,8 +530,7 @@ void MainComponent::scoreReplaced()
     // A new score starts from the beginning, with nothing playing or selected.
     instrumentHost.stop();
     showPlaybackPosition();
-    selectMeasure ({});
-    setInputMode (InputMode::notes);
+    closeChordEditor();
     staffViewport.setViewPosition (0, 0);
 }
 

@@ -206,22 +206,26 @@ void Score::toggleChordNote (int measure, int midiNote, const ChordStyle& styleF
     if (! target.chord.has_value())
         target.chord = MeasureChord { {}, {}, styleForNewChord, {}, {} };
 
+    toggleChordNote (*target.chord, midiNote);
+    tidyChord (target);
+    sendSynchronousChangeMessage();
+}
+
+void Score::toggleChordNote (MeasureChord& chord, int midiNote) const
+{
     std::vector<int> midiNotes;
 
-    if (const auto chord = getChordNotes (*target.chord))
-        midiNotes = getMidiNotes (*chord);
+    if (const auto notes = getChordNotes (chord))
+        midiNotes = getMidiNotes (*notes);
 
     if (const auto existing = std::find (midiNotes.begin(), midiNotes.end(), midiNote); existing != midiNotes.end())
         midiNotes.erase (existing);
     else
         midiNotes.push_back (midiNote);
 
-    const auto description = music::describeNotes (getKey(), target.chord->style.staff, midiNotes);
-    target.chord->spec = description.spec;
-    target.chord->keyboardNotes = description.keyboardNotes;
-
-    tidyChord (target);
-    sendSynchronousChangeMessage();
+    const auto description = music::describeNotes (getKey(), chord.style.staff, midiNotes);
+    chord.spec = description.spec;
+    chord.keyboardNotes = description.keyboardNotes;
 }
 
 void Score::toggleAlternateNote (int measure, const music::KeyboardNote& note)
