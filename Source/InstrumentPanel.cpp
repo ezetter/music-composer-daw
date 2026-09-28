@@ -341,9 +341,9 @@ void InstrumentPanel::showEditor()
             editorWindow = nullptr;
         });
 
-    // Both parts could have the same instrument, so the window says which part's it is.
+    // Both instruments could be the same plugin, so the window says which instrument it is.
     if (editorWindow != nullptr)
-        editorWindow->setName (editorWindow->getName() + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 Part ")) + juce::String (part + 1));
+        editorWindow->setName (editorWindow->getName() + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 Instrument ")) + juce::String (part + 1));
 }
 
 void InstrumentPanel::updateControls()

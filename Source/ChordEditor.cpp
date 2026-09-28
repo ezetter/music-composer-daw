@@ -168,7 +168,7 @@ ChordEditor::~ChordEditor()
 
 juce::String ChordEditor::getTitle() const
 {
-    return "Chord" + controls::fromUTF8 (" \xc2\xb7 Part ") + juce::String (part + 1)
+    return "Chord" + controls::fromUTF8 (" \xc2\xb7 Instrument ") + juce::String (part + 1)
          + controls::fromUTF8 (" \xc2\xb7 Measure ") + juce::String (measure + 1);
 }
 
@@ -233,7 +233,7 @@ void ChordEditor::update()
     const auto& style = chord.style;
     const auto key = score.getKey();
 
-    title.setText ("PART " + juce::String (part + 1) + controls::fromUTF8 (" \xc2\xb7 ") + "MEASURE " + juce::String (measure + 1),
+    title.setText ("INSTRUMENT " + juce::String (part + 1) + controls::fromUTF8 (" \xc2\xb7 ") + "MEASURE " + juce::String (measure + 1),
                    juce::dontSendNotification);
 
     flatButton.setToggleState (spec.flat, juce::dontSendNotification);

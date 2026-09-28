@@ -39,7 +39,7 @@ public:
     */
     std::function<void()> onFinished;
 
-    /** The title for a window showing the editor, such as "Chord · Part 1 · Measure 3". */
+    /** The title for a window showing the editor, such as "Chord · Instrument 1 · Measure 3". */
     juce::String getTitle() const;
 
     int getIdealWidth() const;

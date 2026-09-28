@@ -187,8 +187,8 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     for (int part = 0; part < Score::numParts; ++part)
     {
         auto& button = partButtons[(size_t) part];
-        button.setButtonText ("Part " + juce::String (part + 1));
-        button.setTooltip ("Play part " + juce::String (part + 1) + "'s instrument on the keyboard, and set its alternate staff");
+        button.setButtonText ("Instrument " + juce::String (part + 1));
+        button.setTooltip ("Play instrument " + juce::String (part + 1) + " on the keyboard, and set its alternate staff");
         button.onClick = [this, part] { setActivePart (part); };
     }
 
@@ -247,7 +247,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
         dial.setSkewFactorFromMidPoint (-12.0);
         dial.setDoubleClickReturnValue (true, 0.0);
         dial.setWantsKeyboardFocus (false);
-        dial.setTooltip ("Part " + juce::String (part + 1) + "'s volume. Double-click for 0 dB.");
+        dial.setTooltip ("Instrument " + juce::String (part + 1) + "'s volume. Double-click for 0 dB.");
         dial.setColour (juce::Slider::textBoxTextColourId, controls::secondaryText);
         dial.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         dial.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
@@ -345,8 +345,8 @@ void MainComponent::resized()
     toolbar.removeFromLeft (4);
     tempoEditor.setBounds (toolbar.removeFromLeft (56));
     toolbar.removeFromLeft (20);
-    partButtons[0].setBounds (toolbar.removeFromLeft (70));
-    partButtons[1].setBounds (toolbar.removeFromLeft (70));
+    partButtons[0].setBounds (toolbar.removeFromLeft (104));
+    partButtons[1].setBounds (toolbar.removeFromLeft (104));
     toolbar.removeFromLeft (20);
 
     for (auto& panel : instrumentPanels)
@@ -454,7 +454,7 @@ void MainComponent::copyProgression()
         return;
     }
 
-    const auto fromName = "part " + juce::String (from + 1), toName = "part " + juce::String (to + 1);
+    const auto fromName = "instrument " + juce::String (from + 1), toName = "instrument " + juce::String (to + 1);
 
     juce::AlertWindow::showAsync (juce::MessageBoxOptions()
                                       .withIconType (juce::MessageBoxIconType::QuestionIcon)
@@ -475,7 +475,7 @@ void MainComponent::copyProgression()
 void MainComponent::showPartTitles()
 {
     for (int part = 0; part < Score::numParts; ++part)
-        staffSystems.views[(size_t) part]->setTitle ("Part " + juce::String (part + 1) + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 "))
+        staffSystems.views[(size_t) part]->setTitle ("Instrument " + juce::String (part + 1) + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 "))
                                                      + instrumentPanels[(size_t) part]->getStatus());
 }
 

@@ -41,6 +41,7 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
         hint->setColour (juce::Label::textColourId, controls::secondaryText);
         hint->setBorderSize ({});
         hint->setJustificationType (juce::Justification::topLeft);
+        hint->setMinimumHorizontalScale (1.0f);     // wrapped onto a second line, rather than squeezed
     }
 
     copyProgressionButton.setWantsKeyboardFocus (false);
@@ -112,13 +113,13 @@ void ScorePanel::update()
     signatureLabel.setText (music::getKeySignatureText (score.getKey()), juce::dontSendNotification);
     timeSignatureBox.setSelectedId (score.getBeatsPerMeasure(), juce::dontSendNotification);
     alternateBox.setSelectedId ((int) score.getAlternateStaff (part) + 1, juce::dontSendNotification);
-    alternateHint.setText ("For every chord in part " + juce::String (part + 1), juce::dontSendNotification);
+    alternateHint.setText ("For every chord of instrument " + juce::String (part + 1), juce::dontSendNotification);
 
     // The progression goes from this part to the other.
     const auto from = juce::String (part + 1), to = juce::String ((part + 1) % Score::numParts + 1);
-    copyProgressionButton.setButtonText ("Copy Progression to Part " + to);
+    copyProgressionButton.setButtonText ("Copy Progression to Instrument " + to);
     copyProgressionButton.setEnabled (score.hasChords (part));
-    copyProgressionButton.setTooltip ("Give part " + to + " part " + from + "'s chords, in place of its own notes and chords");
-    progressionHint.setText ("Replaces part " + to + "'s notes and chords with part " + from + "'s chords",
+    copyProgressionButton.setTooltip ("Give instrument " + to + " instrument " + from + "'s chords, in place of its own notes and chords");
+    progressionHint.setText ("Replaces instrument " + to + "'s notes and chords with instrument " + from + "'s chords",
                              juce::dontSendNotification);
 }
