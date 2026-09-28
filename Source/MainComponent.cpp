@@ -195,7 +195,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     setActivePart (0);
     showPartTitles();
-    setSize (1280, 920);
+    setSize (1500, 920);    // wide enough for four measures of most music
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate
