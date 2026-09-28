@@ -74,7 +74,7 @@ On a staff with a chord's notes, clicking works the same way on the chord:
 
 Above each measure is an **Add Chord** button, or **Edit Chord** if the measure has a chord. It opens the chord window for that measure, and outlines the measure while the window is open. For a chord that's already there, the window starts with its settings.
 
-Nothing changes in the score until you click **Add Chord** (or **Update Chord**) at the bottom of the window, or press Return. **Cancel**, Esc or closing the window leaves the measure as it was, and **Remove Chord** takes out a chord that's there. Clicking another measure's button moves the window on to that measure, dropping anything that wasn't added. The window floats over the main window, so the staff and piano can still be used while it's open. If the measure's chord is changed on the staff while the window is open, the window starts again from the new chord.
+Everything you change in the window goes straight into the measure, and the staff updates as you go. **Remove Chord** empties the measure, leaving the window open for a new chord. **Done**, Return, Esc or the window's close button closes it. Clicking another measure's button moves the window on to that measure. The window floats over the main window, so the staff and piano can still be used while it's open, and changes made to the chord on the staff show in the window too.
 
 The chord window has the Chord Progression Builder's settings for one chord:
 
@@ -88,7 +88,7 @@ The chord window has the Chord Progression Builder's settings for one chord:
 8. **Chord type**:
    - **Block**: a chord held for the whole measure, written at its start so it lines up with a quarter note on the first beat of the other staff.
    - **Arpeggio (asc)** and **Arpeggio (desc)**: single notes, low to high or high to low, padded with rests. Quarter notes are used if they fit, otherwise eighths or sixteenths, beamed a beat at a time.
-   - **Random**: the notes in a random order, filling every beat without playing any note twice in a row. When editing a Random chord, **Reshuffle** picks a new order when the chord's updated.
+   - **Random**: the notes in a random order, filling every beat without playing any note twice in a row. **Reshuffle** picks a new order.
    - **Rolled chord**: a block chord with the wavy roll sign.
 
 Each chord keeps its own clef and chord type. A new chord starts with the ones chosen last. A chord replaces any quarter notes on its staff.

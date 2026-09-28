@@ -27,7 +27,7 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int measureToEdit, const ChordStyl
       measure (measureToEdit)
 {
     chord.style = styleForNewChord;
-    startEditing();
+    loadChord();
 
     controls::makeHeading (title, "Chord");
     controls::makeHeading (chordTypeHeading, "Chord type");
@@ -122,13 +122,8 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int measureToEdit, const ChordStyl
         edit ([this] (MeasureChord& c) { c.style.type = (music::ChordType) (chordTypeBox.getSelectedId() - 1); });
     };
     reshuffleButton.setWantsKeyboardFocus (false);
-    reshuffleButton.setTooltip ("Picks a new random order when the chord's updated");
-    reshuffleButton.onClick = [this]
-    {
-        // A new order is made when the chord goes into the score.
-        reshuffled = true;
-        edit ([] (MeasureChord& c) { c.randomOrder.clear(); });
-    };
+    reshuffleButton.setTooltip ("Picks a new random order");
+    reshuffleButton.onClick = [this] { score.reshuffle (measure); };
 
     for (auto* label : { &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel })
     {
@@ -141,21 +136,15 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int measureToEdit, const ChordStyl
     keyboardNotesLabel.setFont (juce::FontOptions (12.0f));
     keyboardNotesLabel.setJustificationType (juce::Justification::topLeft);
 
-    // Return adds or updates the chord, and Escape cancels.
-    applyButton.setButtonText (isEditingExistingChord() ? "Update Chord" : "Add Chord");
-    applyButton.setColour (juce::TextButton::buttonColourId, controls::accent);
-    applyButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    applyButton.addShortcut (juce::KeyPress (juce::KeyPress::returnKey));
-    applyButton.onClick = [this] { apply(); };
-
-    cancelButton.addShortcut (juce::KeyPress (juce::KeyPress::escapeKey));
-    cancelButton.onClick = [this] { finish(); };
-
     removeButton.setTooltip ("Takes the chord out of the measure");
-    removeButton.onClick = [this] { remove(); };
-    removeButton.setVisible (isEditingExistingChord());
+    removeButton.onClick = [this] { score.setChord (measure, std::nullopt); };
 
-    for (auto* button : { &applyButton, &cancelButton, &removeButton })
+    // Return or Escape closes the window, as well as Done.
+    doneButton.addShortcut (juce::KeyPress (juce::KeyPress::returnKey));
+    doneButton.addShortcut (juce::KeyPress (juce::KeyPress::escapeKey));
+    doneButton.onClick = [this] { finish(); };
+
+    for (auto* button : { &removeButton, &doneButton })
         button->setWantsKeyboardFocus (false);
 
     for (auto* component : std::initializer_list<juce::Component*> {
@@ -163,10 +152,8 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int measureToEdit, const ChordStyl
              &positionButtons[0], &positionButtons[1], &positionButtons[2], &positionButtons[3],
              &octaveButtons[0], &octaveButtons[1], &octaveButtons[2], &trebleButton, &bassButton,
              &chordTypeHeading, &chordTypeBox, &reshuffleButton,
-             &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel, &applyButton, &cancelButton })
+             &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel, &removeButton, &doneButton })
         addAndMakeVisible (component);
-
-    addChildComponent (removeButton);
 
     score.addChangeListener (this);
     setSize (getIdealWidth(), getIdealHeight());
@@ -180,23 +167,16 @@ ChordEditor::~ChordEditor()
 
 juce::String ChordEditor::getTitle() const
 {
-    return (isEditingExistingChord() ? "Edit Chord" : "Add Chord") + controls::fromUTF8 (" \xc2\xb7 Measure ") + juce::String (measure + 1);
+    return "Chord" + controls::fromUTF8 (" \xc2\xb7 Measure ") + juce::String (measure + 1);
 }
 
-void ChordEditor::startEditing()
+void ChordEditor::loadChord()
 {
-    if (const auto* existing = score.getChord (measure); existing != nullptr && existing->hasNotes())
-    {
-        original = *existing;
+    // A measure without a chord keeps the style chosen for its new one.
+    if (const auto* existing = score.getChord (measure))
         chord = *existing;
-    }
     else
-    {
-        original.reset();
         chord = MeasureChord { {}, {}, chord.style, {}, {} };
-    }
-
-    reshuffled = false;
 }
 
 void ChordEditor::toggleNote (int midiNote)
@@ -212,65 +192,29 @@ void ChordEditor::changeListenerCallback (juce::ChangeBroadcaster*)
         return;
     }
 
-    // The chord was changed some other way, say by clicking its notes on the staff, so start
-    // again from how it is now.
-    const auto* current = score.getChord (measure);
-    const auto currentChord = current != nullptr && current->hasNotes() ? std::optional<MeasureChord> (*current) : std::nullopt;
-
-    if (currentChord != original)
-    {
-        startEditing();
-
-        applyButton.setButtonText (isEditingExistingChord() ? "Update Chord" : "Add Chord");
-        removeButton.setVisible (isEditingExistingChord());
-
-        if (auto* window = findParentComponentOfClass<juce::DocumentWindow>())
-            window->setName (getTitle());
-
-        if (onChordChanged != nullptr)
-            onChordChanged();
-    }
-
-    // The key changes what the numerals and notes are called.
-    update();
-}
-
-void ChordEditor::edit (const std::function<void (MeasureChord&)>& change)
-{
-    change (chord);
+    // Whatever changed the chord, the editor here or a click on the staff, it shows it as it is.
+    // The key changes what the numerals and notes are called, too.
+    loadChord();
     update();
 
     if (onChordChanged != nullptr)
         onChordChanged();
 }
 
-void ChordEditor::apply()
+void ChordEditor::edit (const std::function<void (MeasureChord&)>& change)
 {
-    if (! chord.hasNotes())
+    auto newChord = chord;
+    change (newChord);
+
+    if (newChord == chord)
         return;
 
-    auto newChord = chord;
-
     // A different chord, or a chord on the other staff, gives the alternate staff its own notes again.
-    if (original.has_value()
-        && (newChord.spec != original->spec || newChord.keyboardNotes != original->keyboardNotes || newChord.style.staff != original->style.staff))
+    if (newChord.spec != chord.spec || newChord.keyboardNotes != chord.keyboardNotes || newChord.style.staff != chord.style.staff)
         newChord.alternateNotes.reset();
 
-    // Stop listening first, so the new chord isn't taken for a change made some other way. An
-    // update that changes nothing leaves the score alone, so there's nothing new to save.
-    score.removeChangeListener (this);
-
-    if (newChord != original)
-        score.setChord (measure, newChord);
-
-    finish();
-}
-
-void ChordEditor::remove()
-{
-    score.removeChangeListener (this);
-    score.setChord (measure, std::nullopt);
-    finish();
+    // Every change goes straight into the score, which sends it back here to show.
+    score.setChord (measure, newChord);
 }
 
 void ChordEditor::finish()
@@ -338,12 +282,8 @@ void ChordEditor::update()
     trebleButton.setToggleState (style.staff == Staff::treble, juce::dontSendNotification);
     bassButton.setToggleState (style.staff == Staff::bass, juce::dontSendNotification);
     chordTypeBox.setSelectedId ((int) style.type + 1, juce::dontSendNotification);
-
-    // Reshuffling only means something for a Random chord that's already in the score.
-    reshuffleButton.setVisible (style.type == music::ChordType::random && original.has_value()
-                                && original->style.type == music::ChordType::random);
-    reshuffleButton.setEnabled (! reshuffled);
-    reshuffleButton.setButtonText (reshuffled ? "Reshuffled" : "Reshuffle");
+    reshuffleButton.setVisible (style.type == music::ChordType::random);
+    reshuffleButton.setEnabled (chord.hasNotes());
 
     // The chord's tones, as the builder's chord tones table lists them
     const auto notes = score.getChordNotes (chord);
@@ -387,7 +327,7 @@ void ChordEditor::update()
         keyboardNotesLabel.setText ("Set on the keyboard: " + names.joinIntoString (" "), juce::dontSendNotification);
     }
 
-    applyButton.setEnabled (chord.hasNotes());
+    removeButton.setEnabled (score.getChord (measure) != nullptr);
     resized();
 }
 
@@ -410,12 +350,9 @@ void ChordEditor::resized()
 {
     auto bounds = getLocalBounds().reduced (padding);
 
-    // Remove Chord on the left, and Cancel and Add or Update Chord on the right, along the bottom
+    // Remove Chord on the left, and Done on the right, along the bottom
     auto bottomRow = bounds.removeFromBottom (buttonHeight);
-    applyButton.setBounds (bottomRow.removeFromRight (116));
-    bottomRow.removeFromRight (gap);
-    cancelButton.setBounds (bottomRow.removeFromRight (74));
-    bottomRow.removeFromRight (gap);
+    doneButton.setBounds (bottomRow.removeFromRight (90));
     removeButton.setBounds (bottomRow.removeFromLeft (116));
 
     auto titleRow = bounds.removeFromTop (24);
