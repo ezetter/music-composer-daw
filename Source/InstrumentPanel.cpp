@@ -34,12 +34,17 @@ InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, juce::PropertiesFil
 
     updateControls();
     reloadSavedInstrument();
+
+    // Changes the instrument reports are looked into a couple of times a second, rather than
+    // at every turn of a knob.
+    startTimer (500);
 }
 
 InstrumentPanel::~InstrumentPanel()
 {
     // Keep any changes made to the instrument's sound since it was last saved.
     saveInstrument();
+    listenTo (nullptr);
 }
 
 void InstrumentPanel::resized()
@@ -140,12 +145,13 @@ void InstrumentPanel::createInstrument (const juce::PluginDescription& descripti
 
                 // The old instrument's editor has to go before the old instrument does.
                 safeThis->editorWindow = nullptr;
+                safeThis->listenTo (instrument.get());
                 safeThis->host.setInstrument (std::move (instrument));
                 safeThis->saveInstrument();
 
                 // A new instrument chosen by hand is a change to the score. One reloaded from the
                 // settings when the app starts isn't, since a new score doesn't have one yet.
-                safeThis->scoreState = safeThis->getState();
+                safeThis->startTrackingChanges();
 
                 if (source == Source::user && safeThis->onInstrumentChanged != nullptr)
                     safeThis->onInstrumentChanged();
@@ -220,7 +226,7 @@ juce::var InstrumentPanel::saveToJSON()
     if (instrument == nullptr)
         return {};
 
-    scoreState = getState();
+    startTrackingChanges();
 
     auto* json = new juce::DynamicObject();
     json->setProperty ("name", instrument->getName());
@@ -237,7 +243,7 @@ void InstrumentPanel::loadFromJSON (const juce::var& json)
     if (xml == nullptr || ! description.loadFromXml (*xml))
     {
         // A score saved without an instrument keeps the one that's loaded, as it is.
-        scoreState = getState();
+        startTrackingChanges();
         return;
     }
 
@@ -254,7 +260,7 @@ void InstrumentPanel::loadFromJSON (const juce::var& json)
             instrument->setStateInformation (state.getData(), (int) state.getSize());
 
         saveInstrument();
-        scoreState = getState();
+        startTrackingChanges();
         updateControls();
         return;
     }
@@ -264,9 +270,10 @@ void InstrumentPanel::loadFromJSON (const juce::var& json)
 
 void InstrumentPanel::checkForSoundChanges()
 {
-    if (host.getInstrument() == nullptr || nameBeingLoaded.isNotEmpty())
+    if (host.getInstrument() == nullptr || nameBeingLoaded.isNotEmpty() || ! soundTouched.exchange (false))
         return;
 
+    // The instrument may have been put back as it was, e.g. by undoing a change in its editor.
     if (auto state = getState(); state != scoreState)
     {
         scoreState = std::move (state);
@@ -274,6 +281,38 @@ void InstrumentPanel::checkForSoundChanges()
         if (onInstrumentChanged != nullptr)
             onInstrumentChanged();
     }
+}
+
+void InstrumentPanel::startTrackingChanges()
+{
+    soundTouched = false;
+    scoreState = getState();
+}
+
+void InstrumentPanel::listenTo (juce::AudioPluginInstance* newInstrument)
+{
+    if (auto* instrument = host.getInstrument())
+        instrument->removeListener (this);
+
+    if (newInstrument != nullptr)
+        newInstrument->addListener (this);
+}
+
+void InstrumentPanel::audioProcessorParameterChanged (juce::AudioProcessor*, int, float)
+{
+    soundTouched = true;
+}
+
+void InstrumentPanel::audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails& details)
+{
+    // Latency and parameter names don't change the sound.
+    if (details.programChanged || details.nonParameterStateChanged)
+        soundTouched = true;
+}
+
+void InstrumentPanel::timerCallback()
+{
+    checkForSoundChanges();
 }
 
 void InstrumentPanel::showEditor()
