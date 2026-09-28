@@ -70,16 +70,17 @@ void MainComponent::StaffSystems::layOut()
     for (auto& view : views)
         width = juce::jmax (width, view->getContentWidth());
 
-    // Any spare height is shared between the systems, which centre themselves in it.
-    const auto height = juce::jmax (Score::numParts * StaffView::getContentHeight(), minimumHeight);
-    setSize (width, height);
+    // Each system is as tall as its music needs, stacked from the top, with any spare room below.
+    auto y = 0;
 
-    for (size_t part = 0; part < views.size(); ++part)
+    for (auto& view : views)
     {
-        const auto top = height * (int) part / Score::numParts;
-        const auto bottom = height * ((int) part + 1) / Score::numParts;
-        views[part]->setBounds (0, top, width, bottom - top);
+        const auto height = view->getContentHeight();
+        view->setBounds (0, y, width, height);
+        y += height;
     }
+
+    setSize (width, juce::jmax (y, minimumHeight));
 }
 
 //==============================================================================
@@ -194,7 +195,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     setActivePart (0);
     showPartTitles();
-    setSize (1280, 1060);
+    setSize (1280, 920);
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate

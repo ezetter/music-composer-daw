@@ -39,7 +39,7 @@ public:
 
     /** The size needed to show the whole score. If the view is taller, the staff is centred. */
     int getContentWidth() const;
-    static int getContentHeight();
+    int getContentHeight() const;
 
     /** Outlines a measure as selected, e.g. while its chord is being edited, or none. */
     void setSelectedMeasure (std::optional<int>);
@@ -94,6 +94,11 @@ private:
     juce::Rectangle<int> getBeatArea (int measure, int beat) const;
     juce::Rectangle<float> getMeasureBox (int measure) const;
     float getSymbolBaseline() const;
+    float getSymbolOffset() const;          // these offsets are in staff spaces, from the outer staff lines
+    float getChordButtonOffset() const;
+    float getNumeralOffset() const;
+    float getMarginAbove() const;
+    float getMarginBelow() const;
     float getNumeralBaseline() const;
 
     void drawHeader (juce::Graphics&) const;

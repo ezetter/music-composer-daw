@@ -22,10 +22,15 @@ namespace
     // Vertical layout
     constexpr float staffHeight = 4.0f;
     constexpr float staffGap = 7.0f;            // from the treble staff's bottom line to the bass staff's top line
-    constexpr float noteRoom = 6.0f;            // above and below the system, for ledger lines
-    constexpr float chordButtonRow = 3.0f;      // at the very top, for each measure's Add Chord or Edit Chord button
-    constexpr float marginAbove = noteRoom + 2.5f + chordButtonRow;     // with a row for chord names
-    constexpr float marginBelow = noteRoom + 3.5f;      // with a row for Roman numerals
+    constexpr float noteRoom = 6.0f;            // above and below the system, for clicking in notes on ledger lines
+
+    // Above the staves: the chord names, just clear of the notes, with the chord buttons over them.
+    // The margins grow when the music reaches further, and are always tall enough to click in
+    // ledger-line notes.
+    constexpr float minMarginAbove = noteRoom + 1.0f;
+    constexpr float minMarginBelow = noteRoom;
+    constexpr float chordNameHeight = 1.2f;     // from the chord name's baseline to just over its top
+    constexpr float chordButtonHeight = 2.0f;
 
     // Line thicknesses and notehead metrics, from Bravura's metadata
     constexpr float staffLineThickness = 0.13f;
@@ -306,9 +311,34 @@ int StaffView::getContentWidth() const
     return (int) std::ceil (last.x + last.width + rightMargin * staffSpace);
 }
 
-int StaffView::getContentHeight()
+int StaffView::getContentHeight() const
 {
-    return (int) std::ceil ((marginAbove + staffHeight + staffGap + staffHeight + marginBelow) * staffSpace);
+    return (int) std::ceil ((getMarginAbove() + staffHeight + staffGap + staffHeight + getMarginBelow()) * staffSpace);
+}
+
+float StaffView::getSymbolOffset() const
+{
+    return juce::jmax (2.0f, reachAbove + 1.8f);
+}
+
+float StaffView::getChordButtonOffset() const
+{
+    return getSymbolOffset() + chordNameHeight + chordButtonHeight;
+}
+
+float StaffView::getNumeralOffset() const
+{
+    return juce::jmax (4.0f, reachBelow + 3.4f);
+}
+
+float StaffView::getMarginAbove() const
+{
+    return juce::jmax (minMarginAbove, getChordButtonOffset() + 0.4f);
+}
+
+float StaffView::getMarginBelow() const
+{
+    return juce::jmax (minMarginBelow, getNumeralOffset() + 1.4f);
 }
 
 void StaffView::setActive (bool shouldBeActive)
@@ -452,7 +482,8 @@ void StaffView::changeListenerCallback (juce::ChangeBroadcaster*)
     if (selectedMeasure.has_value() && *selectedMeasure >= score.getNumMeasures())
         selectedMeasure.reset();
 
-    setSize (getContentWidth(), getHeight());
+    // The height follows how far the music reaches above and below the staves.
+    setSize (getContentWidth(), getContentHeight());
     updateChordButtons();
     repaint();
 }
@@ -461,7 +492,7 @@ void StaffView::changeListenerCallback (juce::ChangeBroadcaster*)
 float StaffView::getStaffTop (Staff staff) const
 {
     const auto trebleTop = std::round ((float) juce::jmax (0, getHeight() - getContentHeight()) / 2.0f)
-                         + marginAbove * staffSpace;
+                         + getMarginAbove() * staffSpace;
 
     return staff == Staff::treble ? trebleTop
                                   : trebleTop + (staffHeight + staffGap) * staffSpace;
@@ -511,27 +542,27 @@ juce::Rectangle<int> StaffView::getBeatArea (int measure, int beat) const
 juce::Rectangle<float> StaffView::getMeasureBox (int measure) const
 {
     const auto& layout = measureLayouts[(size_t) measure];
-    const auto top = getStaffTop (Staff::treble) - (marginAbove - 0.4f) * staffSpace;
-    const auto bottom = getStaffTop (Staff::bass) + (staffHeight + marginBelow - 0.4f) * staffSpace;
+    const auto top = getStaffTop (Staff::treble) - (getMarginAbove() - 0.4f) * staffSpace;
+    const auto bottom = getStaffTop (Staff::bass) + (staffHeight + getMarginBelow() - 0.4f) * staffSpace;
 
     return { layout.x + 0.3f * staffSpace, top, layout.width - 0.6f * staffSpace, bottom - top };
 }
 
 float StaffView::getSymbolBaseline() const
 {
-    return getStaffTop (Staff::treble) - juce::jmin (marginAbove - 1.3f, juce::jmax (2.0f, reachAbove + 1.8f)) * staffSpace;
+    return getStaffTop (Staff::treble) - getSymbolOffset() * staffSpace;
 }
 
 float StaffView::getNumeralBaseline() const
 {
-    return getStaffTop (Staff::bass) + (staffHeight + juce::jmin (marginBelow - 0.8f, juce::jmax (4.0f, reachBelow + 3.4f))) * staffSpace;
+    return getStaffTop (Staff::bass) + (staffHeight + getNumeralOffset()) * staffSpace;
 }
 
 //==============================================================================
 std::optional<int> StaffView::getMeasureAt (juce::Point<float> point) const
 {
-    const auto top = getStaffTop (Staff::treble) - marginAbove * staffSpace;
-    const auto bottom = getStaffTop (Staff::bass) + (staffHeight + marginBelow) * staffSpace;
+    const auto top = getStaffTop (Staff::treble) - getMarginAbove() * staffSpace;
+    const auto bottom = getStaffTop (Staff::bass) + (staffHeight + getMarginBelow()) * staffSpace;
 
     if (point.y < top || point.y >= bottom)
         return {};
@@ -662,7 +693,7 @@ void StaffView::drawHeader (juce::Graphics& g) const
     const auto bottom = getStaffTop (Staff::bass) + staffHeight * staffSpace;
 
     // The part's name at the top left, over the clefs, and a bar beside the active part's staves
-    const auto titleTop = top - (marginAbove - 0.6f) * staffSpace;
+    const auto titleTop = top - getChordButtonOffset() * staffSpace;
     const auto titleRight = chordButtons.isEmpty() ? firstMeasureLeft * staffSpace : (float) chordButtons.getFirst()->getX() - 0.5f * staffSpace;
     g.setColour (active ? selectionColour : measureNumberColour);
     g.setFont (juce::FontOptions (13.0f, active ? juce::Font::bold : juce::Font::plain));
@@ -1252,8 +1283,8 @@ void StaffView::updateChordButtons()
         addAndMakeVisible (button);
     }
 
-    // Each button sits at the top of its measure, over the chord's name.
-    const auto top = getStaffTop (Staff::treble) - (marginAbove - 0.6f) * staffSpace;
+    // Each button sits just over its measure's chord name.
+    const auto top = getStaffTop (Staff::treble) - getChordButtonOffset() * staffSpace;
 
     for (int measure = 0; measure < numMeasures; ++measure)
     {

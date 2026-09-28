@@ -22,7 +22,7 @@ The window has a toolbar along the top, the score's settings on the left, the tw
 
 ### Parts
 
-The score has two parts. They share the key, time signature, tempo and measures, and play together in time, but each has its own notes, chords, alternate staff and instrument. Part 1's staves are at the top and part 2's below; their measures line up, spaced to fit what's in either part. Each part's name and instrument are written at its top left.
+The score has two parts. They share the key, time signature, tempo and measures, and play together in time, but each has its own notes, chords, alternate staff and instrument. Part 1's staves are at the top and part 2's below; their measures line up, spaced to fit what's in either part. Each part's name and instrument are written at its top left. Each part's staves take only the height their music needs: the chord buttons sit just over the chord names, which sit just over the highest notes, and the space above and below grows only when notes reach far beyond the staves.
 
 One part is **active**, marked by a blue bar beside its staves. The piano and MIDI controllers play the active part's instrument, and the toolbar's instrument controls and the sidebar's **Alternate staff** are the active part's. Choose it with **Part 1 / Part 2** in the toolbar, or click in a part's staves or its chord buttons. Keys held down when another part becomes active are let go; the score's notes play on.
 
