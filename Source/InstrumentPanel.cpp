@@ -22,7 +22,7 @@ InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, int partToUse, juce
       instrumentKey (getInstrumentKey (part)),
       instrumentStateKey (getInstrumentKey (part) + "State"),
       loadButton (withEllipsis ("Load Instrument")),
-      editorButton ("Show Editor")
+      editorButton ("Edit Instrument")
 {
     juce::addDefaultFormatsToManager (formatManager);
 
@@ -57,7 +57,10 @@ void InstrumentPanel::resized()
 {
     auto bounds = getLocalBounds();
 
-    editorButton.setBounds (bounds.removeFromRight (110));
+    // The editor button says which instrument it edits, e.g. "Edit Pigments", so it's as wide as that needs.
+    const auto font = getLookAndFeel().getTextButtonFont (editorButton, bounds.getHeight());
+    const auto textWidth = juce::GlyphArrangement::getStringWidth (font, editorButton.getButtonText());
+    editorButton.setBounds (bounds.removeFromRight (juce::jlimit (110, 260, juce::roundToInt (textWidth) + 32)));
     bounds.removeFromRight (8);
     loadButton.setBounds (bounds.removeFromRight (150));
     bounds.removeFromRight (8);
@@ -358,6 +361,9 @@ void InstrumentPanel::updateControls()
 
     loadButton.setEnabled (! isLoading);
     editorButton.setEnabled (instrument != nullptr && ! isLoading);
+    editorButton.setButtonText (instrument != nullptr ? "Edit " + instrument->getName() : juce::String ("Edit Instrument"));
+    editorButton.setTooltip (instrument != nullptr ? "Open " + instrument->getName() + "'s own window, to choose its sounds" : juce::String());
+    resized();
 
     if (onStatusChanged != nullptr)
         onStatusChanged();

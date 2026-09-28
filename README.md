@@ -36,7 +36,7 @@ Each part has a **volume dial** to the left of its staves, setting how loud its 
 - **Loop**, beside Play, makes the score play over and over, going straight from the end back to the beginning, until you press **Stop**. It can be turned on or off while the score plays; turning it off lets the score finish this time through. While it loops, changes to the score, tempo included, are heard from the next time through. Loop is remembered the next time the app starts.
 - **BPM** sets the tempo in quarter notes per minute, from 20 to 300, fractions allowed. The default is 120. A change applies from the next Play, or the next time through a loop.
 - **Part 1 / Part 2** chooses the active part.
-- **Load Instrument…** loads a VST3 instrument for the active part, such as one from `/Library/Audio/Plug-Ins/VST3`. **Show Editor** opens the instrument's own window, where you can choose its sounds. The two parts can have different instruments, or the same one with different sounds.
+- **Load Instrument…** loads a VST3 instrument for the active part, such as one from `/Library/Audio/Plug-Ins/VST3`. **Edit [instrument]**, named for the loaded instrument (e.g. **Edit Pigments**), opens the instrument's own window, where you can choose its sounds. The two parts can have different instruments, or the same one with different sounds.
 - Each part's instrument is saved with the score (see [Saving and opening](#saving-and-opening)). It's also loaded again the next time the app starts, with the sound it had. It's saved when you load it, when you close its editor, and when you quit, in `~/Library/Application Support/Anthropocene Music`. If it can't be loaded, say because it's been uninstalled, the app tells you and forgets it.
 
 ### Saving and opening
