@@ -157,13 +157,35 @@ bool Score::addNote (const Note& note)
     if (chordUsesStaff (note.part, note.measure, note.staff))
         return false;
 
-    auto& notes = getMeasure (note.part, note.measure).notes[(size_t) note.staff][(size_t) note.beat];
+    auto& measure = getMeasure (note.part, note.measure);
+    auto& staffNotes = measure.notes[(size_t) note.staff];
+    auto& lengths = measure.lengths[(size_t) note.staff];
+    auto& notes = staffNotes[(size_t) note.beat];
+    const auto length = juce::jlimit (1, beatsPerMeasure - note.beat, note.length);
     const auto insertionPoint = std::lower_bound (notes.begin(), notes.end(), note.pitch, comesBefore);
+    const auto alreadyThere = insertionPoint != notes.end() && *insertionPoint == note.pitch;
 
-    if (insertionPoint != notes.end() && *insertionPoint == note.pitch)
+    if (alreadyThere && lengths[(size_t) note.beat] == length)
         return false;
 
-    notes.insert (insertionPoint, note.pitch);
+    // A longer note held over this beat is cut short to end here.
+    for (int earlier = 0; earlier < note.beat; ++earlier)
+        if (! staffNotes[(size_t) earlier].empty() && earlier + lengths[(size_t) earlier] > note.beat)
+            lengths[(size_t) earlier] = note.beat - earlier;
+
+    // The new note takes the place of the notes on the beats it covers.
+    for (auto covered = note.beat + 1; covered < note.beat + length; ++covered)
+    {
+        staffNotes[(size_t) covered].clear();
+        lengths[(size_t) covered] = 1;
+    }
+
+    // Notes already on the beat take the new length, as notes starting together share one.
+    lengths[(size_t) note.beat] = length;
+
+    if (! alreadyThere)
+        notes.insert (insertionPoint, note.pitch);
+
     sendSynchronousChangeMessage();
     return true;
 }
@@ -171,6 +193,11 @@ bool Score::addNote (const Note& note)
 const std::vector<music::Pitch>& Score::getNotes (int part, Staff staff, int measure, int beat) const
 {
     return getMeasure (part, measure).notes[(size_t) staff][(size_t) beat];
+}
+
+int Score::getNoteLength (int part, Staff staff, int measure, int beat) const
+{
+    return getMeasure (part, measure).lengths[(size_t) staff][(size_t) beat];
 }
 
 bool Score::hasNoteAt (int part, Staff staff, int measure, int beat, int step) const
@@ -181,10 +208,14 @@ bool Score::hasNoteAt (int part, Staff staff, int measure, int beat, int step) c
 
 bool Score::removeNotesAt (int part, Staff staff, int measure, int beat, int step)
 {
-    auto& notes = getMeasure (part, measure).notes[(size_t) staff][(size_t) beat];
+    auto& target = getMeasure (part, measure);
+    auto& notes = target.notes[(size_t) staff][(size_t) beat];
 
     if (std::erase_if (notes, [step] (const music::Pitch& pitch) { return pitch.step == step; }) == 0)
         return false;
+
+    if (notes.empty())
+        target.lengths[(size_t) staff][(size_t) beat] = 1;
 
     sendSynchronousChangeMessage();
     return true;
@@ -340,7 +371,8 @@ void Score::copyChords (int fromPart, int toPart)
     for (size_t m = 0; m < to.measures.size(); ++m)
     {
         auto& measure = to.measures[m];
-        measure.notes = {};
+        measure.clearNotes (Staff::treble);
+        measure.clearNotes (Staff::bass);
         measure.chord = from.measures[m].chord;
 
         // Notes set by hand were for the other part's alternate staff.
@@ -365,8 +397,7 @@ void Score::tidyChord (Measure& measure, bool reshuffleRandomOrder)
 
     // The chord replaces the quarter notes on its staff. The ones on the alternate staff are
     // only hidden, since the alternate staff can be turned off for a whole part at once.
-    for (auto& notes : measure.notes[(size_t) chord.style.staff])
-        notes.clear();
+    measure.clearNotes (chord.style.staff);
 
     if (chord.style.type != music::ChordType::random)
         return;
@@ -476,6 +507,14 @@ juce::var Score::toJSON() const
             }
 
             measureObject->setProperty (staff == Staff::treble ? "treble" : "bass", beats);
+
+            // How many beats the notes on each beat last
+            juce::Array<juce::var> lengths;
+
+            for (auto length : measure.lengths[(size_t) staff])
+                lengths.add (length);
+
+            measureObject->setProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", lengths);
         }
 
         if (measure.chord.has_value())
@@ -575,6 +614,11 @@ juce::Result Score::loadJSON (const juce::var& json)
 
                     std::sort (notes.begin(), notes.end(), comesBefore);
                     notes.erase (std::unique (notes.begin(), notes.end()), notes.end());
+
+                    // Scores from before notes had lengths have quarter notes.
+                    const auto* lengths = item.getProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", {}).getArray();
+                    const auto hasLength = lengths != nullptr && beat < lengths->size();
+                    measure.lengths[(size_t) staff][(size_t) beat] = notes.empty() || ! hasLength ? 1 : readInt (lengths->getReference (beat), 1, maxNoteLength, 1);
                 }
             }
 

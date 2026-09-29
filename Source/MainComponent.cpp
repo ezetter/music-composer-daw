@@ -222,6 +222,22 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     staffSystems.onAddMeasure = [this] { addMeasure(); };
     staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
     staffSystems.onCloneMeasures = [this] { cloneMeasures(); };
+    // Whole, half or quarter notes, for clicking into the staff. Quarter notes to start with.
+    controls::makeHeading (noteLengthHeading, "Note length");
+    controls::makeSegmented ({ &noteLengthButtons[0], &noteLengthButtons[1], &noteLengthButtons[2] }, 2);
+    sidebarContent.addAndMakeVisible (noteLengthHeading);
+
+    for (auto [index, name, beats] : { std::tuple { 0, "Whole", 4 }, { 1, "Half", 2 }, { 2, "Quarter", 1 } })
+    {
+        auto& button = noteLengthButtons[(size_t) index];
+        button.setButtonText (name);
+        button.setTooltip ("Click the staff to add " + juce::String (name).toLowerCase() + " notes");
+        button.onClick = [this, beats] { setNoteLength (beats); };
+        sidebarContent.addAndMakeVisible (button);
+    }
+
+    setNoteLength (1);
+
     scorePanel.onCopyProgression = [this] { copyProgression(); };
     sidebarContent.addAndMakeVisible (scorePanel);
     sidebar.setViewedComponent (&sidebarContent, false);
@@ -391,7 +407,19 @@ void MainComponent::resized()
 
     const auto contentWidth = sidebar.getMaximumVisibleWidth();
     const auto panelWidth = contentWidth - 2 * sidebarPadding;
-    scorePanel.setBounds (sidebarPadding, sidebarPadding, panelWidth, scorePanel.getIdealHeight());
+    auto top = sidebarPadding;
+    noteLengthHeading.setBounds (sidebarPadding, top, panelWidth, 16);
+    top += 18;
+
+    for (size_t i = 0; i < noteLengthButtons.size(); ++i)
+    {
+        const auto left = sidebarPadding + panelWidth * (int) i / (int) noteLengthButtons.size();
+        const auto right = sidebarPadding + panelWidth * ((int) i + 1) / (int) noteLengthButtons.size();
+        noteLengthButtons[i].setBounds (left, top, right - left, 28);
+    }
+
+    top += 28 + 12;
+    scorePanel.setBounds (sidebarPadding, top, panelWidth, scorePanel.getIdealHeight());
     sidebarContent.setSize (contentWidth, scorePanel.getBottom() + sidebarPadding);
 
     keyboard.setBounds (bounds.removeFromBottom (keyboardHeight));
@@ -504,6 +532,15 @@ void MainComponent::copyProgression()
                                       if (safeThis != nullptr && result == 1)
                                           safeThis->score.copyChords (from, to);
                                   });
+}
+
+void MainComponent::setNoteLength (int beats)
+{
+    for (auto [index, length] : { std::pair { 0, 4 }, { 1, 2 }, { 2, 1 } })
+        noteLengthButtons[(size_t) index].setToggleState (length == beats, juce::dontSendNotification);
+
+    for (auto& view : staffSystems.views)
+        view->setNoteLength (beats);
 }
 
 void MainComponent::showPartTitles()

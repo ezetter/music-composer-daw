@@ -226,8 +226,9 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
                 switch (staff.source)
                 {
                     case StaffContent::Source::notes:
+                        // Each note lasts as long as it's written: a beat for a quarter note, four for a whole.
                         for (const auto& tone : event.tones)
-                            soundings.push_back ({ tone.midi, onset, onset + beatSeconds });
+                            soundings.push_back ({ tone.midi, onset, onset + getBeats (event.duration) * beatSeconds });
                         break;
 
                     case StaffContent::Source::chord:

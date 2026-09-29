@@ -99,12 +99,16 @@ namespace
         {
             if (! isEmpty (beat))
             {
-                StaffEvent event { (double) beat, Duration::quarter, {}, false, false };
+                // As long as they were added, or as fits in what's left of the measure. Any notes
+                // on the beats they cover, which only a damaged file could have, aren't shown.
+                const auto length = juce::jlimit (1, beats - beat, score.getNoteLength (part, staff, measure, beat));
+                StaffEvent event { (double) beat, getDurationForBeats (length), {}, false, false };
 
                 for (const auto& pitch : score.getNotes (part, staff, measure, beat))
                     event.tones.push_back (makeTone (pitch, keyAlterations));
 
                 content.events.push_back (event);
+                beat += length - 1;
                 continue;
             }
 
@@ -122,6 +126,29 @@ namespace
 
         return content;
     }
+}
+
+Duration getDurationForBeats (int beats)
+{
+    return beats >= 4 ? Duration::whole
+         : beats == 3 ? Duration::dottedHalf
+         : beats == 2 ? Duration::half
+                      : Duration::quarter;
+}
+
+double getBeats (Duration duration)
+{
+    switch (duration)
+    {
+        case Duration::whole:       return 4.0;
+        case Duration::dottedHalf:  return 3.0;
+        case Duration::half:        return 2.0;
+        case Duration::quarter:     return 1.0;
+        case Duration::eighth:      return 0.5;
+        case Duration::sixteenth:   return 0.25;
+    }
+
+    return 1.0;
 }
 
 Duration getFullMeasureDuration (int beatsPerMeasure)

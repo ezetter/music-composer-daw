@@ -27,6 +27,11 @@ public:
 
     int getPart() const noexcept { return part; }
 
+    /** How long the notes that clicks add are, in beats: 1 for quarter notes, 2 for half notes
+        and 4 for whole notes.
+    */
+    void setNoteLength (int beats);
+
     /** Marks the view as showing the active part, whose instrument the keyboard plays. */
     void setActive (bool);
 
@@ -126,6 +131,7 @@ private:
     const int part;
     MusicGlyphs glyphs;
     bool active = false;
+    int noteLength = 1;
     juce::String title;
     std::optional<Note> hoverNote;
     bool hoverHintHidden = false;       // after a click, until the pointer moves to another spot

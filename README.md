@@ -70,9 +70,11 @@ The **File** menu saves and opens scores:
 
 ### Notes
 
-Clicking the staff adds a quarter note at that pitch and beat, taking its sharp or flat from the key signature. A blue note shows where it will go. Clicking between the staves puts the note on the nearer staff, with ledger lines. Rests fill the beats without notes.
+Clicking the staff adds a note at that pitch and beat, taking its sharp or flat from the key signature. A blue note shows where it will go. Clicking between the staves puts the note on the nearer staff, with ledger lines. Rests fill the beats without notes.
 
-Clicking a quarter note takes it out again, whatever its sharp or flat. The note under the pointer turns red to show that a click will remove it.
+**Note length**, at the top of the sidebar, chooses whether clicks add **Whole**, **Half** or **Quarter** notes. It starts on Quarter each time the app opens, and the blue note shows the length chosen. A note is as long as there's room for in its measure: a half note on the last beat of 4/4 is a quarter note, and a whole note in 3/4 is a dotted half. A longer note takes the place of any notes on the beats it covers, and adding a note during a longer one cuts the longer one short. Notes starting on the same beat share a length, so a note added to them gives them its own. A shorter time signature shows notes shorter if it has to, and they're as long as they were again in 4/4. Notes play for as long as they're written, and their lengths are saved with the score; scores saved before there were note lengths open with quarter notes.
+
+Clicking a note takes it out again, whatever its sharp or flat. The note under the pointer turns red to show that a click will remove it.
 
 On a staff with a chord's notes, clicking works the same way on the chord:
 - **Removing:** clicking one of the chord's notes takes it out of the chord.

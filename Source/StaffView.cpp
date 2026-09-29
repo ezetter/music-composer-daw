@@ -346,6 +346,12 @@ float StaffView::getMarginBelow() const
     return juce::jmax (minMarginBelow, getNumeralOffset() + 1.4f);
 }
 
+void StaffView::setNoteLength (int beats)
+{
+    noteLength = juce::jlimit (1, Score::maxNoteLength, beats);
+    setHoverNote ({});
+}
+
 void StaffView::setActive (bool shouldBeActive)
 {
     if (shouldBeActive == active)
@@ -614,7 +620,7 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
     const auto step = getBottomLineStep (staff) + clampedPosition;
     const auto alter = music::getKeyAlterations (score.getKey())[(size_t) music::mod (step, 7)];
 
-    return Note { staff, measure, beat, { step, alter }, part };
+    return Note { staff, measure, beat, { step, alter }, part, noteLength };
 }
 
 void StaffView::setPlaybackPosition (std::optional<double> beats)
@@ -1179,12 +1185,18 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
     if (findNoteUnder (*hoverNote).has_value())
         return;
 
+    // The notehead of the length a click adds: filled for a quarter note, open for a half or whole note
+    const auto duration = getDurationForBeats (juce::jmin (hoverNote->length, score.getBeatsPerMeasure() - hoverNote->beat));
+    const auto notehead = duration == Duration::whole ? Smufl::noteheadWhole
+                        : duration == Duration::quarter ? Smufl::noteheadBlack
+                                                        : Smufl::noteheadHalf;
+    const auto width = getNoteheadWidth (duration) * staffSpace;
     const auto position = hoverNote->pitch.step - getBottomLineStep (hoverNote->staff);
-    const auto left = getOnsetX (hoverNote->measure, hoverNote->beat) - getNoteheadWidth (Duration::quarter) * staffSpace / 2.0f;
+    const auto left = getOnsetX (hoverNote->measure, hoverNote->beat) - width / 2.0f;
 
     g.setColour (hoverColour);
-    drawLedgerLines (g, hoverNote->staff, { position }, { left }, getNoteheadWidth (Duration::quarter) * staffSpace);
-    glyphs.draw (g, Smufl::noteheadBlack, { left, getY (hoverNote->staff, position) });
+    drawLedgerLines (g, hoverNote->staff, { position }, { left }, width);
+    glyphs.draw (g, notehead, { left, getY (hoverNote->staff, position) });
 }
 
 void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float centreX, float y) const

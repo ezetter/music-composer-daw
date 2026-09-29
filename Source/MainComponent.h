@@ -119,6 +119,9 @@ private:
     */
     void setActivePart (int part);
 
+    /** Chooses the length of the notes that clicking the staff adds, in beats: 4, 2 or 1. */
+    void setNoteLength (int beats);
+
     /** Gives the other part the active part's chords, asking first if it has notes of its own. */
     void copyProgression();
 
@@ -176,6 +179,8 @@ private:
     std::array<juce::TextButton, Score::numParts> partButtons;
     std::array<std::unique_ptr<InstrumentPanel>, Score::numParts> instrumentPanels;     // only the active part's shows
 
+    juce::Label noteLengthHeading;      // at the top of the sidebar: the length of the notes that clicks add
+    std::array<juce::TextButton, 3> noteLengthButtons;      // Whole, Half and Quarter
     ScorePanel scorePanel { score };
     juce::Component sidebarContent;
     juce::Viewport sidebar;

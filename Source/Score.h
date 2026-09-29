@@ -10,7 +10,7 @@
 
 using music::Staff;
 
-/** A quarter note on one beat of one staff, in one of the score's parts. */
+/** A note starting on one beat of one staff, in one of the score's parts. */
 struct Note
 {
     Staff staff;
@@ -18,6 +18,7 @@ struct Note
     int beat;
     music::Pitch pitch;
     int part = 0;
+    int length = 1;     // in beats: 1 for a quarter note, 2 for a half note, 4 for a whole note
 
     bool operator== (const Note&) const = default;
 };
@@ -115,13 +116,22 @@ public:
     void cloneMeasures();
 
     //==============================================================================
-    /** Adds a quarter note. Returns false if the score already has it, or its staff is taken by
-        the measure's chord.
+    /** Adds a note, as long as it asks, or as fits in what's left of the measure. It takes the
+        place of any notes on the beats it covers, and cuts short a longer note it starts during.
+        The notes starting on the same beat all have the same length, so they take the new one's.
+        Returns false if the score already has it, or its staff is taken by the measure's chord.
     */
     bool addNote (const Note&);
 
-    /** The quarter notes on one beat of one staff, lowest first. */
+    /** The notes starting on one beat of one staff, lowest first. */
     const std::vector<music::Pitch>& getNotes (int part, Staff, int measure, int beat) const;
+
+    /** How many beats the notes starting on a beat last, as they were added. A shorter time
+        signature can leave less room than this, and they're shortened to fit when they're shown.
+    */
+    int getNoteLength (int part, Staff, int measure, int beat) const;
+
+    static constexpr int maxNoteLength = 4;
 
     /** Whether a beat of a staff has a quarter note on this line or space, whatever its sharp or flat. */
     bool hasNoteAt (int part, Staff, int measure, int beat, int step) const;
@@ -199,7 +209,17 @@ private:
     struct Measure
     {
         std::array<std::array<std::vector<music::Pitch>, maxBeatsPerMeasure>, 2> notes;
+        std::array<std::array<int, maxBeatsPerMeasure>, 2> lengths { { { 1, 1, 1, 1 }, { 1, 1, 1, 1 } } };     // in beats
         std::optional<MeasureChord> chord;
+
+        /** Takes out all of a staff's notes. */
+        void clearNotes (Staff staff)
+        {
+            for (auto& beat : notes[(size_t) staff])
+                beat.clear();
+
+            lengths[(size_t) staff].fill (1);
+        }
     };
 
     struct Part

@@ -42,3 +42,9 @@ MeasureContent getMeasureContent (const Score&, int part, int measure);
     and a half in 2/4.
 */
 Duration getFullMeasureDuration (int beatsPerMeasure);
+
+/** A note lasting 1, 2, 3 or 4 beats: a quarter, half, dotted half or whole note. */
+Duration getDurationForBeats (int beats);
+
+/** How many quarter-note beats a note or rest lasts. */
+double getBeats (Duration);
