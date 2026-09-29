@@ -5,6 +5,7 @@
 #include "InstrumentHost.h"
 #include "InstrumentPanel.h"
 #include "MidiInputs.h"
+#include "NoteLengthPicker.h"
 #include "PianoKeyboard.h"
 #include "Score.h"
 #include "ScoreDocument.h"
@@ -179,8 +180,6 @@ private:
     std::array<juce::TextButton, Score::numParts> partButtons;
     std::array<std::unique_ptr<InstrumentPanel>, Score::numParts> instrumentPanels;     // only the active part's shows
 
-    juce::Label noteLengthHeading;      // at the top of the sidebar: the length of the notes that clicks add
-    std::array<juce::TextButton, 3> noteLengthButtons;      // Whole, Half and Quarter
     ScorePanel scorePanel { score };
     juce::Component sidebarContent;
     juce::Viewport sidebar;
@@ -189,6 +188,7 @@ private:
     ScrollingViewport staffViewport;
 
     controls::DialLookAndFeel dialLookAndFeel;
+    NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
     juce::Component volumeColumn;       // to the left of the staves, holding a volume dial for each part
     std::array<controls::ClickableDial, Score::numParts> volumeDials;
 
