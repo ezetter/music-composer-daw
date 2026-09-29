@@ -7,15 +7,15 @@
 #include <array>
 #include <functional>
 
-/** Small buttons, side by side, showing a whole, a half and a quarter note, for choosing how
-    long the notes that clicks add are. One is chosen at a time.
+/** Small buttons, side by side, showing a whole, a dotted half, a half and a quarter note, for
+    choosing how long the notes that clicks add are. One is chosen at a time.
 */
 class NoteLengthPicker final : public juce::Component
 {
 public:
     NoteLengthPicker();
 
-    /** The length chosen, in beats: 4, 2 or 1. */
+    /** The length chosen, in beats: 4, 3, 2 or 1. */
     int getLength() const noexcept { return length; }
 
     /** Chooses a length, in beats, without calling onChange. */
@@ -44,7 +44,7 @@ private:
     };
 
     MusicGlyphs glyphs;
-    std::array<std::unique_ptr<NoteButton>, 3> buttons;
+    std::array<std::unique_ptr<NoteButton>, 4> buttons;
     int length = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoteLengthPicker)

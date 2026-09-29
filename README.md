@@ -72,7 +72,7 @@ The **File** menu saves and opens scores:
 
 Clicking the staff adds a note at that pitch and beat, taking its sharp or flat from the key signature. A blue note shows where it will go. Clicking between the staves puts the note on the nearer staff, with ledger lines. Rests fill the beats without notes.
 
-Three small buttons in the top left corner of the score, showing a whole, a half and a quarter note, choose the length of the notes that clicks add. They stay in the corner as the staves scroll. Quarter notes are chosen each time the app opens, and the blue note shows the length chosen. A note is as long as there's room for in its measure: a half note on the last beat of 4/4 is a quarter note, and a whole note in 3/4 is a dotted half. A longer note takes the place of any notes on the beats it covers, and adding a note during a longer one cuts the longer one short. Notes starting on the same beat share a length, so a note added to them gives them its own. A shorter time signature shows notes shorter if it has to, and they're as long as they were again in 4/4. Notes play for as long as they're written, and their lengths are saved with the score; scores saved before there were note lengths open with quarter notes.
+Four small buttons in the top left corner of the score, showing a whole, a dotted half, a half and a quarter note, choose the length of the notes that clicks add. They stay in the corner as the staves scroll. Quarter notes are chosen each time the app opens, and the blue note shows the length chosen. A note is as long as there's room for in its measure: a half note on the last beat of 4/4 is a quarter note, a dotted half on the third beat is a half note, and a whole note in 3/4 is a dotted half. A longer note takes the place of any notes on the beats it covers, and adding a note during a longer one cuts the longer one short. Notes starting on the same beat share a length, so a note added to them gives them its own. A shorter time signature shows notes shorter if it has to, and they're as long as they were again in 4/4. Notes play for as long as they're written, and their lengths are saved with the score; scores saved before there were note lengths open with quarter notes.
 
 Clicking a note takes it out again, whatever its sharp or flat. The note under the pointer turns red to show that a click will remove it.
 
@@ -143,7 +143,7 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, time signature and measures settings |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |
-| `Source/NoteLengthPicker.*` | The whole, half and quarter note buttons for choosing the length of the notes clicks add |
+| `Source/NoteLengthPicker.*` | The whole, dotted half, half and quarter note buttons for choosing the length of the notes clicks add |
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls |
 | `Source/InstrumentHost.*` | Hosts each instrument's plugin, and plays them from the piano, MIDI controllers and the score, once or looping |

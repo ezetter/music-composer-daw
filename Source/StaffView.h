@@ -27,8 +27,8 @@ public:
 
     int getPart() const noexcept { return part; }
 
-    /** How long the notes that clicks add are, in beats: 1 for quarter notes, 2 for half notes
-        and 4 for whole notes.
+    /** How long the notes that clicks add are, in beats: 1 for quarter notes, 2 for half notes,
+        3 for dotted half notes and 4 for whole notes.
     */
     void setNoteLength (int beats);
 

@@ -1197,6 +1197,10 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
     g.setColour (hoverColour);
     drawLedgerLines (g, hoverNote->staff, { position }, { left }, width);
     glyphs.draw (g, notehead, { left, getY (hoverNote->staff, position) });
+
+    // A dotted half has its dot in a space.
+    if (duration == Duration::dottedHalf)
+        glyphs.draw (g, Smufl::augmentationDot, { left + width + 0.35f * staffSpace, getY (hoverNote->staff, isLine (position) ? position + 1 : position) });
 }
 
 void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float centreX, float y) const
