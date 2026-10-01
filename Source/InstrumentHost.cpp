@@ -234,9 +234,10 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
                     case StaffContent::Source::chord:
                         if (music::isMelodic (content.chordStyle.type))
                         {
-                            // Arpeggio notes ring on to the end of the measure, as with the sustain pedal down.
+                            // Arpeggio and Random notes are played legato, each for as long as it's
+                            // written, like notes clicked into the staff.
                             for (const auto& tone : event.tones)
-                                soundings.push_back ({ tone.midi, onset, chordEnd });
+                                soundings.push_back ({ tone.midi, onset, onset + getBeats (event.duration) * beatSeconds });
                         }
                         else
                         {
