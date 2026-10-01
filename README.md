@@ -119,7 +119,7 @@ Under the settings, the window lists the chord's name and position, its notes fr
 
 ### Playing
 
-Block chords sound together and rolled chords bottom to top in quick succession, held for the measure. Arpeggio and Random notes come one per written note, each played legato for as long as it's written: a quarter note for its beat, an eighth for half of one. Alternate-staff notes start on the downbeat and are held for the measure. Notes clicked into the staff play legato too, each for its length.
+Every note is held for exactly as long as it's written on the staff, whatever wrote it: a quarter note for a beat, a half note for two, a whole note for four, an eighth for half of one, and so on, with the next note starting as it ends. Block chords sound together and rolled chords bottom to top in quick succession; both are written as notes as long as the measure (a whole note in 4/4, a dotted half in 3/4), so that's how long they're held. Arpeggio and Random notes come one per written note, each for its own length. Alternate-staff notes start on the downbeat and are held for their length too. The only note cut shorter is one whose pitch starts again while it's still sounding, as a key can't be pressed twice at once.
 
 Click or drag across the piano keys to play the active instrument yourself. Once the piano has been clicked, the computer keyboard plays it too: A is middle C, and the row from A to L (with W, E, T, Y, U, O and P for the black keys) plays upwards from there.
 

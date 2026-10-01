@@ -15,8 +15,6 @@ namespace
     constexpr double blockChordSpread = 0.012;
     constexpr double rolledChordSpread = 0.06;
 
-    // Chords stop this long before the end of their measure.
-    constexpr double chordRelease = 0.1;
 
     /** A note sounding from one time to another, in seconds. */
     struct Sounding
@@ -214,47 +212,38 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
     for (auto measure = firstMeasure; measure <= lastMeasure; ++measure)
     {
         const auto start = (double) (measure - firstMeasure) * measureSeconds;
-        const auto chordEnd = start + measureSeconds - chordRelease;
         const auto content = getMeasureContent (score, part, measure);
 
         for (const auto& staff : content.staves)
         {
             for (const auto& event : staff.events)
             {
+                // Every note is held for exactly as long as it's written: a beat for a quarter note,
+                // four for a whole note, whatever wrote it. A chord written as a whole note lasts
+                // the measure because that's how long a whole note is in 4/4.
                 const auto onset = start + event.onset * beatSeconds;
+                const auto end = onset + getBeats (event.duration) * beatSeconds;
 
-                switch (staff.source)
+                // A block or rolled chord, the chord's or the alternate staff's, is spread from the
+                // bottom up as it starts; everything else starts together.
+                const auto spreadAsChord = staff.source == StaffContent::Source::alternate
+                                        || (staff.source == StaffContent::Source::chord && ! music::isMelodic (content.chordStyle.type));
+
+                if (spreadAsChord)
                 {
-                    case StaffContent::Source::notes:
-                        // Each note lasts as long as it's written: a beat for a quarter note, four for a whole.
-                        for (const auto& tone : event.tones)
-                            soundings.push_back ({ tone.midi, onset, onset + getBeats (event.duration) * beatSeconds });
-                        break;
-
-                    case StaffContent::Source::chord:
-                        if (music::isMelodic (content.chordStyle.type))
-                        {
-                            // Arpeggio and Random notes are played legato, each for as long as it's
-                            // written, like notes clicked into the staff.
-                            for (const auto& tone : event.tones)
-                                soundings.push_back ({ tone.midi, onset, onset + getBeats (event.duration) * beatSeconds });
-                        }
-                        else
-                        {
-                            addChord (soundings, event.tones, onset, chordEnd, event.rolled);
-                        }
-                        break;
-
-                    case StaffContent::Source::alternate:
-                        addChord (soundings, event.tones, onset, chordEnd, event.rolled);
-                        break;
+                    addChord (soundings, event.tones, onset, end, event.rolled);
+                }
+                else
+                {
+                    for (const auto& tone : event.tones)
+                        soundings.push_back ({ tone.midi, onset, end });
                 }
             }
         }
     }
 
-    // Every note lasts a moment at least, but one that starts again while it's still sounding is
-    // cut off first.
+    // A note that starts again while it's still sounding is cut off first, as one key can't be
+    // down twice.
     std::sort (soundings.begin(), soundings.end(), [] (const Sounding& a, const Sounding& b)
     {
         return a.noteNumber != b.noteNumber ? a.noteNumber < b.noteNumber : a.start < b.start;
@@ -263,7 +252,6 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
     for (size_t i = 0; i < soundings.size(); ++i)
     {
         auto& sounding = soundings[i];
-        sounding.end = juce::jmax (sounding.end, sounding.start + 0.05);
 
         if (i + 1 < soundings.size() && soundings[i + 1].noteNumber == sounding.noteNumber)
             sounding.end = juce::jmin (sounding.end, soundings[i + 1].start);
