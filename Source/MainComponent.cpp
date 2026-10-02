@@ -418,10 +418,12 @@ void MainComponent::resized()
     staffViewport.setBounds (bounds);
 
     // The note length and dynamic buttons stay in the top left corner of the score, over the
-    // staves as they scroll.
+    // staves as they scroll, and the eraser in the top right corner, well away from them, clear
+    // of the scroll bar.
     noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + 8);
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
-    eraserButton.setBounds (dynamicPicker.getRight() + 14, noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
+    eraserButton.setBounds (staffViewport.getRight() - staffViewport.getScrollBarThickness() - 10 - EraserButton::buttonWidth,
+                            noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
 }

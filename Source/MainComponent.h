@@ -209,7 +209,7 @@ private:
     controls::DialLookAndFeel dialLookAndFeel;
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
     DynamicPicker dynamicPicker;        // beside it: a dynamic or hairpin to mark instead
-    EraserButton eraserButton;          // and then the eraser
+    EraserButton eraserButton;          // at the top right of the score: the eraser
     juce::Component volumeColumn;       // to the left of the staves, holding a volume dial for each part
     std::array<controls::ClickableDial, Score::numParts> volumeDials;
 

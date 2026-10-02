@@ -107,7 +107,7 @@ Through a hairpin, each beat takes the velocity 10% of the way from where it is 
 
 ### Eraser
 
-The eraser button, after the hairpins, turns the eraser on, and the pointer becomes an eraser. Hold the mouse button down and move over the staves, and whatever the eraser passes over is taken out: notes, by their noteheads; a chord's notes, which come out of the chord, as clicking them does; ties, letting go of the notes they join; dynamics; and hairpins, anywhere along them. It catches everything along the way, however quickly it's moved. A click without moving takes out what's under the pointer. Before you press, whatever the eraser is over is shown in red. It works on either instrument's staves, and never adds anything.
+The eraser button, at the top right of the score, apart from the note lengths, dynamics and hairpins, turns the eraser on, and the pointer becomes an eraser. Hold the mouse button down and move over the staves, and whatever the eraser passes over is taken out: notes, by their noteheads; a chord's notes, which come out of the chord, as clicking them does; ties, letting go of the notes they join; dynamics; and hairpins, anywhere along them. It catches everything along the way, however quickly it's moved. A click without moving takes out what's under the pointer. Before you press, whatever the eraser is over is shown in red. It works on either instrument's staves, and never adds anything.
 
 Everything one stroke takes out is undone in one go. Clicking the eraser button again, or choosing a note length, dynamic or hairpin, goes back to adding those. Chord names and numerals aren't erased; take a chord out with Remove Chord in its window, or by erasing its notes.
 
