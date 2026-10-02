@@ -92,18 +92,18 @@ juce::Result ScoreDocument::loadDocument (const juce::File& file)
     {
         const auto* instruments = json.getProperty ("instruments", {}).getArray();
 
-        for (int part = 0; part < Score::numParts; ++part)
+        for (int part = 0; part < score.getNumParts(); ++part)
             loadInstrument (part, instruments != nullptr ? instruments->operator[] (part)
                                                          : part == 0 ? json.getProperty ("instrument", {}) : juce::var());
     }
 
     if (const auto* volumes = json.getProperty ("volumes", {}).getArray(); result.wasOk() && volumes != nullptr && loadVolume != nullptr)
-        for (int part = 0; part < Score::numParts && part < volumes->size(); ++part)
+        for (int part = 0; part < score.getNumParts() && part < volumes->size(); ++part)
             if (const auto& volume = volumes->getReference (part); volume.isDouble() || volume.isInt() || volume.isInt64())
                 loadVolume (part, (float) (double) volume);
 
     if (const auto* muted = json.getProperty ("muted", {}).getArray(); result.wasOk() && muted != nullptr && loadMuted != nullptr)
-        for (int part = 0; part < Score::numParts && part < muted->size(); ++part)
+        for (int part = 0; part < score.getNumParts() && part < muted->size(); ++part)
             if (const auto& value = muted->getReference (part); value.isBool())
                 loadMuted (part, (bool) value);
 
@@ -122,7 +122,7 @@ juce::Result ScoreDocument::saveDocument (const juce::File& file)
     {
         juce::Array<juce::var> instruments;
 
-        for (int part = 0; part < Score::numParts; ++part)
+        for (int part = 0; part < score.getNumParts(); ++part)
             instruments.add (getInstrumentToSave (part));
 
         json.getDynamicObject()->setProperty ("instruments", instruments);
@@ -133,7 +133,7 @@ juce::Result ScoreDocument::saveDocument (const juce::File& file)
     {
         juce::Array<juce::var> volumes;
 
-        for (int part = 0; part < Score::numParts; ++part)
+        for (int part = 0; part < score.getNumParts(); ++part)
             volumes.add (getVolumeToSave (part));
 
         json.getDynamicObject()->setProperty ("volumes", volumes);
@@ -144,7 +144,7 @@ juce::Result ScoreDocument::saveDocument (const juce::File& file)
     {
         juce::Array<juce::var> muted;
 
-        for (int part = 0; part < Score::numParts; ++part)
+        for (int part = 0; part < score.getNumParts(); ++part)
             muted.add (getMutedToSave (part));
 
         json.getDynamicObject()->setProperty ("muted", muted);

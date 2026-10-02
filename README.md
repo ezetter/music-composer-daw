@@ -2,7 +2,7 @@
 
 A native macOS music app written in C++ with [JUCE](https://juce.com).
 
-It has two instruments, each on its own grand staff and played by its own VST3 plugin, that you can write notes and chords for, and an 88-key piano. Chords are defined the way the Chord Progression Builder defines them, one measure at a time. Sound goes to the Mac's default audio output.
+It has as many instruments as you like, two to start with, each on its own grand staff and played by its own VST3 plugin, that you can write notes and chords for, and an 88-key piano. Chords are defined the way the Chord Progression Builder defines them, one measure at a time. Sound goes to the Mac's default audio output.
 
 ## Building
 
@@ -18,15 +18,17 @@ The first configure downloads JUCE 9.0.2 into `build/`.
 
 ## Using it
 
-The window has a toolbar along the top, the score's settings on the left, the two instruments' staves, one above the other, and the piano under them.
+The window has a toolbar along the top, the score's settings on the left, the instruments' staves, one above the other, and the piano under them.
 
 ### Instruments
 
-The score has two instruments. They share the key, time signature, tempo and measures, and play together in time, but each has its own notes, chords, alternate staff and plugin. Instrument 1's staves are at the top and instrument 2's below; their measures line up, spaced to fit what's in either. Each instrument's name and plugin are written at its top left, e.g. "Instrument 1 · Pigments".
+The score has two instruments to start with, and can have any number. They share the key, time signature, tempo and measures, and play together in time, but each has its own notes, chords, dynamics, alternate staff and plugin. Instrument 1's staves are at the top and the others' below, in order; their measures line up, spaced to fit what's in any of them. Each instrument's name and plugin are written at its top left, e.g. "Instrument 1 · Pigments".
 
-To the right of the last measure, between the two instruments' staves, **+** adds a measure at the end and **−** takes the last one away, for both instruments; **−** is disabled when there's only one. **Clone**, to their right, repeats all the measures after the last one, for both instruments: 4 measures become 8, the second 4 a copy of the first, with all their notes and chords, to be edited on their own. Adding or cloning measures scrolls to the end, so the buttons stay in view. Scroll sideways with a trackpad, the mouse wheel, or the scroll bar. Each instrument's staves take only the height their music needs: the chord buttons sit just over the chord names, which sit just over the highest notes, and the space above and below grows only when notes reach far beyond the staves.
+**Adding and deleting instruments.** The **+** below the lowest instrument's staves, marked **Add instrument**, adds one below it, with its own staves, volume dial and plugin. It starts empty, without a plugin, at 0 dB, becomes the active instrument, and is scrolled into view. With more instruments than fit, scroll up and down through them with a trackpad, the mouse wheel or the scroll bar; the volume dials scroll with them. Under each instrument's volume dial is a **bin** button that deletes the instrument, with its staves; the dial and the bin sit together beside the middle of the staves. An instrument with nothing in it and no plugin goes straight away. Otherwise you're asked first, with **Delete** or **Cancel**, since its notes, chords and dynamics go with it and its plugin is unloaded. The instruments after it move up, with their music, plugins and volumes, and are numbered again. The last instrument can't be deleted. Adding and deleting instruments can be undone; undoing a delete puts the music back in its place, but the plugin needs loading again. New starts again with two instruments, the first two keeping their plugins; opening a score gives it as many instruments as it was saved with.
 
-One instrument is **active**, marked by a blue bar beside its staves. The piano and MIDI controllers play the active instrument, and the toolbar's plugin controls, the sidebar's **Alternate staff** and **Copy Progression** are the active instrument's. Choose it with **Instrument 1 / Instrument 2** in the toolbar, or click in an instrument's staves or its chord buttons. Keys held down when the other instrument becomes active are let go; the score's notes play on.
+To the right of the last measure, between the first two instruments' staves, **+** adds a measure at the end and **−** takes the last one away, for every instrument; **−** is disabled when there's only one. **Clone**, to their right, repeats all the measures after the last one, for every instrument: 4 measures become 8, the second 4 a copy of the first, with all their notes and chords, to be edited on their own. Adding or cloning measures scrolls to the end, so the buttons stay in view. Scroll sideways with a trackpad, the mouse wheel, or the scroll bar. Each instrument's staves take only the height their music needs: the chord buttons sit just over the chord names, which sit just over the highest notes, and the space above and below grows only when notes reach far beyond the staves.
+
+One instrument is **active**, marked by a blue bar beside its staves. The piano and MIDI controllers play the active instrument, and the toolbar's plugin controls, the sidebar's **Alternate staff** and **Copy Progression** are the active instrument's. Choose it from the instrument menu in the toolbar, or click in an instrument's staves or its chord buttons. Keys held down when another instrument becomes active are let go; the score's notes play on.
 
 Each instrument has a **volume dial** to the left of its staves, setting how loud it is in the mix, from **Off** up to +6 dB. It starts at 0 dB, which leaves the plugin as loud as it is. Drag up or down, or round, to turn it. **Click** it without turning it to mute the instrument, and click again to unmute it; a muted dial is grey and says **Muted**, and unmuting brings back the volume it had. Turning a muted dial unmutes it. The dials follow the staves as they scroll up and down. Volumes change smoothly, without clicks, even while the score plays. A volume change, or muting, counts as a change to the score, which saves each instrument's volume and whether it's muted; they're also remembered the next time the app starts, and stay as they are for a new score.
 
@@ -35,8 +37,8 @@ Each instrument has a **volume dial** to the left of its staves, setting how lou
 - **Play** (or the space bar) plays the score from the beginning, highlighting each beat and following it along the staff. **Stop** stops it.
 - **Loop**, beside Play, makes the score play over and over, going straight from the end back to the beginning, until you press **Stop**. It can be turned on or off while the score plays; turning it off lets the score finish this time through. While it loops, changes to the score, tempo included, are heard from the next time through. Loop is remembered the next time the app starts.
 - **BPM** sets the tempo in quarter notes per minute, from 20 to 300, fractions allowed. The default is 120. A change applies from the next Play, or the next time through a loop.
-- **Instrument 1 / Instrument 2** chooses the active instrument.
-- **Load Instrument…** loads a VST3 instrument plugin for the active instrument, such as one from `/Library/Audio/Plug-Ins/VST3`. **Edit [plugin]**, named for the loaded plugin (e.g. **Edit Pigments**), opens the plugin's own window, where you can choose its sounds. The two instruments can use different plugins, or the same one with different sounds.
+- The instrument menu (**Instrument 1**, **Instrument 2** and so on) chooses the active instrument.
+- **Load Instrument…** loads a VST3 instrument plugin for the active instrument, such as one from `/Library/Audio/Plug-Ins/VST3`. **Edit [plugin]**, named for the loaded plugin (e.g. **Edit Pigments**), opens the plugin's own window, where you can choose its sounds. The instruments can use different plugins, or the same one with different sounds.
 - Each instrument's plugin is saved with the score (see [Saving and opening](#saving-and-opening)). It's also loaded again the next time the app starts, with the sound it had. It's saved when you load it, when you close its editor, and when you quit, in `~/Library/Application Support/Anthropocene Music`. If it can't be loaded, say because it's been uninstalled, the app tells you and forgets it.
 
 ### Saving and opening
@@ -75,7 +77,7 @@ The **Edit** menu's **Undo** (⌘Z) undoes the last change to the score, and pre
 | **Key** | The 15 major keys, C♭ to C♯. Sets the key signature, what the chord window's numerals mean, and the sharps and flats of notes you click in. Chords follow their numerals into a new key; notes keep their pitches and get accidentals if they need them. |
 | **Time signature** | 2/4, 3/4 or 4/4. Notes on beats that no longer fit are kept, and come back if you go back to more beats. |
 | **Alternate staff** | For the active instrument, what every chord puts on the other staff: **None**, the chord's **Root**, the root in an **Octave**, or the whole chord as a **Block chord** or **Rolled chord**, held for the measure. It applies to all the instrument's chords, on whichever staff each one isn't; each instrument has its own. Quarter notes under or over a chord are hidden while there's an alternate staff, rather than lost, and come back with None. Changing it puts any alternate-staff notes you've changed by hand back to what the chords give. Scores saved before this was one setting open with the alternate staff most of their chords had. |
-| **Progression** | **Copy Progression to Instrument 2** (or **to Instrument 1**, when instrument 2 is active) gives the other instrument the active instrument's chords, measure by measure, in the same clefs, chord types and Random orders. It replaces what the other instrument had: its chords, and its quarter notes, hidden ones included; measures without a chord come over empty. The other instrument keeps its own alternate staff. If the other instrument has any notes or chords, you're asked first, with **Replace** or **Cancel**; if it's empty, the progression is copied straight away. The button is disabled while the active instrument has no chords. |
+| **Progression** | **Copy Progression to Instrument 2** (or **to Instrument 1**, when instrument 2 is active) gives the other instrument the active instrument's chords. With more than two instruments it's **Copy Progression To…**, which asks which instrument to copy to; with only one, there's nowhere to copy to, and it's disabled. The progression goes over measure by measure, in the same clefs, chord types and Random orders. It replaces what the other instrument had: its chords, and its quarter notes, hidden ones included; measures without a chord come over empty. The other instrument keeps its own alternate staff. If the other instrument has any notes or chords, you're asked first, with **Replace** or **Cancel**; if it's empty, the progression is copied straight away. The button is disabled while the active instrument has no chords. |
 
 ### Notes
 
@@ -113,7 +115,7 @@ Everything one stroke takes out is undone in one go. Clicking the eraser button 
 
 ### Chords
 
-Above each measure of each instrument is an **Add Chord** button, or **Edit Chord** if the measure has a chord. It makes the instrument active and opens the chord window for that measure, and outlines the measure while the window is open. Making the other instrument active closes it. For a chord that's already there, the window starts with its settings.
+Above each measure of each instrument is an **Add Chord** button, or **Edit Chord** if the measure has a chord. It makes the instrument active and opens the chord window for that measure, and outlines the measure while the window is open. Making another instrument active closes it, and so does deleting it or an instrument before it. For a chord that's already there, the window starts with its settings.
 
 Everything you change in the window goes straight into the measure, and the staff updates as you go. **Remove Chord** empties the measure, leaving the window open for a new chord. **Done**, Return, Esc or the window's close button closes it. Clicking another measure's button moves the window on to that measure. The window floats over the main window, so the staff and piano can still be used while it's open, and changes made to the chord on the staff show in the window too.
 
@@ -161,13 +163,13 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | File | Contents |
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
-| `Source/MainComponent.*` | The File, Edit and MIDI menus, the toolbar, the sidebar, the two instruments' scrolling staves and their volume dials, the piano, and the audio output |
+| `Source/MainComponent.*` | The File, Edit and MIDI menus, the toolbar, the sidebar, the instruments' scrolling staves, with their volume dials and delete buttons, adding and deleting instruments, the piano, and the audio output |
 | `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, crescendos and decrescendos, chords and alternate staff (a part, in the code), and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
 | `Source/ScoreHistory.*` | Remembers the score before each change, or each eraser stroke, for Undo and Redo |
 | `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics, hairpins and their velocities |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
-| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks and drags into notes, dynamics and hairpins, or erases them |
+| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instruments', and turns clicks and drags into notes, dynamics and hairpins, or erases them |
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, time signature and measures settings |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |

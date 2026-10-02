@@ -110,7 +110,8 @@ void ScoreHistory::handleAsyncUpdate()
 
 juce::String ScoreHistory::capture() const
 {
-    return juce::JSON::toString (score.toJSON(), true);
+    // With the parts' ids, so a part that's taken out and put back is known to be the same one
+    return juce::JSON::toString (score.toJSON (true), true);
 }
 
 void ScoreHistory::restore (const juce::String& state)

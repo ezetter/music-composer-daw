@@ -51,7 +51,8 @@ public:
 
 private:
     /** The parts' staff systems, one above the other, their measures lined up, with + and −
-        buttons after the last measure for adding and removing measures, and Clone for repeating them all.
+        buttons after the last measure for adding and removing measures, Clone for repeating them
+        all, and a + below the last part for adding another.
     */
     struct StaffSystems final : public juce::Component
     {
@@ -61,17 +62,23 @@ private:
         /** At least this tall, to fill the view it's in. */
         void setMinimumHeight (int);
 
-        std::array<std::unique_ptr<StaffView>, Score::numParts> views;
+        /** Each part's view, from the top, in the order of the score's parts. */
+        std::vector<std::unique_ptr<StaffView>> views;
+
+        /** Adds a view for a part at a place among the others, or takes one out. */
+        StaffView& insertView (int index, int part);
+        void removeView (int index);
 
         /** Called when the systems move or change size. */
         std::function<void()> onLayoutChanged;
 
-        /** Called when +, − or Clone is clicked. */
-        std::function<void()> onAddMeasure, onRemoveMeasure, onCloneMeasures;
+        /** Called when +, − or Clone is clicked, or the + below the last part. */
+        std::function<void()> onAddMeasure, onRemoveMeasure, onCloneMeasures, onAddPart;
+
+        void layOut();
 
     private:
         void childBoundsChanged (juce::Component*) override;
-        void layOut();
 
         Score& score;
         int minimumHeight = 0;
@@ -80,6 +87,19 @@ private:
         controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
         juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
         juce::TextButton cloneButton { "Clone" };
+        juce::TextButton addPartButton { "+" };
+        juce::Label addPartLabel;
+    };
+
+    /** What each part has besides its staves: its instrument, the volume dial beside its staves,
+        and a button under the dial for taking the part out.
+    */
+    struct Track
+    {
+        int partId;
+        std::unique_ptr<InstrumentPanel> panel;
+        std::unique_ptr<controls::ClickableDial> dial;
+        std::unique_ptr<controls::BinButton> deleteButton;
     };
 
     /** A viewport that says when it scrolls. */
@@ -126,6 +146,23 @@ private:
     */
     void setActivePart (int part);
 
+    /** Gives each of the score's parts a track, and takes away the tracks of parts that have
+        gone, e.g. when a part's added or taken out, a score's opened, or a change is undone.
+    */
+    void updateTracks();
+    void insertTrack (int index, bool reloadFromSettings);
+    void removeTrack (int index);
+    void updatePartBox();
+
+    /** Gives each track's controls its part's number, e.g. in their tooltips. */
+    void numberTracks();
+
+    /** Adds a part after the last, makes it the active one, and scrolls down to it. */
+    void addPart();
+
+    /** Takes a part out, after asking, unless there's nothing in it to lose. */
+    void deletePart (int part);
+
     /** Chooses the length of the notes that clicking the staff adds, in beats: 4, 3, 2, 1 or 0.5.
         Clicks add notes again, if they were marking a dynamic.
     */
@@ -141,8 +178,8 @@ private:
     */
     void setErasing (bool);
 
-    /** Gives the other part the active part's chords, asking first if it has notes of its own. */
-    void copyProgression();
+    /** Gives another part the active part's chords, asking first if it has notes of its own. */
+    void copyProgression (int toPart);
 
     /** Opens the chord window for a measure of a part, to add a chord or edit the one it has.
         The part becomes the active one.
@@ -177,8 +214,13 @@ private:
     */
     void setMuted (int part, bool muted, bool changedOnDial);
 
-    /** Keeps each part's volume dial beside its staves, as they scroll up and down. */
+    /** Keeps each part's volume dial, and the button for taking it out, beside its staves, as
+        they scroll up and down.
+    */
     void positionVolumeDials();
+
+    /** Keeps each part's volume and muting in the settings, by its number. */
+    void saveVolumes();
 
     juce::PropertiesFile& settings;
     juce::AudioDeviceManager audioDeviceManager;
@@ -196,8 +238,8 @@ private:
     juce::TextButton loopButton { "Loop" };
     juce::Label tempoLabel;
     juce::TextEditor tempoEditor;
-    std::array<juce::TextButton, Score::numParts> partButtons;
-    std::array<std::unique_ptr<InstrumentPanel>, Score::numParts> instrumentPanels;     // only the active part's shows
+    juce::ComboBox partBox;             // the active part
+    std::vector<Track> tracks;          // for each part, in order; only the active part's instrument panel shows
 
     ScorePanel scorePanel { score };
     juce::Component sidebarContent;
@@ -210,12 +252,12 @@ private:
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
     DynamicPicker dynamicPicker;        // beside it: a dynamic or hairpin to mark instead
     EraserButton eraserButton;          // at the top right of the score: the eraser
-    juce::Component volumeColumn;       // to the left of the staves, holding a volume dial for each part
-    std::array<controls::ClickableDial, Score::numParts> volumeDials;
+    juce::Component volumeColumn;       // to the left of the staves, holding each part's volume dial and delete button
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 
     int activePart = 0;
+    int activePartId = 0;               // so the active part can be found again when parts are added or taken out
     ChordStyle lastChordStyle;          // what a new chord starts with: whichever was chosen last
     juce::Component::SafePointer<juce::Component> keyListenerTarget;
 

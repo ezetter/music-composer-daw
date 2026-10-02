@@ -2,12 +2,6 @@
 
 namespace
 {
-    // Where a part's instrument's description and state are kept in the settings: part 1's as
-    // they were when there was only one part, and part 2's after it
-    juce::String getInstrumentKey (int part)
-    {
-        return part == 0 ? "instrument" : "instrument" + juce::String (part + 1);
-    }
 
     juce::String withEllipsis (const juce::String& text)
     {
@@ -15,12 +9,10 @@ namespace
     }
 }
 
-InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, int partToUse, juce::PropertiesFile& settingsToUse)
+InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, int partToUse, juce::PropertiesFile& settingsToUse, bool reloadFromSettings)
     : host (hostToUse),
       part (partToUse),
       settings (settingsToUse),
-      instrumentKey (getInstrumentKey (part)),
-      instrumentStateKey (getInstrumentKey (part) + "State"),
       loadButton (withEllipsis ("Load Instrument")),
       editorButton ("Edit Instrument")
 {
@@ -39,7 +31,9 @@ InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, int partToUse, juce
     }
 
     updateControls();
-    reloadSavedInstrument();
+
+    if (reloadFromSettings)
+        reloadSavedInstrument();
 
     // Changes the instrument reports are looked into a couple of times a second, rather than
     // at every turn of a knob.
@@ -49,8 +43,33 @@ InstrumentPanel::InstrumentPanel (InstrumentHost& hostToUse, int partToUse, juce
 InstrumentPanel::~InstrumentPanel()
 {
     // Keep any changes made to the instrument's sound since it was last saved.
-    saveInstrument();
+    if (! forgotten)
+        saveInstrument();
+
     listenTo (nullptr);
+}
+
+void InstrumentPanel::setPart (int newPart)
+{
+    part = newPart;
+
+    // The editor's window says which instrument it's for.
+    if (editorWindow != nullptr)
+        if (auto* instrument = host.getInstrument (part))
+            editorWindow->setName (instrument->getName() + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 Instrument ")) + juce::String (part + 1));
+
+    updateControls();
+}
+
+juce::String InstrumentPanel::getInstrumentKey() const
+{
+    // Part 1's as it was when there was only one part, and the others' after it
+    return part == 0 ? "instrument" : "instrument" + juce::String (part + 1);
+}
+
+juce::String InstrumentPanel::getInstrumentStateKey() const
+{
+    return getInstrumentKey() + "State";
 }
 
 void InstrumentPanel::resized()
@@ -168,8 +187,8 @@ void InstrumentPanel::createInstrument (const juce::PluginDescription& descripti
             else if (source == Source::settings)
             {
                 // Forget an instrument that can't be loaded any more, rather than failing every time.
-                safeThis->settings.removeValue (safeThis->instrumentKey);
-                safeThis->settings.removeValue (safeThis->instrumentStateKey);
+                safeThis->settings.removeValue (safeThis->getInstrumentKey());
+                safeThis->settings.removeValue (safeThis->getInstrumentStateKey());
                 safeThis->settings.saveIfNeeded();
 
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't reload " + name,
@@ -194,14 +213,14 @@ void InstrumentPanel::createInstrument (const juce::PluginDescription& descripti
 
 void InstrumentPanel::reloadSavedInstrument()
 {
-    const auto xml = settings.getXmlValue (instrumentKey);
+    const auto xml = settings.getXmlValue (getInstrumentKey());
     juce::PluginDescription description;
 
     if (xml == nullptr || ! description.loadFromXml (*xml))
         return;
 
     juce::MemoryBlock state;
-    state.fromBase64Encoding (settings.getValue (instrumentStateKey));
+    state.fromBase64Encoding (settings.getValue (getInstrumentStateKey()));
     createInstrument (description, state, Source::settings);
 }
 
@@ -212,8 +231,8 @@ void InstrumentPanel::saveInstrument()
     if (instrument == nullptr)
         return;
 
-    settings.setValue (instrumentKey, instrument->getPluginDescription().createXml().get());
-    settings.setValue (instrumentStateKey, getState().toBase64Encoding());
+    settings.setValue (getInstrumentKey(), instrument->getPluginDescription().createXml().get());
+    settings.setValue (getInstrumentStateKey(), getState().toBase64Encoding());
     settings.saveIfNeeded();
 }
 

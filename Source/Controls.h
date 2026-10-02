@@ -156,4 +156,35 @@ namespace controls
             return juce::FontOptions ((float) buttonHeight * 0.7f);
         }
     };
+
+    /** A small button showing a waste bin, for taking something out: grey, and red under the mouse. */
+    struct BinButton final : public juce::Button
+    {
+        BinButton() : juce::Button ("Delete") { setWantsKeyboardFocus (false); }
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            const auto area = getLocalBounds().toFloat().withSizeKeepingCentre (14.0f, 16.0f);
+            const auto colour = ! isEnabled() ? juce::Colours::black.withAlpha (0.15f)
+                              : down          ? juce::Colour (0xffb02a24)
+                              : highlighted   ? juce::Colour (0xffd8413a)
+                                              : secondaryText;
+
+            // A lid with a handle, over a bin a little narrower at the bottom, with two grooves
+            const auto lidY = area.getY() + 3.0f;
+            juce::Path bin;
+            bin.startNewSubPath (area.getX() + 1.5f, lidY + 2.5f);
+            bin.lineTo (area.getX() + 2.8f, area.getBottom());
+            bin.lineTo (area.getRight() - 2.8f, area.getBottom());
+            bin.lineTo (area.getRight() - 1.5f, lidY + 2.5f);
+
+            g.setColour (colour);
+            g.strokePath (bin, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.drawLine (area.getX(), lidY, area.getRight(), lidY, 1.5f);
+            g.drawRoundedRectangle (area.withTrimmedLeft (4.5f).withTrimmedRight (4.5f).withHeight (3.5f), 1.0f, 1.2f);
+
+            for (auto x : { area.getCentreX() - 2.2f, area.getCentreX() + 2.2f })
+                g.drawLine (x, lidY + 5.0f, x, area.getBottom() - 2.5f, 1.1f);
+        }
+    };
 }

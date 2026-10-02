@@ -76,9 +76,12 @@ struct MeasureChord
     bool operator== (const MeasureChord&) const = default;
 };
 
-/** A piece of music in two parts, each on its own grand staff and played on its own
-    instrument. The parts share the key, time signature, tempo and measures, but each has its
-    own notes, chords and alternate staff. Listeners hear about every change.
+/** A piece of music in any number of parts, two to start with, each on its own grand staff and
+    played on its own instrument. The parts share the key, time signature, tempo and measures, but
+    each has its own notes, chords, dynamics and alternate staff. Listeners hear about every change.
+
+    Parts are numbered from 0, from the top, and the numbers move up when one's taken out. Each
+    also has an id, which stays the same as long as it's in the score, for keeping track of it.
 */
 class Score : public juce::ChangeBroadcaster
 {
@@ -89,7 +92,7 @@ public:
     static constexpr int slotsPerBeat = 2;
     static constexpr int maxSlotsPerMeasure = maxBeatsPerMeasure * slotsPerBeat;
     static constexpr int initialMeasures = 4;
-    static constexpr int numParts = 2;
+    static constexpr int initialParts = 2;
 
     Score();
 
@@ -126,6 +129,22 @@ public:
 
     /** How long a measure lasts when it plays, at the tempo. */
     double getSecondsPerMeasure() const noexcept { return beatsPerMeasure * 60.0 / beatsPerMinute; }
+
+    //==============================================================================
+    /** How many parts there are: always at least one. */
+    int getNumParts() const noexcept { return (int) parts.size(); }
+
+    /** Adds an empty part after the last, with as many measures as the others. Returns its number. */
+    int addPart();
+
+    /** Takes a part out, with everything in it, unless it's the only one. The parts after it move up. */
+    void removePart (int part);
+
+    /** A part's id, which stays the same while it's in the score, wherever it moves to. */
+    int getPartId (int part) const noexcept { return parts[(size_t) part].id; }
+
+    /** The number of the part with an id, or -1 if it's not in the score any more. */
+    int findPart (int id) const noexcept;
 
     //==============================================================================
     /** The number of measures, which every part has. */
@@ -270,6 +289,9 @@ public:
     */
     bool hasNotes (int part) const;
 
+    /** Whether a part has nothing in it at all: no notes, chords, dynamics or hairpins. */
+    bool isPartEmpty (int part) const;
+
     /** Whether a part has any chords with notes. */
     bool hasChords (int part) const;
 
@@ -281,14 +303,21 @@ public:
     void copyChords (int fromPart, int toPart);
 
     //==============================================================================
-    /** Replaces the score with a new, empty one, with nothing in either part. */
+    /** Replaces the score with a new, empty one, with two empty parts. They keep the ids the
+        first two parts had, as being the same parts, emptied.
+    */
     void clear();
 
-    /** The whole score, as JSON to save in a file. */
-    juce::var toJSON() const;
+    /** The whole score, as JSON to save in a file. With the parts' ids, it's the score exactly
+        as it is, e.g. for undoing back to it; a file doesn't need them.
+    */
+    juce::var toJSON (bool withPartIds = false) const;
 
     /** Replaces the score with one saved by toJSON(). Anything missing or out of range falls
         back to its default, so a damaged file loads as much as it can.
+
+        Parts saved with their ids get them back. Ones without, as in a file, take the id of the
+        part that was at their place, as being the same parts with new music, or new ones.
     */
     juce::Result loadJSON (const juce::var&);
 
@@ -327,6 +356,7 @@ private:
 
     struct Part
     {
+        int id = 0;
         std::vector<Measure> measures = std::vector<Measure> (initialMeasures);
         music::AlternateStaff alternateStaff = music::AlternateStaff::none;
     };
@@ -343,7 +373,8 @@ private:
     static double toBeats (int slots) { return (double) slots / slotsPerBeat; }
     std::optional<std::pair<int, int>> getFollowingSlot (int part, Staff, int measure, int slot) const;
 
-    std::array<Part, numParts> parts;
+    std::vector<Part> parts;
+    int nextPartId = 1;
     int keyIndex = 0;
     int beatsPerMeasure = 4;
     double beatsPerMinute = 120.0;

@@ -30,9 +30,17 @@ class StaffView final : public juce::Component,
                         private juce::ChangeListener
 {
 public:
+    /** Shows a part, and goes on showing it as other parts are added and taken out around it. */
     StaffView (Score&, int part);
 
+    /** The part's number now, or -1 if it's been taken out of the score. */
     int getPart() const noexcept { return part; }
+    int getPartId() const noexcept { return partId; }
+
+    /** Catches up with where the part's moved to, e.g. after one before it has been taken out.
+        It happens anyway when the score changes; this is for anything that needs it sooner.
+    */
+    void followPart();
 
     /** How long the notes that clicks add are, in beats: 0.5 for eighth notes, 1 for quarter
         notes, 2 for half notes, 3 for dotted half notes and 4 for whole notes. Clicks add eighths
@@ -270,7 +278,8 @@ private:
     void setHoverNote (std::optional<Note>);
 
     Score& score;
-    const int part;
+    const int partId;
+    int part;
     MusicGlyphs glyphs;
     bool active = false;
     double noteLength = 1.0;

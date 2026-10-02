@@ -22,7 +22,39 @@ namespace
     }
 }
 
-Score::Score() = default;
+Score::Score()
+{
+    for (int part = 0; part < initialParts; ++part)
+        parts.push_back ({ nextPartId++ });
+}
+
+//==============================================================================
+int Score::addPart()
+{
+    Part part { nextPartId++ };
+    part.measures.resize ((size_t) getNumMeasures());
+    parts.push_back (std::move (part));
+    sendSynchronousChangeMessage();
+    return getNumParts() - 1;
+}
+
+void Score::removePart (int part)
+{
+    if (getNumParts() <= 1 || ! juce::isPositiveAndBelow (part, getNumParts()))
+        return;
+
+    parts.erase (parts.begin() + part);
+    sendSynchronousChangeMessage();
+}
+
+int Score::findPart (int id) const noexcept
+{
+    for (size_t part = 0; part < parts.size(); ++part)
+        if (parts[part].id == id)
+            return (int) part;
+
+    return -1;
+}
 
 Score::Measure& Score::getMeasure (int part, int measure)
 {
@@ -156,7 +188,7 @@ bool Score::addNote (const Note& note)
 
     jassert (juce::isPositiveAndBelow (note.measure, getNumMeasures()));
     jassert (juce::isPositiveAndBelow (slot, slots));
-    jassert (juce::isPositiveAndBelow (note.part, numParts));
+    jassert (juce::isPositiveAndBelow (note.part, getNumParts()));
 
     if (chordUsesStaff (note.part, note.measure, note.staff))
         return false;
@@ -292,7 +324,7 @@ bool Score::toggleTie (int part, Staff staff, int measure, double beat, int othe
 void Score::pruneTies()
 {
     // Notes a shorter time signature hides keep their ties, for when they're back.
-    for (int part = 0; part < numParts; ++part)
+    for (int part = 0; part < getNumParts(); ++part)
         for (int measure = 0; measure < getNumMeasures(); ++measure)
             for (auto staff : { Staff::treble, Staff::bass })
                 for (int slot = 0; slot < getSlotsPerMeasure(); ++slot)
@@ -585,6 +617,19 @@ bool Score::hasNotes (int part) const
     return hasChords (part);
 }
 
+bool Score::isPartEmpty (int part) const
+{
+    if (hasNotes (part) || ! getHairpins (part).empty())
+        return false;
+
+    for (const auto& measure : parts[(size_t) part].measures)
+        for (const auto& dynamic : measure.dynamics)
+            if (dynamic.has_value())
+                return false;
+
+    return true;
+}
+
 bool Score::hasChords (int part) const
 {
     const auto& measures = parts[(size_t) part].measures;
@@ -657,7 +702,8 @@ namespace
     // 4: notes by eighth note, rather than by beat, with their lengths in eighths
     // 5: dynamics
     // 6: crescendos and decrescendos
-    constexpr int formatVersion = 6;
+    // 7: any number of parts
+    constexpr int formatVersion = 7;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -705,14 +751,19 @@ namespace
 
 void Score::clear()
 {
-    parts = {};
+    std::vector<Part> emptied;
+
+    for (int part = 0; part < initialParts; ++part)
+        emptied.push_back ({ part < getNumParts() ? parts[(size_t) part].id : nextPartId++ });
+
+    parts = std::move (emptied);
     keyIndex = 0;
     beatsPerMeasure = 4;
     beatsPerMinute = 120.0;
     sendSynchronousChangeMessage();
 }
 
-juce::var Score::toJSON() const
+juce::var Score::toJSON (bool withPartIds) const
 {
     auto* root = new juce::DynamicObject();
     root->setProperty ("format", formatName);
@@ -837,6 +888,10 @@ juce::var Score::toJSON() const
             measureList.add (measureToJSON (measure));
 
         auto* partObject = new juce::DynamicObject();
+
+        if (withPartIds)
+            partObject->setProperty ("id", part.id);
+
         partObject->setProperty ("alternateStaff", (int) part.alternateStaff);
         partObject->setProperty ("measures", measureList);
         partList.add (partObject);
@@ -859,10 +914,11 @@ juce::Result Score::loadJSON (const juce::var& json)
     else
         partList.add (json);
 
-    std::array<Part, numParts> loadedParts;
+    // Scores from before version 3 had a second, empty part all the same.
+    std::vector<Part> loadedParts ((size_t) juce::jmax (partList.size(), json.hasProperty ("parts") ? 1 : initialParts));
     auto numMeasures = 0;
 
-    for (int partIndex = 0; partIndex < numParts && partIndex < partList.size(); ++partIndex)
+    for (int partIndex = 0; partIndex < partList.size(); ++partIndex)
     {
         const auto& partJSON = partList.getReference (partIndex);
         const auto* measureList = partJSON.getProperty ("measures", {}).getArray();
@@ -1005,6 +1061,22 @@ juce::Result Score::loadJSON (const juce::var& json)
     // Every part has as many measures as the longest.
     for (auto& part : loadedParts)
         part.measures.resize ((size_t) numMeasures);
+
+    // Each part gets the id it was saved with, or the one the part at its place has, or a new one.
+    std::vector<int> ids;
+
+    for (size_t part = 0; part < loadedParts.size(); ++part)
+    {
+        const auto saved = partList.size() > (int) part ? readInt (partList.getReference ((int) part).getProperty ("id", {}), 1, std::numeric_limits<int>::max(), 0) : 0;
+        const auto here = part < parts.size() ? parts[part].id : 0;
+        const auto unused = [&ids] (int id) { return id > 0 && std::find (ids.begin(), ids.end(), id) == ids.end(); };
+        ids.push_back (unused (saved) ? saved : unused (here) ? here : 0);
+    }
+
+    nextPartId = juce::jmax (nextPartId, *std::max_element (ids.begin(), ids.end()) + 1);
+
+    for (size_t part = 0; part < loadedParts.size(); ++part)
+        loadedParts[part].id = ids[part] > 0 ? ids[part] : nextPartId++;
 
     parts = std::move (loadedParts);
     keyIndex = readInt (json.getProperty ("key", {}), 0, (int) music::getMajorKeys().size() - 1, 0);

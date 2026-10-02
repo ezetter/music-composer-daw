@@ -3,6 +3,7 @@
 #include "Controls.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -13,6 +14,9 @@ namespace
     constexpr int volumeColumnWidth = 64;
     constexpr int volumeDialSize = 44;
     constexpr int volumeTextHeight = 16;
+    constexpr int deleteButtonSize = 22;        // under the volume dial
+    constexpr int addPartButtonSize = 28;       // in the space under the last part's staves, at the left
+    constexpr int addPartBottom = 8;            // up from the bottom of the last part
     constexpr int measureButtonSize = 28;
     constexpr int stavesTopPadding = 26;        // above the first system, for the note length buttons
     constexpr int cloneButtonWidth = 56, cloneButtonHeight = 26;
@@ -62,19 +66,13 @@ namespace
 MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
     : score (scoreToShow)
 {
-    for (int part = 0; part < Score::numParts; ++part)
-    {
-        views[(size_t) part] = std::make_unique<StaffView> (scoreToShow, part);
-        addAndMakeVisible (*views[(size_t) part]);
-    }
-
-    // + adds a measure at the end and − takes the last one away, in both parts.
+    // + adds a measure at the end and − takes the last one away, in every part.
     addMeasureButton.setTooltip ("Add a measure at the end");
     removeMeasureButton.setTooltip ("Remove the last measure");
     addMeasureButton.onClick = [this] { if (onAddMeasure != nullptr) onAddMeasure(); };
     removeMeasureButton.onClick = [this] { if (onRemoveMeasure != nullptr) onRemoveMeasure(); };
 
-    // Clone repeats every measure after the last, in both parts.
+    // Clone repeats every measure after the last, in every part.
     cloneButton.setTooltip ("Repeat all the measures after the last one, with everything in them");
     cloneButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
     cloneButton.setColour (juce::TextButton::textColourOffId, controls::accent);
@@ -82,7 +80,16 @@ MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
     cloneButton.onClick = [this] { if (onCloneMeasures != nullptr) onCloneMeasures(); };
     addAndMakeVisible (cloneButton);
 
-    for (auto* button : { &addMeasureButton, &removeMeasureButton })
+    // The + below the last part adds another part after it.
+    addPartButton.setTooltip ("Add an instrument, with its own staves, below the last");
+    addPartButton.onClick = [this] { if (onAddPart != nullptr) onAddPart(); };
+    addPartLabel.setText ("Add instrument", juce::dontSendNotification);
+    addPartLabel.setFont (juce::FontOptions (12.5f));
+    addPartLabel.setColour (juce::Label::textColourId, controls::accent);
+    addPartLabel.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (addPartLabel);
+
+    for (auto* button : { &addMeasureButton, &removeMeasureButton, &addPartButton })
     {
         button->setLookAndFeel (&roundButtonLookAndFeel);
         button->setColour (juce::TextButton::textColourOffId, controls::accent);
@@ -95,8 +102,22 @@ MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
 
 MainComponent::StaffSystems::~StaffSystems()
 {
-    for (auto* button : { &addMeasureButton, &removeMeasureButton })
+    for (auto* button : { &addMeasureButton, &removeMeasureButton, &addPartButton })
         button->setLookAndFeel (nullptr);
+}
+
+StaffView& MainComponent::StaffSystems::insertView (int index, int part)
+{
+    auto& view = **views.insert (views.begin() + index, std::make_unique<StaffView> (score, part));
+    addAndMakeVisible (view);
+    layOut();
+    return view;
+}
+
+void MainComponent::StaffSystems::removeView (int index)
+{
+    views.erase (views.begin() + index);
+    layOut();
 }
 
 void MainComponent::StaffSystems::setMinimumHeight (int height)
@@ -113,7 +134,7 @@ void MainComponent::StaffSystems::childBoundsChanged (juce::Component*)
 
 void MainComponent::StaffSystems::layOut()
 {
-    if (layingOut)
+    if (layingOut || views.empty())
         return;
 
     const juce::ScopedValueSetter<bool> guard (layingOut, true);
@@ -134,12 +155,22 @@ void MainComponent::StaffSystems::layOut()
         y += height;
     }
 
+    // The + for adding a part, below the last one's staves, at the left, in the room left under
+    // them for low notes, so it takes no more height
+    addPartButton.setBounds (12, y - addPartBottom - addPartButtonSize, addPartButtonSize, addPartButtonSize);
+    addPartLabel.setBounds (addPartButton.getRight() + 6, addPartButton.getY(), 120, addPartButtonSize);
+    addPartButton.toFront (false);
+    addPartLabel.toFront (false);
+    y += 4;
+
     setSize (width + measureButtonsWidth, juce::jmax (y, minimumHeight));
 
     // + over −, just past the final barline, halfway between the first part's staves and the
-    // second's, and Clone to their right
-    const auto gapTop = views[0]->getBounds().getY() + views[0]->getStavesRange().getEnd();
-    const auto gapBottom = views[1]->getBounds().getY() + views[1]->getStavesRange().getStart();
+    // second's, or below the only part's, and Clone to their right
+    const auto& first = *views[0];
+    const auto gapTop = first.getBounds().getY() + first.getStavesRange().getEnd();
+    const auto gapBottom = views.size() > 1 ? views[1]->getBounds().getY() + views[1]->getStavesRange().getStart()
+                                            : first.getBottom();
     const auto centre = juce::Point<int> (width + 14, (gapTop + gapBottom) / 2);
 
     addMeasureButton.setBounds (juce::Rectangle<int> (measureButtonSize, measureButtonSize).withCentre (centre.translated (0, -measureButtonSize / 2 - 3)));
@@ -158,17 +189,8 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
       document (score, settings)
 {
     // Each part has its own instrument, which is saved with the score, sound and all.
-    for (int part = 0; part < Score::numParts; ++part)
-    {
-        auto& panel = instrumentPanels[(size_t) part];
-        panel = std::make_unique<InstrumentPanel> (instrumentHost, part, settings);
-        panel->onInstrumentChanged = [this] { document.changed(); };
-        panel->onStatusChanged = [this] { showPartTitles(); };
-        addChildComponent (*panel);
-    }
-
-    document.getInstrumentToSave = [this] (int part) { return instrumentPanels[(size_t) part]->saveToJSON(); };
-    document.loadInstrument = [this] (int part, const juce::var& json) { instrumentPanels[(size_t) part]->loadFromJSON (json); };
+    document.getInstrumentToSave = [this] (int part) { return tracks[(size_t) part].panel->saveToJSON(); };
+    document.loadInstrument = [this] (int part, const juce::var& json) { tracks[(size_t) part].panel->loadFromJSON (json); };
 
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
@@ -202,104 +224,37 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
 
     // The active part, which the keyboard plays
-    controls::makeSegmented ({ &partButtons[0], &partButtons[1] }, 1);
-
-    for (int part = 0; part < Score::numParts; ++part)
-    {
-        auto& button = partButtons[(size_t) part];
-        button.setButtonText ("Instrument " + juce::String (part + 1));
-        button.setTooltip ("Play instrument " + juce::String (part + 1) + " on the keyboard, and set its alternate staff");
-        button.onClick = [this, part] { setActivePart (part); };
-    }
+    partBox.setTooltip ("The instrument the keyboard plays, and whose alternate staff and progression the sidebar sets");
+    partBox.setWantsKeyboardFocus (false);
+    partBox.onChange = [this] { if (partBox.getSelectedId() > 0) setActivePart (partBox.getSelectedId() - 1); };
 
     // Clicking a button shouldn't take the keyboard focus away from the piano, which the
     // computer keyboard can play too.
     playButton.setWantsKeyboardFocus (false);
     loopButton.setWantsKeyboardFocus (false);
 
-    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &loopButton, &tempoLabel, &tempoEditor,
-                                                                     &partButtons[0], &partButtons[1] })
+    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &loopButton, &tempoLabel, &tempoEditor, &partBox })
         addAndMakeVisible (component);
 
     staffSystems.onAddMeasure = [this] { addMeasure(); };
     staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
     staffSystems.onCloneMeasures = [this] { cloneMeasures(); };
+    staffSystems.onAddPart = [this] { addPart(); };
     // Note lengths for clicking into the staff, quarter notes to start with, or dynamics and hairpins to mark
     noteLengthPicker.onChange = [this] (double beats) { setNoteLength (beats); };
     dynamicPicker.onChange = [this] (std::optional<music::Marking> marking) { setMarking (marking); };
     eraserButton.onClick = [this] { setErasing (! eraserButton.getToggleState()); };
     setNoteLength (1.0);
 
-    scorePanel.onCopyProgression = [this] { copyProgression(); };
+    scorePanel.onCopyProgression = [this] (int toPart) { copyProgression (toPart); };
     sidebarContent.addAndMakeVisible (scorePanel);
     sidebar.setViewedComponent (&sidebarContent, false);
     sidebar.setScrollBarsShown (true, false);
     addAndMakeVisible (sidebar);
 
-    // Clicking a part's staff, or its chord buttons, makes it the active part.
-    for (auto& view : staffSystems.views)
-    {
-        const auto part = view->getPart();
-        view->onClicked = [this, part] { setActivePart (part); };
-        view->onChordButtonClicked = [this, part] (int measure) { editChord (part, measure); };
-
-        // An eraser stroke is undone in one go, however much it takes out.
-        view->onEraseStarted = [this] { history.beginGesture(); };
-        view->onEraseFinished = [this] { history.endGesture(); };
-    }
-
     staffViewport.setViewedComponent (&staffSystems, false);
     staffViewport.setScrollBarsShown (true, true);
     addAndMakeVisible (staffViewport);
-
-    // A volume dial beside each part's staves, from off up to +6 dB. Clicking it without turning it
-    // mutes the part, or unmutes it. Both are remembered from one run of the app to the next, and
-    // saved with the score.
-    for (int part = 0; part < Score::numParts; ++part)
-    {
-        auto& dial = volumeDials[(size_t) part];
-
-        // The text comes first, so the dial shows it from the start.
-        dial.textFromValueFunction = [this, part] (double decibels)
-        {
-            if (instrumentHost.isMuted (part))
-                return juce::String ("Muted");
-
-            if (decibels <= InstrumentHost::minVolume)
-                return juce::String ("Off");
-
-            return (decibels > 0.05 ? "+" : "") + juce::String (std::abs (decibels) < 0.05 ? 0.0 : decibels, 1) + " dB";
-        };
-        dial.valueFromTextFunction = [] (const juce::String& text)
-        {
-            return text.trim().equalsIgnoreCase ("off") ? (double) InstrumentHost::minVolume : text.getDoubleValue();
-        };
-
-        dial.setLookAndFeel (&dialLookAndFeel);
-        dial.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        dial.setTextBoxStyle (juce::Slider::TextBoxBelow, true, volumeColumnWidth, volumeTextHeight);
-        dial.setRange (InstrumentHost::minVolume, InstrumentHost::maxVolume, 0.1);
-        dial.setSkewFactorFromMidPoint (-12.0);
-        dial.setWantsKeyboardFocus (false);
-        dial.setTooltip ("Instrument " + juce::String (part + 1) + "'s volume. Drag to turn it, or click to mute or unmute.");
-        dial.setColour (juce::Slider::textBoxTextColourId, controls::secondaryText);
-        dial.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        dial.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-
-        setVolume (part, (float) settings.getDoubleValue (getVolumeKey (part), 0.0), false);
-        setMuted (part, settings.getBoolValue (getMutedKey (part), false), false);
-
-        // Turning a muted dial unmutes it, rather than changing a volume that can't be heard.
-        dial.onValueChange = [this, part]
-        {
-            if (instrumentHost.isMuted (part))
-                setMuted (part, false, true);
-
-            setVolume (part, (float) volumeDials[(size_t) part].getValue(), true);
-        };
-        dial.onClick = [this, part] { setMuted (part, ! instrumentHost.isMuted (part), true); };
-        volumeColumn.addAndMakeVisible (dial);
-    }
 
     addAndMakeVisible (volumeColumn);
     addAndMakeVisible (noteLengthPicker);
@@ -307,6 +262,13 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (eraserButton);
     staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
     staffViewport.onScroll = [this] { positionVolumeDials(); };
+
+    // A track for each part of the new score, with the instruments, volumes and muting it had last time
+    for (int part = 0; part < score.getNumParts(); ++part)
+        insertTrack (part, true);
+
+    numberTracks();
+    updatePartBox();
 
     document.getVolumeToSave = [this] (int part) { return instrumentHost.getVolume (part); };
     document.loadVolume = [this] (int part, float decibels) { setVolume (part, decibels, false); };
@@ -352,8 +314,15 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
 MainComponent::~MainComponent()
 {
+    // The menu bar stops watching the command manager before the manager goes, which is before
+    // the menu bar is.
     juce::MenuBarModel::setMacMainMenu (nullptr);
+    setApplicationCommandManagerToWatch (nullptr);
     commandManager.setFirstCommandTarget (nullptr);
+
+    // The dials' look goes before they do.
+    for (auto& track : tracks)
+        track.dial->setLookAndFeel (nullptr);
 
     audioDeviceManager.removeAudioCallback (&instrumentHost);
     score.removeChangeListener (this);
@@ -396,12 +365,11 @@ void MainComponent::resized()
     toolbar.removeFromLeft (4);
     tempoEditor.setBounds (toolbar.removeFromLeft (56));
     toolbar.removeFromLeft (20);
-    partButtons[0].setBounds (toolbar.removeFromLeft (104));
-    partButtons[1].setBounds (toolbar.removeFromLeft (104));
+    partBox.setBounds (toolbar.removeFromLeft (150));
     toolbar.removeFromLeft (20);
 
-    for (auto& panel : instrumentPanels)
-        panel->setBounds (toolbar);
+    for (auto& track : tracks)
+        track.panel->setBounds (toolbar);
 
     sidebar.setBounds (bounds.removeFromLeft (sidebarWidth));
     bounds.removeFromLeft (1);
@@ -469,6 +437,9 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         return;
     }
 
+    // Parts may have been added or taken out, or a whole new score loaded.
+    updateTracks();
+
     // The tempo can change by loading a score, so show it unless it's being typed.
     if (! tempoEditor.hasKeyboardFocus (false))
         tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
@@ -484,14 +455,15 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 void MainComponent::setActivePart (int part)
 {
     activePart = part;
+    activePartId = score.getPartId (part);
     instrumentHost.setActivePart (part);
     scorePanel.setPart (part);
+    partBox.setSelectedId (part + 1, juce::dontSendNotification);
 
-    for (int p = 0; p < Score::numParts; ++p)
+    for (size_t p = 0; p < tracks.size(); ++p)
     {
-        partButtons[(size_t) p].setToggleState (p == part, juce::dontSendNotification);
-        instrumentPanels[(size_t) p]->setVisible (p == part);
-        staffSystems.views[(size_t) p]->setActive (p == part);
+        tracks[p].panel->setVisible ((int) p == part);
+        staffSystems.views[p]->setActive ((int) p == part);
     }
 
     // The chord window is for the active part's chords.
@@ -499,11 +471,236 @@ void MainComponent::setActivePart (int part)
         closeChordEditor();
 }
 
-void MainComponent::copyProgression()
+void MainComponent::updatePartBox()
 {
-    const auto from = activePart, to = (activePart + 1) % Score::numParts;
+    partBox.clear (juce::dontSendNotification);
 
-    if (! score.hasChords (from))
+    for (int part = 0; part < score.getNumParts(); ++part)
+        partBox.addItem ("Instrument " + juce::String (part + 1), part + 1);
+
+    partBox.setSelectedId (activePart + 1, juce::dontSendNotification);
+}
+
+void MainComponent::insertTrack (int index, bool reloadFromSettings)
+{
+    // The part's found by its id in what the track's controls do, as its number can change.
+    const auto id = score.getPartId (index);
+    Track track { id, std::make_unique<InstrumentPanel> (instrumentHost, index, settings, reloadFromSettings),
+                  std::make_unique<controls::ClickableDial>(), std::make_unique<controls::BinButton>() };
+
+    auto& panel = *track.panel;
+    panel.onInstrumentChanged = [this] { document.changed(); };
+    panel.onStatusChanged = [this] { showPartTitles(); };
+    addChildComponent (panel);
+
+    // A volume dial beside the part's staves, from off up to +6 dB. Clicking it without turning it
+    // mutes the part, or unmutes it. Both are remembered from one run of the app to the next, and
+    // saved with the score.
+    auto& dial = *track.dial;
+
+    // The text comes first, so the dial shows it from the start.
+    dial.textFromValueFunction = [this, id] (double decibels)
+    {
+        if (const auto part = score.findPart (id); part >= 0 && part < instrumentHost.getNumParts() && instrumentHost.isMuted (part))
+            return juce::String ("Muted");
+
+        if (decibels <= InstrumentHost::minVolume)
+            return juce::String ("Off");
+
+        return (decibels > 0.05 ? "+" : "") + juce::String (std::abs (decibels) < 0.05 ? 0.0 : decibels, 1) + " dB";
+    };
+    dial.valueFromTextFunction = [] (const juce::String& text)
+    {
+        return text.trim().equalsIgnoreCase ("off") ? (double) InstrumentHost::minVolume : text.getDoubleValue();
+    };
+
+    dial.setLookAndFeel (&dialLookAndFeel);
+    dial.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    dial.setTextBoxStyle (juce::Slider::TextBoxBelow, true, volumeColumnWidth, volumeTextHeight);
+    dial.setRange (InstrumentHost::minVolume, InstrumentHost::maxVolume, 0.1);
+    dial.setSkewFactorFromMidPoint (-12.0);
+    dial.setWantsKeyboardFocus (false);
+    dial.setColour (juce::Slider::textBoxTextColourId, controls::secondaryText);
+    dial.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    dial.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+
+    // Turning a muted dial unmutes it, rather than changing a volume that can't be heard.
+    dial.onValueChange = [this, id, &dial]
+    {
+        const auto part = score.findPart (id);
+
+        if (part < 0)
+            return;
+
+        if (instrumentHost.isMuted (part))
+            setMuted (part, false, true);
+
+        setVolume (part, (float) dial.getValue(), true);
+    };
+    dial.onClick = [this, id]
+    {
+        if (const auto part = score.findPart (id); part >= 0)
+            setMuted (part, ! instrumentHost.isMuted (part), true);
+    };
+    volumeColumn.addAndMakeVisible (dial);
+
+    // And under it, a button for taking the part out
+    auto& deleteButton = *track.deleteButton;
+    deleteButton.onClick = [this, id]
+    {
+        if (const auto part = score.findPart (id); part >= 0)
+            deletePart (part);
+    };
+    volumeColumn.addAndMakeVisible (deleteButton);
+
+    tracks.insert (tracks.begin() + index, std::move (track));
+
+    // Clicking the part's staff, or its chord buttons, makes it the active part.
+    auto& view = staffSystems.insertView (index, index);
+    view.onClicked = [this, &view] { setActivePart (view.getPart()); };
+    view.onChordButtonClicked = [this, &view] (int measure) { editChord (view.getPart(), measure); };
+
+    // An eraser stroke is undone in one go, however much it takes out.
+    view.onEraseStarted = [this] { history.beginGesture(); };
+    view.onEraseFinished = [this] { history.endGesture(); };
+
+    // It does what clicks on the other parts do.
+    view.setNoteLength (noteLengthPicker.getLength());
+
+    if (eraserButton.getToggleState())
+        view.setErasing (true);
+    else if (const auto marking = dynamicPicker.getChoice())
+        view.setMarking (marking);
+
+    // A part being added starts at 0 dB, rather than with whatever its number had before.
+    setVolume (index, reloadFromSettings ? (float) settings.getDoubleValue (getVolumeKey (index), 0.0) : 0.0f, false);
+    setMuted (index, reloadFromSettings && settings.getBoolValue (getMutedKey (index), false), false);
+}
+
+void MainComponent::removeTrack (int index)
+{
+    // Its instrument isn't kept in the settings, as another part will have its number.
+    tracks[(size_t) index].panel->forgetInstrument();
+    tracks.erase (tracks.begin() + index);
+    staffSystems.removeView (index);
+}
+
+void MainComponent::updateTracks()
+{
+    // Tracks are matched to parts by their ids. One whose part has gone, or come before it, goes;
+    // a part without one gets a new one, without an instrument. The instruments follow along.
+    auto firstChange = std::numeric_limits<int>::max();
+
+    for (int index = 0; index < juce::jmax (score.getNumParts(), (int) tracks.size());)
+    {
+        if (index < (int) tracks.size() && index < score.getNumParts() && tracks[(size_t) index].partId == score.getPartId (index))
+        {
+            ++index;
+            continue;
+        }
+
+        firstChange = juce::jmin (firstChange, index);
+
+        if (index < (int) tracks.size() && score.findPart (tracks[(size_t) index].partId) < index)
+        {
+            removeTrack (index);
+            instrumentHost.removePart (index);
+            continue;
+        }
+
+        instrumentHost.insertPart (index);
+        insertTrack (index, false);
+        ++index;
+    }
+
+    if (firstChange == std::numeric_limits<int>::max())
+        return;
+
+    // The tracks after the change have new numbers.
+    numberTracks();
+
+    // A chord being edited in a part that's moved, or gone, can't be any more.
+    if (const auto* editor = getChordEditor(); editor != nullptr && editor->getPart() >= firstChange)
+        closeChordEditor();
+
+    // The active part stays active, wherever it is now, or the one after it takes over.
+    const auto active = score.findPart (activePartId);
+    activePart = active >= 0 ? active : juce::jmin (activePart, score.getNumParts() - 1);
+    updatePartBox();
+    setActivePart (activePart);
+
+    showPartTitles();
+    saveVolumes();
+    resized();
+}
+
+void MainComponent::numberTracks()
+{
+    for (size_t index = 0; index < tracks.size(); ++index)
+    {
+        tracks[index].panel->setPart ((int) index);
+        tracks[index].dial->setTooltip ("Instrument " + juce::String (index + 1) + "'s volume. Drag to turn it, or click to mute or unmute.");
+        tracks[index].deleteButton->setTooltip ("Delete instrument " + juce::String (index + 1) + ", with its staves");
+        tracks[index].deleteButton->setEnabled (tracks.size() > 1);
+        staffSystems.views[index]->followPart();
+    }
+}
+
+void MainComponent::addPart()
+{
+    const auto part = score.addPart();
+    setActivePart (part);
+
+    // Scrolled down far enough to see it, and the + under it
+    const auto area = staffSystems.views[(size_t) part]->getBounds();
+    const auto viewArea = staffViewport.getViewArea();
+
+    if (area.getBottom() > viewArea.getBottom())
+        staffViewport.setViewPosition (viewArea.getX(), area.getBottom() + 4 - viewArea.getHeight());
+}
+
+void MainComponent::deletePart (int part)
+{
+    if (score.getNumParts() <= 1)
+        return;
+
+    // An empty part, without an instrument, goes straight away. Otherwise, it's asked first.
+    const auto* instrument = instrumentHost.getInstrument (part);
+
+    if (score.isPartEmpty (part) && instrument == nullptr)
+    {
+        score.removePart (part);
+        return;
+    }
+
+    const auto name = "instrument " + juce::String (part + 1);
+    auto message = juce::String ("Its notes, chords and dynamics will be taken out of the score");
+
+    if (instrument != nullptr)
+        message << ", and its " << instrument->getName() << " unloaded. Undo puts back the music, but the plugin will need loading again.";
+    else
+        message << ". Undo puts them back.";
+
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                      .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                      .withTitle ("Delete " + name + "?")
+                                      .withMessage (message)
+                                      .withButton ("Delete")
+                                      .withButton ("Cancel")
+                                      .withAssociatedComponent (this),
+                                  [safeThis = juce::Component::SafePointer (this), id = score.getPartId (part)] (int result)
+                                  {
+                                      // Delete is 1, and Cancel 0.
+                                      if (safeThis != nullptr && result == 1)
+                                          safeThis->score.removePart (safeThis->score.findPart (id));
+                                  });
+}
+
+void MainComponent::copyProgression (int to)
+{
+    const auto from = activePart;
+
+    if (to == from || ! juce::isPositiveAndBelow (to, score.getNumParts()) || ! score.hasChords (from))
         return;
 
     // A part with nothing in it can take the progression straight away.
@@ -578,9 +775,9 @@ void MainComponent::setErasing (bool shouldErase)
 
 void MainComponent::showPartTitles()
 {
-    for (int part = 0; part < Score::numParts; ++part)
-        staffSystems.views[(size_t) part]->setTitle ("Instrument " + juce::String (part + 1) + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 "))
-                                                     + instrumentPanels[(size_t) part]->getStatus());
+    for (size_t part = 0; part < tracks.size(); ++part)
+        staffSystems.views[part]->setTitle ("Instrument " + juce::String (part + 1) + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 "))
+                                            + tracks[part].panel->getStatus());
 }
 
 void MainComponent::setVolume (int part, float decibels, bool changedOnDial)
@@ -589,7 +786,7 @@ void MainComponent::setVolume (int part, float decibels, bool changedOnDial)
     decibels = juce::jlimit (InstrumentHost::minVolume, InstrumentHost::maxVolume, std::round (decibels * 10.0f) / 10.0f);
     instrumentHost.setVolume (part, decibels);
     settings.setValue (getVolumeKey (part), decibels);
-    volumeDials[(size_t) part].setValue (decibels, juce::dontSendNotification);
+    tracks[(size_t) part].dial->setValue (decibels, juce::dontSendNotification);
 
     if (changedOnDial)
         document.changed();
@@ -600,7 +797,7 @@ void MainComponent::setMuted (int part, bool muted, bool changedOnDial)
     instrumentHost.setMuted (part, muted);
     settings.setValue (getMutedKey (part), muted);
 
-    auto& dial = volumeDials[(size_t) part];
+    auto& dial = *tracks[(size_t) part].dial;
     dial.getProperties().set ("muted", muted);
     dial.updateText();
     dial.repaint();
@@ -611,17 +808,30 @@ void MainComponent::setMuted (int part, bool muted, bool changedOnDial)
 
 void MainComponent::positionVolumeDials()
 {
-    // Each dial is centred on its part's staves, wherever they've scrolled to.
+    // Each dial, with the button for deleting its part under it, is centred on its part's staves,
+    // wherever they've scrolled to.
     const auto scrolled = staffViewport.getViewPositionY();
 
-    for (size_t part = 0; part < volumeDials.size(); ++part)
+    for (size_t part = 0; part < tracks.size() && part < staffSystems.views.size(); ++part)
     {
         const auto& view = *staffSystems.views[part];
         const auto staves = view.getStavesRange();
         const auto centreY = view.getBounds().getY() + staves.getStart() + staves.getLength() / 2 - scrolled;
+        const auto dialHeight = volumeDialSize + volumeTextHeight;
+        const auto top = centreY - (dialHeight + deleteButtonSize) / 2;
 
-        volumeDials[part].setBounds (juce::Rectangle<int> (volumeColumnWidth, volumeDialSize + volumeTextHeight)
-                                         .withCentre ({ volumeColumnWidth / 2, centreY }));
+        tracks[part].dial->setBounds (0, top, volumeColumnWidth, dialHeight);
+        tracks[part].deleteButton->setBounds (juce::Rectangle<int> (deleteButtonSize, deleteButtonSize)
+                                                  .withCentre ({ volumeColumnWidth / 2, top + dialHeight + deleteButtonSize / 2 }));
+    }
+}
+
+void MainComponent::saveVolumes()
+{
+    for (int part = 0; part < instrumentHost.getNumParts(); ++part)
+    {
+        settings.setValue (getVolumeKey (part), instrumentHost.getVolume (part));
+        settings.setValue (getMutedKey (part), instrumentHost.isMuted (part));
     }
 }
 
@@ -994,8 +1204,8 @@ bool MainComponent::perform (const InvocationInfo& invocation)
 void MainComponent::saveChangesThen (std::function<void()> action)
 {
     // An instrument's sound may have been changed in its editor, which might still be open.
-    for (auto& panel : instrumentPanels)
-        panel->checkForSoundChanges();
+    for (auto& track : tracks)
+        track.panel->checkForSoundChanges();
 
     document.saveIfNeededAndUserAgreesAsync ([safeThis = juce::Component::SafePointer (this), action] (juce::FileBasedDocument::SaveResult result)
     {

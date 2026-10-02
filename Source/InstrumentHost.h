@@ -22,15 +22,27 @@ class InstrumentHost final : public juce::AudioIODeviceCallback,
                              private juce::AudioPlayHead
 {
 public:
-    InstrumentHost() = default;
+    /** It starts with a slot for each part of a new score, without instruments. */
+    InstrumentHost();
 
     /** The active part's instrument hears the notes played on this keyboard, and the active part's
         notes from the score show up on it.
     */
     juce::MidiKeyboardState& getKeyboardState() noexcept { return keyboardState; }
 
+    /** How many parts there are instruments for, which has to keep up with the score's parts. */
+    int getNumParts() const noexcept { return (int) slots.size(); }
+
+    /** Makes room for a new part's instrument, before the part at that index, or at the end.
+        It doesn't have an instrument yet, and plays at 0 dB.
+    */
+    void insertPart (int index);
+
+    /** Takes out a part's instrument, deleting it. The parts after it move up. */
+    void removePart (int index);
+
     /** A part's instrument, or null if it doesn't have one yet. */
-    juce::AudioPluginInstance* getInstrument (int part) const noexcept { return slots[(size_t) part].instrument.get(); }
+    juce::AudioPluginInstance* getInstrument (int part) const noexcept { return slots[(size_t) part]->instrument.get(); }
 
     /** Replaces a part's instrument, deleting the old one. */
     void setInstrument (int part, std::unique_ptr<juce::AudioPluginInstance>);
@@ -43,13 +55,13 @@ public:
 
     /** How loud a part's instrument is in the mix, in decibels. At minVolume or below, it's silent. */
     void setVolume (int part, float decibels);
-    float getVolume (int part) const noexcept { return slots[(size_t) part].volume; }
+    float getVolume (int part) const noexcept { return slots[(size_t) part]->volume; }
 
     static constexpr float minVolume = -60.0f, maxVolume = 6.0f;
 
     /** Silences a part's instrument, or lets it play again at its volume. */
     void setMuted (int part, bool);
-    bool isMuted (int part) const noexcept { return slots[(size_t) part].muted; }
+    bool isMuted (int part) const noexcept { return slots[(size_t) part]->muted; }
 
     /** The sample rate and block size to create a new instrument with. */
     double getSampleRate() const;
@@ -100,7 +112,7 @@ private:
     /** Some measures of the score, ready to play. */
     struct Passage
     {
-        std::array<std::vector<NoteEvent>, Score::numParts> events;     // for each part
+        std::vector<std::vector<NoteEvent>> events;     // for each part
         int64_t length = 0;             // in samples
         double secondsPerBeat = 0.5;
         int beatsPerMeasure = 4;
@@ -136,7 +148,7 @@ private:
 
     // Everything below is shared with the audio thread, which holds this lock while it's working.
     mutable juce::CriticalSection lock;
-    std::array<Slot, Score::numParts> slots;
+    std::vector<std::unique_ptr<Slot>> slots;      // for each part
     std::atomic<int> activePart { 0 };
     int keyboardPart = 0;               // the part the keyboard played in the last block
     double sampleRate = 0.0;
@@ -145,7 +157,7 @@ private:
     Passage passage;                    // what's playing
     Passage nextPassage;                // what the loop plays next time through, if hasNextPassage
     bool hasNextPassage = false;
-    std::array<size_t, Score::numParts> nextNoteEvents {};
+    std::vector<size_t> nextNoteEvents;            // for each part
     int64_t position = 0;               // in samples since this time through started, at the start of the block being played
     int64_t nextPosition = 0;           // where the next block starts, once this one's been played
     bool looping = false;

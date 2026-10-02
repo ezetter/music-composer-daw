@@ -10,17 +10,29 @@
 /** Shows which instrument one of the score's parts has, with buttons to load a new one and to
     open its editor.
 
-    The instrument and its settings are kept in the app's settings, and loaded again next time.
-    They're saved with the score too, and loaded again when the score is opened.
+    The instrument and its settings are kept in the app's settings, by the part's number, and
+    loaded again next time. They're saved with the score too, and loaded again when the score is
+    opened.
 */
 class InstrumentPanel final : public juce::Component,
                               private juce::AudioProcessorListener,
                               private juce::Timer
 {
 public:
-    InstrumentPanel (InstrumentHost&, int part, juce::PropertiesFile& settings);
+    /** A panel for a part, which reloads the instrument kept in the settings for that part, unless
+        it's a new part being added, which starts without one.
+    */
+    InstrumentPanel (InstrumentHost&, int part, juce::PropertiesFile& settings, bool reloadFromSettings = true);
 
     int getPart() const noexcept { return part; }
+
+    /** Moves the panel to another part's number, e.g. when a part before it is taken out. */
+    void setPart (int);
+
+    /** Stops the instrument being kept in the settings when the panel goes, as for a part that's
+        being taken out, whose number another part will have.
+    */
+    void forgetInstrument() noexcept { forgotten = true; }
 
     /** What the panel says about the instrument: its name, "Loading…" or "No instrument". */
     juce::String getStatus() const;
@@ -76,9 +88,13 @@ private:
     void updateControls();
 
     InstrumentHost& host;
-    const int part;
+    int part;
     juce::PropertiesFile& settings;
-    const juce::String instrumentKey, instrumentStateKey;     // where the instrument is kept in the settings
+    bool forgotten = false;
+
+    /** Where the instrument is kept in the settings, by the part's number */
+    juce::String getInstrumentKey() const;
+    juce::String getInstrumentStateKey() const;
     juce::AudioPluginFormatManager formatManager;
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File pluginFolder { "/Library/Audio/Plug-Ins/VST3" };

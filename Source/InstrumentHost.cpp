@@ -36,6 +36,67 @@ namespace
     }
 }
 
+InstrumentHost::InstrumentHost()
+{
+    for (int part = 0; part < Score::initialParts; ++part)
+        insertPart (part);
+}
+
+void InstrumentHost::insertPart (int index)
+{
+    auto slot = std::make_unique<Slot>();
+
+    {
+        const juce::ScopedLock sl (lock);
+        jassert (juce::isPositiveAndNotGreaterThan (index, (int) slots.size()));
+
+        slot->midi.ensureSize (4096);
+
+        if (sampleRate > 0.0)
+            slot->gain.reset (sampleRate, 0.05);
+
+        // The part the keyboard's playing moves down, if it was there or after.
+        if (! slots.empty() && keyboardPart >= index)
+            ++keyboardPart;
+
+        slots.insert (slots.begin() + index, std::move (slot));
+        nextNoteEvents.insert (nextNoteEvents.begin() + index, 0);
+
+        // Whatever's playing has nothing for it.
+        for (auto* p : { &passage, &nextPassage })
+            if (index <= (int) p->events.size())
+                p->events.insert (p->events.begin() + index, std::vector<NoteEvent>());
+    }
+}
+
+void InstrumentHost::removePart (int index)
+{
+    std::unique_ptr<Slot> removed;
+
+    {
+        const juce::ScopedLock sl (lock);
+        jassert (juce::isPositiveAndBelow (index, (int) slots.size()));
+
+        removed = std::move (slots[(size_t) index]);
+        slots.erase (slots.begin() + index);
+        nextNoteEvents.erase (nextNoteEvents.begin() + index);
+
+        for (auto* p : { &passage, &nextPassage })
+            if (index < (int) p->events.size())
+                p->events.erase (p->events.begin() + index);
+
+        // The keyboard moves on to whichever part's active now, which the caller chooses.
+        if (keyboardPart > index || keyboardPart >= (int) slots.size())
+            keyboardPart = juce::jmax (0, keyboardPart - 1);
+
+        activePart = juce::jlimit (0, juce::jmax (0, (int) slots.size() - 1), activePart.load() > index ? activePart.load() - 1 : activePart.load());
+    }
+
+    // Its instrument is released and deleted outside the lock, so the audio thread isn't held up.
+    if (removed->instrument != nullptr)
+        removed->instrument->releaseResources();
+}
+
 void InstrumentHost::setInstrument (int part, std::unique_ptr<juce::AudioPluginInstance> newInstrument)
 {
     double currentSampleRate = 0.0;
@@ -60,7 +121,7 @@ void InstrumentHost::setInstrument (int part, std::unique_ptr<juce::AudioPluginI
 
     {
         const juce::ScopedLock sl (lock);
-        auto& slot = slots[(size_t) part];
+        auto& slot = *slots[(size_t) part];
         std::swap (slot.instrument, newInstrument);
         allocateInstrumentBuffer (slot);
     }
@@ -72,7 +133,7 @@ void InstrumentHost::setInstrument (int part, std::unique_ptr<juce::AudioPluginI
 
 void InstrumentHost::setActivePart (int part)
 {
-    jassert (juce::isPositiveAndBelow (part, Score::numParts));
+    jassert (juce::isPositiveAndBelow (part, getNumParts()));
 
     // The audio thread notices, and lets go of the keyboard's notes on the other instrument.
     activePart = part;
@@ -80,12 +141,12 @@ void InstrumentHost::setActivePart (int part)
 
 void InstrumentHost::setVolume (int part, float decibels)
 {
-    slots[(size_t) part].volume = juce::jlimit (minVolume, maxVolume, decibels);
+    slots[(size_t) part]->volume = juce::jlimit (minVolume, maxVolume, decibels);
 }
 
 void InstrumentHost::setMuted (int part, bool shouldBeMuted)
 {
-    slots[(size_t) part].muted = shouldBeMuted;
+    slots[(size_t) part]->muted = shouldBeMuted;
 }
 
 double InstrumentHost::getSampleRate() const
@@ -120,7 +181,7 @@ void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure
 
         std::swap (passage, newPassage);
         hasNextPassage = false;
-        nextNoteEvents = {};
+        std::fill (nextNoteEvents.begin(), nextNoteEvents.end(), 0);
         position = 0;
         nextPosition = 0;
         looping = loop;
@@ -164,8 +225,8 @@ InstrumentHost::Passage InstrumentHost::createPassage (const Score& score, int f
 {
     Passage result;
 
-    for (int part = 0; part < Score::numParts; ++part)
-        result.events[(size_t) part] = createNoteEvents (score, part, firstMeasure, lastMeasure, sampleRate);
+    for (int part = 0; part < score.getNumParts(); ++part)
+        result.events.push_back (createNoteEvents (score, part, firstMeasure, lastMeasure, sampleRate));
 
     result.length = (int64_t) std::llround ((double) (lastMeasure - firstMeasure + 1) * score.getSecondsPerMeasure() * sampleRate);
     result.beatsPerMeasure = score.getBeatsPerMeasure();
@@ -326,8 +387,9 @@ void InstrumentHost::prepareToPlay (double newSampleRate, int maximumBlockSize)
     midiInput.reset (newSampleRate);
     midiInputReady = true;
 
-    for (auto& slot : slots)
+    for (auto& slotPointer : slots)
     {
+        auto& slot = *slotPointer;
         slot.midi.ensureSize (4096);
         slot.gain.reset (sampleRate, 0.05);
         slot.gain.setCurrentAndTargetValue (slot.muted ? 0.0f : juce::Decibels::decibelsToGain (slot.volume.load(), minVolume));
@@ -347,10 +409,10 @@ void InstrumentHost::releaseResources()
 
     for (auto& slot : slots)
     {
-        if (slot.instrument != nullptr)
-            slot.instrument->releaseResources();
+        if (slot->instrument != nullptr)
+            slot->instrument->releaseResources();
 
-        slot.scoreNotesOn.reset();
+        slot->scoreNotesOn.reset();
     }
 
     sampleRate = 0.0;
@@ -378,17 +440,21 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
 
     const juce::ScopedLock sl (lock);
 
+    // While one score's parts make way for another's, there can briefly be none.
+    if (slots.empty())
+        return;
+
     for (auto& slot : slots)
-        slot.midi.clear();
+        slot->midi.clear();
 
     // The keyboard's notes stop on the instrument it was playing when another part becomes active.
     if (const auto part = activePart.load(); part != keyboardPart)
     {
-        letGoOfKeyboardNotes (slots[(size_t) keyboardPart]);
+        letGoOfKeyboardNotes (*slots[(size_t) keyboardPart]);
         keyboardPart = part;
     }
 
-    auto& keyboardSlot = slots[(size_t) keyboardPart];
+    auto& keyboardSlot = *slots[(size_t) keyboardPart];
     addScoreEvents (numSamples);
     midiInput.removeNextBlockOfMessages (keyboardSlot.midi, numSamples);
 
@@ -396,8 +462,9 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
     // the MIDI controllers' notes on it.
     keyboardState.processNextMidiBuffer (keyboardSlot.midi, 0, numSamples, true);
 
-    for (auto& slot : slots)
+    for (auto& slotPointer : slots)
     {
+        auto& slot = *slotPointer;
         auto* instrument = slot.instrument.get();
 
         if (instrument == nullptr)
@@ -485,11 +552,11 @@ void InstrumentHost::addScoreEvents (int numSamples)
     {
         for (auto& slot : slots)
         {
-            for (int noteNumber = 0; noteNumber < (int) slot.scoreNotesOn.size(); ++noteNumber)
-                if (slot.scoreNotesOn[(size_t) noteNumber])
-                    slot.midi.addEvent (juce::MidiMessage::noteOff (midiChannel, noteNumber), 0);
+            for (int noteNumber = 0; noteNumber < (int) slot->scoreNotesOn.size(); ++noteNumber)
+                if (slot->scoreNotesOn[(size_t) noteNumber])
+                    slot->midi.addEvent (juce::MidiMessage::noteOff (midiChannel, noteNumber), 0);
 
-            slot.scoreNotesOn.reset();
+            slot->scoreNotesOn.reset();
         }
 
         releaseScoreNotes = false;
@@ -505,9 +572,10 @@ void InstrumentHost::addScoreEvents (int numSamples)
     {
         auto allPlayed = true;
 
-        for (size_t part = 0; part < slots.size(); ++part)
+        // A part added since the passage was made has nothing to play yet.
+        for (size_t part = 0; part < slots.size() && part < passage.events.size(); ++part)
         {
-            auto& slot = slots[part];
+            auto& slot = *slots[part];
             const auto& events = passage.events[part];
             auto& next = nextNoteEvents[part];
 
@@ -535,7 +603,7 @@ void InstrumentHost::addScoreEvents (int numSamples)
             break;
 
         start += passage.length;
-        nextNoteEvents = {};
+        std::fill (nextNoteEvents.begin(), nextNoteEvents.end(), 0);
 
         if (hasNextPassage)
         {

@@ -293,6 +293,7 @@ struct StaffView::NoteLayout
 //==============================================================================
 StaffView::StaffView (Score& scoreToShow, int partToShow)
     : score (scoreToShow),
+      partId (scoreToShow.getPartId (partToShow)),
       part (partToShow),
       glyphs (staffSpace)
 {
@@ -454,7 +455,7 @@ void StaffView::updateLayout()
         auto notesPerBeat = 1;
         layout.padding = measurePadding * staffSpace;
 
-        for (int spacedPart = 0; spacedPart < Score::numParts; ++spacedPart)
+        for (int spacedPart = 0; spacedPart < score.getNumParts(); ++spacedPart)
         {
             const auto content = spacedPart == part ? layout.content : getMeasureContent (score, spacedPart, measure);
             notesPerBeat = juce::jmax (notesPerBeat, content.staves[0].notesPerBeat, content.staves[1].notesPerBeat);
@@ -527,8 +528,19 @@ void StaffView::updateLayout()
     }
 }
 
+void StaffView::followPart()
+{
+    part = score.findPart (partId);
+}
+
 void StaffView::changeListenerCallback (juce::ChangeBroadcaster*)
 {
+    // A part that's been taken out shows nothing, until its view goes too.
+    followPart();
+
+    if (part < 0)
+        return;
+
     updateLayout();
 
     if (selectedMeasure.has_value() && *selectedMeasure >= score.getNumMeasures())
@@ -780,6 +792,9 @@ juce::Rectangle<int> StaffView::getPlaybackArea() const
 void StaffView::paint (juce::Graphics& g)
 {
     g.fillAll (paperColour);
+
+    if (part < 0)
+        return;
 
     // Only the measures that need repainting are drawn, allowing for symbols that overhang a little.
     const auto clip = g.getClipBounds().toFloat().expanded (3.0f * staffSpace, 0.0f);
@@ -1514,6 +1529,9 @@ void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float ce
 //==============================================================================
 void StaffView::mouseMove (const juce::MouseEvent& e)
 {
+    if (part < 0)
+        return;
+
     if (erasing)
     {
         setHoverErasable (findErasableAt (e.position));
@@ -1558,6 +1576,9 @@ void StaffView::mouseExit (const juce::MouseEvent&)
 
 void StaffView::mouseDown (const juce::MouseEvent& e)
 {
+    if (part < 0)
+        return;
+
     pressedNote.reset();
     pressedDynamic.reset();
     pressedHairpin.reset();
@@ -1622,6 +1643,9 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
 void StaffView::mouseDrag (const juce::MouseEvent& e)
 {
+    if (part < 0)
+        return;
+
     if (erasingStroke)
     {
         eraseAlong (lastErasePoint, e.position);
@@ -1664,6 +1688,9 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
 
         return;
     }
+
+    if (part < 0)
+        return;
 
     const auto pressed = pressedNote;
     const auto from = tieFrom;
@@ -2088,7 +2115,11 @@ void StaffView::resized()
 
 void StaffView::updateChordButtons()
 {
-    const auto numMeasures = score.getNumMeasures();
+    // As many as the measures laid out, which may be behind the score while it's changing
+    if (part < 0)
+        return;
+
+    const auto numMeasures = juce::jmin (score.getNumMeasures(), (int) measureLayouts.size());
 
     while (chordButtons.size() > numMeasures)
         chordButtons.removeLast();
