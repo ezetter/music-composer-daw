@@ -117,6 +117,12 @@ private:
     void drawHeader (juce::Graphics&) const;
     void drawMeasure (juce::Graphics&, int measure) const;
     void drawStaff (juce::Graphics&, int measure, Staff) const;
+
+    /** Which of a staff's notes, given in order, share a beam. In a run of eighths, each starting
+        as the one before ends, every four in a row share a beam; the rest of the run, and
+        sixteenths, are beamed a beat at a time. A note on its own in a group keeps its flag.
+    */
+    static std::vector<std::vector<size_t>> groupBeams (const std::vector<const StaffEvent*>& notes);
     void drawNote (juce::Graphics&, Staff, const NoteLayout&, bool rolled, std::optional<int> highlightedPosition) const;
     void drawStem (juce::Graphics&, Staff, const NoteLayout&) const;
     void drawBeams (juce::Graphics&, Staff, std::vector<NoteLayout*>&) const;

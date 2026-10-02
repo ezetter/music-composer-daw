@@ -805,6 +805,44 @@ void StaffView::drawMeasure (juce::Graphics& g, int measure) const
                 juce::Justification::bottomLeft, false);
 }
 
+std::vector<std::vector<size_t>> StaffView::groupBeams (const std::vector<const StaffEvent*>& notes)
+{
+    std::vector<std::vector<size_t>> groups;
+
+    for (size_t first = 0; first < notes.size();)
+    {
+        const auto duration = notes[first]->duration;
+
+        if (duration != Duration::eighth && duration != Duration::sixteenth)
+        {
+            ++first;
+            continue;
+        }
+
+        auto end = first + 1;
+
+        while (end < notes.size() && notes[end]->duration == duration
+               && juce::exactlyEqual (notes[end]->onset, notes[end - 1]->onset + getBeats (duration)))
+            ++end;
+
+        if (duration == Duration::eighth)
+            for (; end - first >= 4; first += 4)
+                groups.push_back ({ first, first + 1, first + 2, first + 3 });
+
+        for (auto i = first; i < end; ++i)
+        {
+            if (i > first && (int) std::floor (notes[i]->onset) == (int) std::floor (notes[i - 1]->onset))
+                groups.back().push_back (i);
+            else
+                groups.push_back ({ i });
+        }
+
+        first = end;
+    }
+
+    return groups;
+}
+
 void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
 {
     const auto& content = measureLayouts[(size_t) measure].content.staves[(size_t) staff];
@@ -814,8 +852,7 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
     std::map<int, int> alterationsInForce;
     std::vector<NoteLayout> notes;
     std::vector<bool> rolled;
-    std::vector<std::vector<size_t>> beamGroups;
-    auto groupBeat = -1;
+    std::vector<const StaffEvent*> noteEvents;
 
     notes.reserve (content.events.size());
 
@@ -825,30 +862,15 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
         {
             drawCentred (g, getRestGlyph (event.duration), getEventX (measure, event),
                          getY (staff, event.duration == Duration::whole ? middleLine + 2 : middleLine));
-            groupBeat = -1;
             continue;
         }
 
         notes.emplace_back (event, staff, getEventX (measure, event), alterationsInForce, keyAlterations);
         rolled.push_back (event.rolled);
-
-        // Eighths and sixteenths are beamed a beat at a time; longer notes break the beams.
-        if (beamable && (event.duration == Duration::eighth || event.duration == Duration::sixteenth))
-        {
-            const auto beat = (int) std::floor (event.onset);
-
-            if (beat == groupBeat)
-                beamGroups.back().push_back (notes.size() - 1);
-            else
-                beamGroups.push_back ({ notes.size() - 1 });
-
-            groupBeat = beat;
-        }
-        else
-        {
-            groupBeat = -1;
-        }
+        noteEvents.push_back (&event);
     }
+
+    const auto beamGroups = beamable ? groupBeams (noteEvents) : std::vector<std::vector<size_t>>();
 
     const auto beamCount = content.notesPerBeat >= 4 ? 2 : 1;
     std::vector<std::vector<NoteLayout*>> beams;
