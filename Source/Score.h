@@ -29,6 +29,21 @@ struct Note
     }
 };
 
+/** A crescendo or decrescendo in one of a score's parts, starting on a beat or halfway through one. */
+struct HairpinMark
+{
+    int measure;
+    double beat;            // from the start of the measure: 0, 0.5, 1, 1.5...
+    music::Hairpin type;
+    double length;          // in beats, a whole number of eighth notes, which can run on into later measures
+
+    bool operator== (const HairpinMark& other) const
+    {
+        return measure == other.measure && juce::exactlyEqual (beat, other.beat) && type == other.type
+            && juce::exactlyEqual (length, other.length);
+    }
+};
+
 /** How a measure's chord is written: which staff it's on, and as what type of chord. What the
     other staff shows is up to the score, for every chord alike.
 */
@@ -188,6 +203,28 @@ public:
     */
     std::optional<music::Dynamic> getDynamicInForce (int part, int measure, double beat) const;
 
+    /** A part's crescendos and decrescendos, in order, as long as the score has room for: one
+        running on past the end stops there. Ones starting on beats a shorter time signature
+        leaves out aren't included, but are kept.
+    */
+    std::vector<HairpinMark> getHairpins (int part) const;
+
+    /** Marks a crescendo or decrescendo, at least an eighth note long and no longer than the
+        score has room for. It takes the place of the part's other hairpins it overlaps, including
+        one starting at the same point.
+    */
+    void setHairpin (int part, const HairpinMark&);
+
+    /** Takes out the hairpin starting at a point, if there is one. */
+    void removeHairpin (int part, int measure, double beat);
+
+    /** How hard a part's notes are played at a point, as MIDI velocity. A dynamic sets it, until
+        the next one, and a hairpin moves it each beat it lasts, from wherever it was towards
+        the loudest or softest; after the hairpin it stays where the hairpin left it. Before any
+        dynamic it's music::unmarkedVelocity.
+    */
+    int getVelocity (int part, int measure, double beat) const;
+
     //==============================================================================
     /** The measure's chord, or null if it doesn't have one. */
     const MeasureChord* getChord (int part, int measure) const;
@@ -256,6 +293,15 @@ public:
     juce::Result loadJSON (const juce::var&);
 
 private:
+    /** A hairpin, where it starts: which it is and how many eighth notes it lasts. */
+    struct HairpinStart
+    {
+        music::Hairpin type;
+        int length;
+
+        bool operator== (const HairpinStart&) const = default;
+    };
+
     struct Measure
     {
         // By eighth note: the notes starting there, how many eighths they last, and which are tied to the next
@@ -263,6 +309,7 @@ private:
         std::array<std::array<int, maxSlotsPerMeasure>, 2> lengths { { { 2, 2, 2, 2, 2, 2, 2, 2 }, { 2, 2, 2, 2, 2, 2, 2, 2 } } };
         std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> ties;
         std::array<std::optional<music::Dynamic>, maxSlotsPerMeasure> dynamics;      // by eighth note, for both staves
+        std::array<std::optional<HairpinStart>, maxSlotsPerMeasure> hairpins;      // starting at each eighth
         std::optional<MeasureChord> chord;
 
         /** Takes out all of a staff's notes. */

@@ -21,7 +21,9 @@
     unties them; dragging anywhere else does nothing. Above each measure is a button to add a
     chord to it, or edit the one it has.
 
-    With a dynamic chosen, clicks mark it instead, between the staves, at the beat clicked.
+    With a dynamic chosen, clicks mark it instead, between the staves, at the beat clicked. With
+    a crescendo or decrescendo chosen, dragging along the staves marks one as long as the drag,
+    and dragging the end of one stretches it.
 */
 class StaffView final : public juce::Component,
                         private juce::ChangeListener
@@ -37,10 +39,14 @@ public:
     */
     void setNoteLength (double beats);
 
-    /** The dynamic clicks mark, rather than adding notes, or none to go back to adding notes.
-        Clicking where the same dynamic's marked takes it out; a different one is replaced.
+    /** What clicks mark, rather than adding notes, or none to go back to adding notes.
+
+        A dynamic is marked where the staff's clicked; clicking the same dynamic takes it out, and
+        a different one is replaced. A hairpin is dragged out from where the mouse goes down to
+        where it's let go, or is a beat long if the mouse doesn't move. Dragging a hairpin's end
+        stretches it, and clicking a hairpin takes it out.
     */
-    void setDynamic (std::optional<music::Dynamic>);
+    void setMarking (std::optional<music::Marking>);
 
     /** Marks the view as showing the active part, whose instrument the keyboard plays. */
     void setActive (bool);
@@ -69,6 +75,14 @@ public:
         the nearest beat, or the nearest half beat if a note starts there.
     */
     std::optional<std::pair<int, double>> getDynamicPointAt (juce::Point<float>) const;
+
+    /** Where a hairpin dragged to this x would end, in beats from the start of the score: the
+        nearest beat or barline, or the nearest half beat if a note starts there.
+    */
+    double getHairpinEndAt (float x) const;
+
+    /** The hairpin drawn at this point, if any, and whether the point's on its end, for stretching it. */
+    std::optional<std::pair<HairpinMark, bool>> findHairpinAt (juce::Point<float>) const;
 
     /** The measure at this point, if any. */
     std::optional<int> getMeasureAt (juce::Point<float>) const;
@@ -152,6 +166,21 @@ private:
     void drawDynamics (juce::Graphics&, int measure) const;
     void drawHoverDynamic (juce::Graphics&) const;
     float getDynamicBaseline() const;
+    float getMarkingCentreY() const;        // halfway between the staves, where dynamics and hairpins go
+
+    /** Whether a note starts at this point of a measure, on either staff, as written. */
+    bool hasNoteStartingAt (int measure, double beat) const;
+
+    /** Where a hairpin from a point to an end, in beats from the start of the score, is drawn
+        from and to: from its first note, or just after a dynamic there, to just before the note
+        it leads to, or a dynamic there.
+    */
+    juce::Range<float> getHairpinSpan (int measure, double beat, double end) const;
+    void drawHairpins (juce::Graphics&) const;
+    void drawHairpin (juce::Graphics&, music::Hairpin, juce::Range<float> span) const;
+
+    double toScoreBeats (int measure, double beat) const;               // in beats from the start of the score
+    std::pair<int, double> fromScoreBeats (double beats) const;
     void drawTies (juce::Graphics&, int firstMeasure, int lastMeasure) const;
     void drawTieDrag (juce::Graphics&) const;
     void drawTie (juce::Graphics&, juce::Point<float> start, juce::Point<float> end, bool upwards) const;
@@ -167,7 +196,20 @@ private:
 
     /** What a click does with a dynamic chosen: marks it, or takes it out if it's there already. */
     void clickDynamic (std::pair<int, double> point);
-    void setHoverDynamic (std::optional<std::pair<int, double>>);
+    void setHoverMarkPoint (std::optional<std::pair<int, double>>);
+
+    std::optional<music::Dynamic> getChosenDynamic() const;
+    std::optional<music::Hairpin> getChosenHairpin() const;
+
+    /** A hairpin being dragged out, or stretched: where it starts and which it is, where the
+        drag's got to, and the hairpin it's stretching, if it is.
+    */
+    struct HairpinDrag
+    {
+        HairpinMark start;
+        double end;                         // in beats from the start of the score
+        std::optional<HairpinMark> stretching;
+    };
 
     /** The note dragged from, and so a tie can be drawn to wherever the mouse is, if it's one
         clicked into the staff, rather than a chord's.
@@ -185,8 +227,10 @@ private:
     MusicGlyphs glyphs;
     bool active = false;
     double noteLength = 1.0;
-    std::optional<music::Dynamic> dynamic;          // marked by clicks, instead of adding notes
-    std::optional<std::pair<int, double>> hoverDynamic, pressedDynamic;
+    std::optional<music::Marking> marking;          // marked by clicks and drags, instead of adding notes
+    std::optional<std::pair<int, double>> hoverMarkPoint, pressedDynamic;
+    std::optional<HairpinMark> hoverHairpin, pressedHairpin;     // the hairpin under the mouse, and one a click would take out
+    std::optional<HairpinDrag> hairpinDrag;
     juce::String title;
     std::optional<Note> hoverNote;
     std::optional<Note> pressedNote;                // where the mouse went down, and the note there, if any

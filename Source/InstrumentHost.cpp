@@ -9,8 +9,6 @@
 namespace
 {
     constexpr int midiChannel = 1;
-    // Notes play at their dynamic's velocity, or this one where no dynamic's been marked yet.
-    constexpr int unmarkedVelocity = 102;
 
     // A chord's notes sound this far apart, from the bottom up: a little for a block chord, so
     // it doesn't sound machine-struck, and more for a rolled one.
@@ -233,9 +231,8 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
                 const auto onset = start + event.onset * beatSeconds;
                 const auto end = onset + getBeats (event.duration) * beatSeconds;
 
-                // As loud as the dynamic marked last, at or before the note, wherever playing started
-                const auto dynamic = score.getDynamicInForce (part, measure, event.onset);
-                const auto velocity = dynamic.has_value() ? music::getDynamicVelocity (*dynamic) : unmarkedVelocity;
+                // As loud as the dynamics and hairpins before it make it, wherever playing started
+                const auto velocity = score.getVelocity (part, measure, event.onset);
 
                 // A block or rolled chord, the chord's or the alternate staff's, is spread from the
                 // bottom up as it starts; everything else starts together.

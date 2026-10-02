@@ -92,6 +92,10 @@ Eight buttons beside the note lengths, showing **ppp**, **pp**, **p**, **mp**, *
 
 Each instrument has its own dynamics. A dynamic sets how hard the instrument's notes are played, as MIDI velocity, from where it's marked until the next one, across barlines: ppp 20, pp 35, p 51, mp 66, mf 81, f 96, ff 112 and fff 127. Notes before the first dynamic play at 102, as every note did before there were dynamics. Playback that starts part way through the score uses the dynamic marked before that point. A tied note keeps the velocity it started with. Clone copies dynamics with the measures, and Copy Progression leaves the other instrument's dynamics as they are. A dynamic on a beat a shorter time signature leaves out is kept but doesn't show or play, as with notes. Dynamics are saved with the score.
 
+**Crescendos and decrescendos.** After the dynamics are a crescendo button (<) and a decrescendo button (>). With one chosen, drag along an instrument's staves to mark it: it's drawn between the staves as a hairpin, a wedge opening out for a crescendo or closing for a decrescendo, and stretches with the mouse as you drag, from the beat where the mouse went down to the beat nearest where it's let go (or a barline, or halfway through a beat where a note starts). A click without dragging marks one a beat long. Drag the end of a hairpin to stretch or shrink it; the pointer becomes a left-right arrow over it. Clicking a hairpin takes it out. Hairpins can run across barlines, but not past the end of the score, and one marked over others takes their place. A hairpin starts after a dynamic marked where it starts, and ends before one where it ends.
+
+Through a hairpin, each beat takes the velocity 10% of the way from where it is to the loudest, 127, for a crescendo, or to the softest, 20, for a decrescendo, so a crescendo from pp grows faster than one from ff: from pp (35) a beat later it's 44, and from ff (112) 114. Notes part way through a beat are part of the way there. After the hairpin, the velocity stays where it left it, until the next dynamic. A dynamic in the middle of a hairpin sets the velocity, and the hairpin carries on from there. Hairpins are saved with the score, and Clone copies them with the measures.
+
 ### Chords
 
 Above each measure of each instrument is an **Add Chord** button, or **Edit Chord** if the measure has a chord. It makes the instrument active and opens the chord window for that measure, and outlines the measure while the window is open. Making the other instrument active closes it. For a chord that's already there, the window starts with its settings.
@@ -143,15 +147,15 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
 | `Source/MainComponent.*` | The File and MIDI menus, the toolbar, the sidebar, the two instruments' scrolling staves and their volume dials, the piano, and the audio output |
-| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, chords and alternate staff (a part, in the code), and saving it as JSON |
+| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, crescendos and decrescendos, chords and alternate staff (a part, in the code), and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
-| `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics and their velocities |
+| `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics, hairpins and their velocities |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
-| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks into notes and dynamics |
+| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks and drags into notes, dynamics and hairpins |
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, time signature and measures settings |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |
-| `Source/DynamicPicker.*` | The ppp to fff buttons for choosing a dynamic for clicks to mark |
+| `Source/DynamicPicker.*` | The ppp to fff, crescendo and decrescendo buttons for choosing what clicks and drags mark |
 | `Source/NoteLengthPicker.*` | The whole, dotted half, half, quarter and eighth note buttons for choosing the length of the notes clicks add |
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls |

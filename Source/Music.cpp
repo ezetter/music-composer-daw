@@ -1,6 +1,7 @@
 #include "Music.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace music
 {
@@ -789,8 +790,19 @@ std::optional<Dynamic> findDynamic (const juce::String& mark)
 
 int getDynamicVelocity (Dynamic dynamic)
 {
-    constexpr int softest = 20, loudest = 127;
     const auto steps = (int) allDynamics.size() - 1;
-    return softest + juce::roundToInt ((double) ((loudest - softest) * (int) dynamic) / steps);
+    return softestVelocity + juce::roundToInt ((double) ((loudestVelocity - softestVelocity) * (int) dynamic) / steps);
+}
+
+juce::String getHairpinName (Hairpin hairpin)
+{
+    return hairpin == Hairpin::crescendo ? "Crescendo" : "Decrescendo";
+}
+
+double applyHairpin (Hairpin hairpin, double startVelocity, double beats)
+{
+    // The gap to the loudest or softest shrinks by the same fraction each beat.
+    const auto towards = (double) (hairpin == Hairpin::crescendo ? loudestVelocity : softestVelocity);
+    return towards - (towards - startVelocity) * std::pow (1.0 - hairpinChangePerBeat, beats);
 }
 }

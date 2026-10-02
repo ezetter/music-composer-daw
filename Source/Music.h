@@ -4,6 +4,7 @@
 
 #include <array>
 #include <optional>
+#include <variant>
 #include <vector>
 
 /** The music theory behind the chord panel: keys, spelling, and building and naming chords.
@@ -209,4 +210,27 @@ namespace music
 
     /** The MIDI velocity notes play at, spread evenly from 20 for ppp to 127 for fff. */
     int getDynamicVelocity (Dynamic);
+
+    constexpr int softestVelocity = 20, loudestVelocity = 127;
+
+    /** The velocity notes play at before any dynamic's marked, as every note did before there were dynamics. */
+    constexpr int unmarkedVelocity = 102;
+
+    /** A crescendo or decrescendo, written as a hairpin: a wedge opening or closing over the notes it spans. */
+    enum class Hairpin { crescendo, decrescendo };
+
+    /** How it's called: "Crescendo" or "Decrescendo". */
+    juce::String getHairpinName (Hairpin);
+
+    /** How far a hairpin moves the velocity each beat: a crescendo this fraction of the way from
+        where it is to the loudest, a decrescendo this fraction of the way to the softest. So a
+        crescendo from pp grows faster than one from ff.
+    */
+    constexpr double hairpinChangePerBeat = 0.1;
+
+    /** The velocity after a hairpin has gone on for some beats from a starting velocity. */
+    double applyHairpin (Hairpin, double startVelocity, double beats);
+
+    /** Something marked on the score to set how loudly it plays: a dynamic or a hairpin. */
+    using Marking = std::variant<Dynamic, Hairpin>;
 }

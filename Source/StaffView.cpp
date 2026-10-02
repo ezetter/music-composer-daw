@@ -352,11 +352,32 @@ void StaffView::setNoteLength (double beats)
     setHoverNote ({});
 }
 
-void StaffView::setDynamic (std::optional<music::Dynamic> newDynamic)
+void StaffView::setMarking (std::optional<music::Marking> newMarking)
 {
-    dynamic = newDynamic;
+    marking = newMarking;
+    hoverHairpin.reset();
+    setMouseCursor (juce::MouseCursor::NormalCursor);
     setHoverNote ({});
-    setHoverDynamic ({});
+    setHoverMarkPoint ({});
+    repaint();
+}
+
+std::optional<music::Dynamic> StaffView::getChosenDynamic() const
+{
+    if (marking.has_value())
+        if (const auto* dynamic = std::get_if<music::Dynamic> (&*marking))
+            return *dynamic;
+
+    return {};
+}
+
+std::optional<music::Hairpin> StaffView::getChosenHairpin() const
+{
+    if (marking.has_value())
+        if (const auto* hairpin = std::get_if<music::Hairpin> (&*marking))
+            return *hairpin;
+
+    return {};
 }
 
 void StaffView::setActive (bool shouldBeActive)
@@ -634,17 +655,69 @@ std::optional<std::pair<int, double>> StaffView::getDynamicPointAt (juce::Point<
         return {};
 
     // Between beats, only where a note starts, on either staff
-    const auto slot = getSlotAt (measure, point.x, [&] (double beat)
-    {
-        for (const auto& staff : measureLayouts[(size_t) measure].content.staves)
-            for (const auto& event : staff.events)
-                if (! event.isRest() && juce::exactlyEqual (event.onset, beat))
-                    return true;
-
-        return false;
-    });
-
+    const auto slot = getSlotAt (measure, point.x, [&] (double beat) { return hasNoteStartingAt (measure, beat); });
     return std::pair { measure, (double) slot / Score::slotsPerBeat };
+}
+
+bool StaffView::hasNoteStartingAt (int measure, double beat) const
+{
+    for (const auto& staff : measureLayouts[(size_t) measure].content.staves)
+        for (const auto& event : staff.events)
+            if (! event.isRest() && juce::exactlyEqual (event.onset, beat))
+                return true;
+
+    return false;
+}
+
+double StaffView::getHairpinEndAt (float x) const
+{
+    const auto beats = score.getBeatsPerMeasure();
+    const auto measure = findMeasure (x);
+
+    if (measure < 0)
+        return x < measureLayouts.front().x ? 0.0 : (double) (score.getNumMeasures() * beats);
+
+    // The nearest beat, counting the barline after the last, or half beat with a note starting there
+    const auto& layout = measureLayouts[(size_t) measure];
+    const auto inBeats = (x - layout.x - layout.padding) / layout.beatWidth;
+    const auto slot = juce::jlimit (0, beats * Score::slotsPerBeat, juce::roundToInt (inBeats * (float) Score::slotsPerBeat));
+    const auto halfBeat = (double) slot / Score::slotsPerBeat;
+    const auto beat = slot % Score::slotsPerBeat != 0 && hasNoteStartingAt (measure, halfBeat)
+                          ? halfBeat
+                          : (double) juce::jlimit (0, beats, juce::roundToInt (inBeats));
+
+    return toScoreBeats (measure, beat);
+}
+
+double StaffView::toScoreBeats (int measure, double beat) const
+{
+    return measure * score.getBeatsPerMeasure() + beat;
+}
+
+std::pair<int, double> StaffView::fromScoreBeats (double beats) const
+{
+    const auto beatsPerMeasure = score.getBeatsPerMeasure();
+    const auto measure = juce::jmin ((int) std::floor (beats / beatsPerMeasure), score.getNumMeasures());
+    return { measure, beats - measure * beatsPerMeasure };
+}
+
+std::optional<std::pair<HairpinMark, bool>> StaffView::findHairpinAt (juce::Point<float> point) const
+{
+    if (std::abs (point.y - getMarkingCentreY()) > 1.3f * staffSpace)
+        return {};
+
+    for (const auto& hairpin : score.getHairpins (part))
+    {
+        const auto span = getHairpinSpan (hairpin.measure, hairpin.beat, toScoreBeats (hairpin.measure, hairpin.beat) + hairpin.length);
+
+        if (std::abs (point.x - span.getEnd()) <= 0.8f * staffSpace)
+            return std::pair { hairpin, true };
+
+        if (span.contains (point.x))
+            return std::pair { hairpin, false };
+    }
+
+    return {};
 }
 
 bool StaffView::isInClickRange (juce::Point<float> point) const
@@ -745,6 +818,7 @@ void StaffView::paint (juce::Graphics& g)
     drawTies (g, juce::jmax (0, firstMeasure - 1), lastMeasure);
     drawTieDrag (g);
     drawHoverNote (g);
+    drawHairpins (g);
     drawHoverDynamic (g);
 }
 
@@ -1283,10 +1357,101 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
         glyphs.draw (g, Smufl::augmentationDot, { left + width + 0.35f * staffSpace, getY (hoverNote->staff, isLine (position) ? position + 1 : position) });
 }
 
+float StaffView::getMarkingCentreY() const
+{
+    return (getY (Staff::treble, 0) + getY (Staff::bass, topLine)) / 2.0f;
+}
+
 float StaffView::getDynamicBaseline() const
 {
-    // Halfway between the staves, with the letters' middles on the halfway line
-    return (getY (Staff::treble, 0) + getY (Staff::bass, topLine)) / 2.0f + 0.45f * staffSpace;
+    // With the letters' middles on the halfway line between the staves
+    return getMarkingCentreY() + 0.45f * staffSpace;
+}
+
+juce::Range<float> StaffView::getHairpinSpan (int measure, double beat, double end) const
+{
+    const auto dynamicHalfWidth = [this] (music::Dynamic dynamic)
+    {
+        return glyphs.getPath (Smufl::dynamics[(size_t) dynamic]).getBounds().getWidth() / 2.0f;
+    };
+
+    auto start = getOnsetX (measure, beat) - 0.4f * staffSpace;
+
+    if (const auto dynamic = score.getDynamic (part, measure, beat))
+        start = getOnsetX (measure, beat) + dynamicHalfWidth (*dynamic) + 0.5f * staffSpace;
+
+    // To the note it leads to, or the end of the score
+    const auto [endMeasure, endBeat] = fromScoreBeats (end);
+    auto finish = 0.0f;
+
+    if (endMeasure >= score.getNumMeasures())
+    {
+        const auto& last = measureLayouts.back();
+        finish = last.x + last.width - 1.2f * staffSpace;
+    }
+    else if (const auto dynamic = score.getDynamic (part, endMeasure, endBeat))
+    {
+        finish = getOnsetX (endMeasure, endBeat) - dynamicHalfWidth (*dynamic) - 0.5f * staffSpace;
+    }
+    else
+    {
+        finish = getOnsetX (endMeasure, endBeat) - 0.8f * staffSpace;
+    }
+
+    return { start, juce::jmax (finish, start + 1.5f * staffSpace) };
+}
+
+void StaffView::drawHairpin (juce::Graphics& g, music::Hairpin hairpin, juce::Range<float> span) const
+{
+    // Two lines meeting at one end and opening out to a staff space and a half at the other
+    const auto centre = getMarkingCentreY();
+    const auto halfOpening = 0.75f * staffSpace;
+    const auto crescendo = hairpin == music::Hairpin::crescendo;
+    const auto pointX = crescendo ? span.getStart() : span.getEnd();
+    const auto openX = crescendo ? span.getEnd() : span.getStart();
+
+    juce::Path wedge;
+    wedge.startNewSubPath (openX, centre - halfOpening);
+    wedge.lineTo (pointX, centre);
+    wedge.lineTo (openX, centre + halfOpening);
+    g.strokePath (wedge, juce::PathStrokeType (0.14f * staffSpace, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+}
+
+void StaffView::drawHairpins (juce::Graphics& g) const
+{
+    for (const auto& hairpin : score.getHairpins (part))
+    {
+        // One being stretched is drawn where the drag has got to instead.
+        if (hairpinDrag.has_value() && hairpinDrag->stretching == hairpin)
+            continue;
+
+        // Under the mouse, a click will take it out, or a drag stretch it, so it's highlighted.
+        const auto hovered = getChosenHairpin().has_value() && ! hoverHintHidden && hoverHairpin == hairpin;
+        g.setColour (hovered ? hoverColour : inkColour);
+        drawHairpin (g, hairpin.type, getHairpinSpan (hairpin.measure, hairpin.beat, toScoreBeats (hairpin.measure, hairpin.beat) + hairpin.length));
+    }
+
+    // The one being dragged out, or stretched
+    if (hairpinDrag.has_value())
+    {
+        const auto& start = hairpinDrag->start;
+        g.setColour (hoverColour);
+        drawHairpin (g, start.type, getHairpinSpan (start.measure, start.beat, hairpinDrag->end));
+    }
+    // Where a click would put a beat-long one
+    else if (const auto chosen = getChosenHairpin(); chosen.has_value() && hoverMarkPoint.has_value() && ! hoverHairpin.has_value() && ! hoverHintHidden)
+    {
+        const auto [measure, beat] = *hoverMarkPoint;
+
+        if (measure < score.getNumMeasures() && beat < score.getBeatsPerMeasure())
+        {
+            const auto start = toScoreBeats (measure, beat);
+            g.setColour (hoverColour);
+            drawHairpin (g, *chosen, getHairpinSpan (measure, beat, juce::jmin (start + 1.0, (double) (score.getNumMeasures() * score.getBeatsPerMeasure()))));
+        }
+    }
+
+    g.setColour (inkColour);
 }
 
 void StaffView::drawDynamics (juce::Graphics& g, int measure) const
@@ -1301,7 +1466,7 @@ void StaffView::drawDynamics (juce::Graphics& g, int measure) const
         if (const auto marked = score.getDynamic (part, measure, beat))
         {
             // Over a dynamic, a click will replace it or take it out, so it's highlighted.
-            const auto hovered = dynamic.has_value() && ! hoverHintHidden && hoverDynamic == std::pair { measure, beat };
+            const auto hovered = getChosenDynamic().has_value() && ! hoverHintHidden && hoverMarkPoint == std::pair { measure, beat };
             g.setColour (hovered ? hoverColour : inkColour);
             drawCentred (g, Smufl::dynamics[(size_t) *marked], getOnsetX (measure, beat), getDynamicBaseline());
         }
@@ -1312,10 +1477,12 @@ void StaffView::drawDynamics (juce::Graphics& g, int measure) const
 
 void StaffView::drawHoverDynamic (juce::Graphics& g) const
 {
-    if (! dynamic.has_value() || ! hoverDynamic.has_value() || hoverHintHidden)
+    const auto dynamic = getChosenDynamic();
+
+    if (! dynamic.has_value() || ! hoverMarkPoint.has_value() || hoverHintHidden)
         return;
 
-    const auto [measure, beat] = *hoverDynamic;
+    const auto [measure, beat] = *hoverMarkPoint;
 
     if (measure >= score.getNumMeasures() || beat >= score.getBeatsPerMeasure() || score.getDynamic (part, measure, beat).has_value())
         return;
@@ -1332,22 +1499,45 @@ void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float ce
 //==============================================================================
 void StaffView::mouseMove (const juce::MouseEvent& e)
 {
-    if (dynamic.has_value())
-        setHoverDynamic (getDynamicPointAt (e.position));
-    else
+    if (! marking.has_value())
+    {
         setHoverNote (getNoteAt (e.position));
+        return;
+    }
+
+    // With a hairpin chosen, one under the mouse is highlighted, and its end can be dragged.
+    const auto overHairpin = getChosenHairpin().has_value() ? findHairpinAt (e.position) : std::nullopt;
+    const auto newHoverHairpin = overHairpin.has_value() ? std::optional (overHairpin->first) : std::nullopt;
+
+    if (newHoverHairpin != hoverHairpin)
+    {
+        hoverHairpin = newHoverHairpin;
+        hoverHintHidden = false;
+        repaint();
+    }
+
+    setMouseCursor (overHairpin.has_value() && overHairpin->second ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::NormalCursor);
+    setHoverMarkPoint (getDynamicPointAt (e.position));
 }
 
 void StaffView::mouseExit (const juce::MouseEvent&)
 {
     setHoverNote ({});
-    setHoverDynamic ({});
+    setHoverMarkPoint ({});
+
+    if (hoverHairpin.has_value())
+    {
+        hoverHairpin.reset();
+        repaint();
+    }
 }
 
 void StaffView::mouseDown (const juce::MouseEvent& e)
 {
     pressedNote.reset();
     pressedDynamic.reset();
+    pressedHairpin.reset();
+    hairpinDrag.reset();
     tieFrom.reset();
 
     if (e.mods.isPopupMenu())
@@ -1357,9 +1547,32 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
         onClicked();
 
     // With a dynamic chosen, a click marks it, when the mouse is let go.
-    if (dynamic.has_value())
+    if (getChosenDynamic().has_value())
     {
         pressedDynamic = getDynamicPointAt (e.position);
+        return;
+    }
+
+    // With a hairpin chosen, dragging a hairpin's end stretches it, and anywhere else, dragging
+    // marks a new one. A click on a hairpin takes it out.
+    if (const auto chosen = getChosenHairpin())
+    {
+        if (const auto under = findHairpinAt (e.position))
+        {
+            const auto& [hairpin, onEnd] = *under;
+
+            if (onEnd)
+            {
+                hairpinDrag = HairpinDrag { hairpin, toScoreBeats (hairpin.measure, hairpin.beat) + hairpin.length, hairpin };
+                return;
+            }
+
+            pressedHairpin = hairpin;
+        }
+
+        if (const auto point = getDynamicPointAt (e.position))
+            hairpinDrag = HairpinDrag { { point->first, point->second, *chosen, 1.0 }, toScoreBeats (point->first, point->second) + 1.0, std::nullopt };
+
         return;
     }
 
@@ -1371,6 +1584,20 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
 void StaffView::mouseDrag (const juce::MouseEvent& e)
 {
+    // A hairpin stretches to the beat nearest the mouse, at least an eighth note long.
+    if (hairpinDrag.has_value())
+    {
+        if (e.mouseWasDraggedSinceMouseDown())
+        {
+            const auto start = toScoreBeats (hairpinDrag->start.measure, hairpinDrag->start.beat);
+            hairpinDrag->end = juce::jmax (start + 1.0 / Score::slotsPerBeat, getHairpinEndAt (e.position.x));
+            hoverHintHidden = true;
+            repaint();
+        }
+
+        return;
+    }
+
     if (! tieFrom.has_value() || ! e.mouseWasDraggedSinceMouseDown())
         return;
 
@@ -1385,14 +1612,45 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
     const auto pressed = pressedNote;
     const auto from = tieFrom;
     const auto pressedPoint = pressedDynamic;
+    const auto clickedHairpin = pressedHairpin;
+    const auto drag = hairpinDrag;
     pressedNote.reset();
     pressedDynamic.reset();
+    pressedHairpin.reset();
+    hairpinDrag.reset();
     tieFrom.reset();
     repaint();
 
-    if (pressedPoint.has_value() && dynamic.has_value() && ! e.mods.isPopupMenu() && ! e.mouseWasDraggedSinceMouseDown())
+    if (e.mods.isPopupMenu())
+        return;
+
+    if (pressedPoint.has_value() && getChosenDynamic().has_value() && ! e.mouseWasDraggedSinceMouseDown())
     {
         clickDynamic (*pressedPoint);
+        return;
+    }
+
+    if (drag.has_value())
+    {
+        hoverHintHidden = true;
+
+        // A click on a hairpin takes it out, a click on its end leaves it as it is, and a click
+        // anywhere else marks one a beat long.
+        if (! e.mouseWasDraggedSinceMouseDown())
+        {
+            if (clickedHairpin.has_value())
+                score.removeHairpin (part, clickedHairpin->measure, clickedHairpin->beat);
+            else if (! drag->stretching.has_value())
+                score.setHairpin (part, drag->start);
+
+            hoverHairpin.reset();
+            return;
+        }
+
+        auto hairpin = drag->start;
+        hairpin.length = drag->end - toScoreBeats (hairpin.measure, hairpin.beat);
+        score.setHairpin (part, hairpin);
+        hoverHairpin.reset();
         return;
     }
 
@@ -1442,6 +1700,7 @@ void StaffView::clickNote (const Note& note)
 void StaffView::clickDynamic (std::pair<int, double> point)
 {
     const auto [measure, beat] = point;
+    const auto dynamic = getChosenDynamic();
     score.setDynamic (part, measure, beat, score.getDynamic (part, measure, beat) == dynamic ? std::nullopt : dynamic);
 
     // Show what the click did, rather than what another click would do.
@@ -1590,20 +1849,27 @@ void StaffView::drawTieDrag (juce::Graphics& g) const
              from->upwards);
 }
 
-void StaffView::setHoverDynamic (std::optional<std::pair<int, double>> point)
+void StaffView::setHoverMarkPoint (std::optional<std::pair<int, double>> point)
 {
-    if (point == hoverDynamic)
+    if (point == hoverMarkPoint)
         return;
 
     hoverHintHidden = false;
 
-    if (hoverDynamic.has_value())
-        repaint (getBeatArea (hoverDynamic->first, hoverDynamic->second));
+    // A hairpin's hint reaches into the next beat.
+    const auto area = [this] (std::pair<int, double> p)
+    {
+        return getBeatArea (p.first, p.second).getUnion (getBeatArea (p.first, juce::jmin (p.second + 1.0, (double) score.getBeatsPerMeasure() - 0.5)))
+                   .expanded (juce::roundToInt (staffSpace), 0);
+    };
 
-    hoverDynamic = point;
+    if (hoverMarkPoint.has_value())
+        repaint (area (*hoverMarkPoint));
 
-    if (hoverDynamic.has_value())
-        repaint (getBeatArea (hoverDynamic->first, hoverDynamic->second));
+    hoverMarkPoint = point;
+
+    if (hoverMarkPoint.has_value())
+        repaint (area (*hoverMarkPoint));
 }
 
 void StaffView::setHoverNote (std::optional<Note> note)

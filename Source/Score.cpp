@@ -1,6 +1,7 @@
 #include "Score.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -353,6 +354,101 @@ std::optional<music::Dynamic> Score::getDynamicInForce (int part, int measure, d
     return {};
 }
 
+std::vector<HairpinMark> Score::getHairpins (int part) const
+{
+    const auto slotsPerMeasure = getSlotsPerMeasure();
+    const auto scoreEnd = getNumMeasures() * slotsPerMeasure;
+    std::vector<HairpinMark> hairpins;
+
+    for (int measure = 0; measure < getNumMeasures(); ++measure)
+        for (int slot = 0; slot < slotsPerMeasure; ++slot)
+            if (const auto& hairpin = getMeasure (part, measure).hairpins[(size_t) slot])
+                hairpins.push_back ({ measure, toBeats (slot), hairpin->type,
+                                      toBeats (juce::jmin (hairpin->length, scoreEnd - measure * slotsPerMeasure - slot)) });
+
+    return hairpins;
+}
+
+void Score::setHairpin (int part, const HairpinMark& hairpin)
+{
+    const auto slotsPerMeasure = getSlotsPerMeasure();
+    const auto slot = toSlot (hairpin.beat);
+
+    if (! juce::isPositiveAndBelow (hairpin.measure, getNumMeasures()) || ! juce::isPositiveAndBelow (slot, slotsPerMeasure))
+        return;
+
+    // In eighths from the start of the score
+    const auto start = hairpin.measure * slotsPerMeasure + slot;
+    const auto end = start + juce::jlimit (1, getNumMeasures() * slotsPerMeasure - start, toSlot (hairpin.length));
+
+    // The hairpins it overlaps make way for it.
+    for (const auto& other : getHairpins (part))
+    {
+        const auto otherStart = other.measure * slotsPerMeasure + toSlot (other.beat);
+
+        if (otherStart < end && otherStart + toSlot (other.length) > start)
+            getMeasure (part, other.measure).hairpins[(size_t) toSlot (other.beat)].reset();
+    }
+
+    getMeasure (part, hairpin.measure).hairpins[(size_t) slot] = HairpinStart { hairpin.type, end - start };
+    sendSynchronousChangeMessage();
+}
+
+void Score::removeHairpin (int part, int measure, double beat)
+{
+    auto& hairpin = getMeasure (part, measure).hairpins[(size_t) toSlot (beat)];
+
+    if (! hairpin.has_value())
+        return;
+
+    hairpin.reset();
+    sendSynchronousChangeMessage();
+}
+
+int Score::getVelocity (int part, int measure, double beat) const
+{
+    // Everything's counted in eighths from the start of the score, up to the point asked about.
+    const auto slotsPerMeasure = getSlotsPerMeasure();
+    const auto point = measure * slotsPerMeasure + juce::jmin (toSlot (beat), slotsPerMeasure);
+    auto velocity = (double) music::unmarkedVelocity;
+    auto at = 0;
+    std::optional<std::pair<music::Hairpin, int>> hairpin;      // the one under way, and where it ends
+
+    const auto moveOn = [&] (int to)
+    {
+        if (hairpin.has_value())
+        {
+            if (const auto until = juce::jmin (to, hairpin->second); until > at)
+                velocity = music::applyHairpin (hairpin->first, velocity, toBeats (until - at));
+
+            if (to >= hairpin->second)
+                hairpin.reset();
+        }
+
+        at = to;
+    };
+
+    for (int m = 0; m <= measure && m < getNumMeasures(); ++m)
+    {
+        for (int slot = 0; slot < slotsPerMeasure && m * slotsPerMeasure + slot <= point; ++slot)
+        {
+            const auto position = m * slotsPerMeasure + slot;
+            const auto& marks = getMeasure (part, m);
+            moveOn (position);
+
+            // A dynamic sets the velocity, and a hairpin moves it on from there.
+            if (const auto& dynamic = marks.dynamics[(size_t) slot])
+                velocity = music::getDynamicVelocity (*dynamic);
+
+            if (const auto& start = marks.hairpins[(size_t) slot])
+                hairpin = std::pair { start->type, position + start->length };
+        }
+    }
+
+    moveOn (point);
+    return juce::jlimit (1, 127, (int) std::lround (velocity));
+}
+
 //==============================================================================
 const MeasureChord* Score::getChord (int part, int measure) const
 {
@@ -560,7 +656,8 @@ namespace
     // 3: two parts, each with its own measures and alternate staff
     // 4: notes by eighth note, rather than by beat, with their lengths in eighths
     // 5: dynamics
-    constexpr int formatVersion = 5;
+    // 6: crescendos and decrescendos
+    constexpr int formatVersion = 6;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -679,6 +776,24 @@ juce::var Score::toJSON() const
 
             measureObject->setProperty ("dynamics", dynamics);
         }
+
+        // The hairpins starting in the measure: at which eighth, which, and how many eighths long
+        juce::Array<juce::var> hairpins;
+
+        for (int slot = 0; slot < maxSlotsPerMeasure; ++slot)
+        {
+            if (const auto& hairpin = measure.hairpins[(size_t) slot])
+            {
+                auto* hairpinObject = new juce::DynamicObject();
+                hairpinObject->setProperty ("eighth", slot);
+                hairpinObject->setProperty ("type", hairpin->type == music::Hairpin::crescendo ? "crescendo" : "decrescendo");
+                hairpinObject->setProperty ("eighths", hairpin->length);
+                hairpins.add (hairpinObject);
+            }
+        }
+
+        if (! hairpins.isEmpty())
+            measureObject->setProperty ("hairpins", hairpins);
 
         if (measure.chord.has_value())
         {
@@ -803,6 +918,19 @@ juce::Result Score::loadJSON (const juce::var& json)
             if (const auto* dynamics = item.getProperty ("dynamics", {}).getArray())
                 for (int slot = 0; slot < maxSlotsPerMeasure && slot < dynamics->size(); ++slot)
                     measure.dynamics[(size_t) slot] = music::findDynamic (dynamics->getReference (slot).toString());
+
+            if (const auto* hairpins = item.getProperty ("hairpins", {}).getArray())
+            {
+                for (const auto& hairpin : *hairpins)
+                {
+                    const auto slot = readInt (hairpin.getProperty ("eighth", {}), 0, maxSlotsPerMeasure - 1, -1);
+                    const auto length = readInt (hairpin.getProperty ("eighths", {}), 1, std::numeric_limits<int>::max(), 0);
+                    const auto type = hairpin.getProperty ("type", {}).toString();
+
+                    if (slot >= 0 && length > 0 && (type == "crescendo" || type == "decrescendo"))
+                        measure.hairpins[(size_t) slot] = HairpinStart { type == "crescendo" ? music::Hairpin::crescendo : music::Hairpin::decrescendo, length };
+                }
+            }
 
             if (const auto& c = item.getProperty ("chord", {}); c.isObject())
             {

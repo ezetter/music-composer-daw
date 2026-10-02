@@ -9,22 +9,23 @@
 #include <functional>
 #include <optional>
 
-/** Small buttons, side by side, showing the dynamics from ppp to fff, for choosing one for clicks
-    on the score to mark. Clicking the chosen one again goes back to none.
+/** Small buttons, side by side, showing the dynamics from ppp to fff, then a crescendo and a
+    decrescendo hairpin, for choosing one for the score to mark. Clicking the chosen one again
+    goes back to none.
 */
 class DynamicPicker final : public juce::Component
 {
 public:
     DynamicPicker();
 
-    /** The dynamic chosen, if any. */
-    std::optional<music::Dynamic> getDynamic() const noexcept { return dynamic; }
+    /** The dynamic or hairpin chosen, if any. */
+    std::optional<music::Marking> getChoice() const noexcept { return choice; }
 
-    /** Chooses a dynamic, or none, without calling onChange. */
-    void setDynamic (std::optional<music::Dynamic>);
+    /** Chooses a dynamic or hairpin, or none, without calling onChange. */
+    void setChoice (std::optional<music::Marking>);
 
-    /** Called when a button's clicked, with the dynamic chosen now, or none. */
-    std::function<void (std::optional<music::Dynamic>)> onChange;
+    /** Called when a button's clicked, with what's chosen now, or none. */
+    std::function<void (std::optional<music::Marking>)> onChange;
 
     /** The size the buttons need, side by side. */
     juce::Rectangle<int> getIdealBounds() const;
@@ -32,22 +33,23 @@ public:
     void resized() override;
 
     static constexpr int buttonWidth = 36, buttonHeight = 28;      // wide enough for ppp and fff
+    static constexpr int hairpinGap = 8;                            // more space between the dynamics and the hairpins
 
 private:
-    /** A button showing a dynamic. */
-    struct DynamicButton final : public juce::Button
+    /** A button showing a dynamic or a hairpin. */
+    struct MarkingButton final : public juce::Button
     {
-        DynamicButton (const MusicGlyphs&, music::Dynamic);
+        MarkingButton (const MusicGlyphs&, music::Marking);
 
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
 
         const MusicGlyphs& glyphs;
-        const music::Dynamic dynamic;
+        const music::Marking marking;
     };
 
     MusicGlyphs glyphs;
-    std::array<std::unique_ptr<DynamicButton>, music::allDynamics.size()> buttons;
-    std::optional<music::Dynamic> dynamic;
+    std::array<std::unique_ptr<MarkingButton>, music::allDynamics.size() + 2> buttons;
+    std::optional<music::Marking> choice;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicPicker)
 };

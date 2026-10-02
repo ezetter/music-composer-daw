@@ -224,9 +224,9 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     staffSystems.onAddMeasure = [this] { addMeasure(); };
     staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
     staffSystems.onCloneMeasures = [this] { cloneMeasures(); };
-    // Note lengths for clicking into the staff, quarter notes to start with, or dynamics to mark
+    // Note lengths for clicking into the staff, quarter notes to start with, or dynamics and hairpins to mark
     noteLengthPicker.onChange = [this] (double beats) { setNoteLength (beats); };
-    dynamicPicker.onChange = [this] (std::optional<music::Dynamic> dynamic) { setDynamic (dynamic); };
+    dynamicPicker.onChange = [this] (std::optional<music::Marking> marking) { setMarking (marking); };
     setNoteLength (1.0);
 
     scorePanel.onCopyProgression = [this] { copyProgression(); };
@@ -523,28 +523,28 @@ void MainComponent::copyProgression()
 void MainComponent::setNoteLength (double beats)
 {
     noteLengthPicker.setLength (beats);
-    dynamicPicker.setDynamic ({});
+    dynamicPicker.setChoice ({});
 
     for (auto& view : staffSystems.views)
     {
         view->setNoteLength (beats);
-        view->setDynamic ({});
+        view->setMarking ({});
     }
 }
 
-void MainComponent::setDynamic (std::optional<music::Dynamic> dynamic)
+void MainComponent::setMarking (std::optional<music::Marking> marking)
 {
-    if (! dynamic.has_value())
+    if (! marking.has_value())
     {
         setNoteLength (noteLengthPicker.getLength());
         return;
     }
 
-    dynamicPicker.setDynamic (dynamic);
+    dynamicPicker.setChoice (marking);
     noteLengthPicker.setChoiceShown (false);
 
     for (auto& view : staffSystems.views)
-        view->setDynamic (dynamic);
+        view->setMarking (marking);
 }
 
 void MainComponent::showPartTitles()
