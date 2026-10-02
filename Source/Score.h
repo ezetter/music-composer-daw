@@ -175,6 +175,20 @@ public:
     bool removeNotesAt (int part, Staff, int measure, double beat, int step);
 
     //==============================================================================
+    /** The dynamic marked at a point of a part, if there's one there. Each part has its own
+        dynamics, written between its staves, on a beat or halfway through one.
+    */
+    std::optional<music::Dynamic> getDynamic (int part, int measure, double beat) const;
+
+    /** Marks a dynamic at a point of a part, replacing any already there, or takes it out. */
+    void setDynamic (int part, int measure, double beat, std::optional<music::Dynamic>);
+
+    /** The dynamic a part plays at, at a point: the last one marked there or before it, or none
+        if there isn't one. Dynamics on beats a shorter time signature leaves out don't count.
+    */
+    std::optional<music::Dynamic> getDynamicInForce (int part, int measure, double beat) const;
+
+    //==============================================================================
     /** The measure's chord, or null if it doesn't have one. */
     const MeasureChord* getChord (int part, int measure) const;
 
@@ -223,8 +237,9 @@ public:
     bool hasChords (int part) const;
 
     /** Gives one part the other's chord progression: measure by measure, the same chords, or
-        none, and no quarter notes of its own. Its alternate staff setting stays as it is; notes
-        set by hand on the alternate staff come too if both parts' alternate staffs are the same.
+        none, and no quarter notes of its own. Its alternate staff setting and its dynamics stay
+        as they are; notes set by hand on the alternate staff come too if both parts' alternate
+        staffs are the same.
     */
     void copyChords (int fromPart, int toPart);
 
@@ -247,6 +262,7 @@ private:
         std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> notes;
         std::array<std::array<int, maxSlotsPerMeasure>, 2> lengths { { { 2, 2, 2, 2, 2, 2, 2, 2 }, { 2, 2, 2, 2, 2, 2, 2, 2 } } };
         std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> ties;
+        std::array<std::optional<music::Dynamic>, maxSlotsPerMeasure> dynamics;      // by eighth note, for both staves
         std::optional<MeasureChord> chord;
 
         /** Takes out all of a staff's notes. */

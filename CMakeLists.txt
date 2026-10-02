@@ -24,6 +24,7 @@ juce_add_gui_app(AnthropoceneMusic
 target_sources(AnthropoceneMusic
     PRIVATE
         Source/ChordEditor.cpp
+        Source/DynamicPicker.cpp
         Source/InstrumentHost.cpp
         Source/InstrumentPanel.cpp
         Source/Main.cpp

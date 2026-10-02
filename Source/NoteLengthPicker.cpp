@@ -38,9 +38,13 @@ NoteLengthPicker::NoteLengthPicker()
 void NoteLengthPicker::setLength (double beats)
 {
     length = beats;
+    setChoiceShown (true);
+}
 
+void NoteLengthPicker::setChoiceShown (bool shown)
+{
     for (auto& button : buttons)
-        button->setToggleState (juce::exactlyEqual (button->beats, beats), juce::dontSendNotification);
+        button->setToggleState (shown && juce::exactlyEqual (button->beats, length), juce::dontSendNotification);
 }
 
 juce::Rectangle<int> NoteLengthPicker::getIdealBounds() const
@@ -65,12 +69,7 @@ NoteLengthPicker::NoteButton::NoteButton (const MusicGlyphs& glyphsToUse, double
 void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    const auto chosen = getToggleState();
-
-    g.setColour (chosen ? controls::accentLight : down ? juce::Colour (0xffe8e8ec) : highlighted ? juce::Colour (0xfff2f2f5) : juce::Colours::white);
-    g.fillRoundedRectangle (bounds, 5.0f);
-    g.setColour (chosen ? controls::accent.withAlpha (0.6f) : juce::Colours::black.withAlpha (0.18f));
-    g.drawRoundedRectangle (bounds, 5.0f, 1.0f);
+    const auto ink = controls::drawSymbolButtonTile (g, *this, highlighted, down);
 
     // The note: an open notehead for a whole or half note, a filled one for a quarter or eighth,
     // a stem up for all but the whole note, a flag on the eighth's stem and a dot after a dotted half.
@@ -87,7 +86,7 @@ void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highligh
     const auto origin = juce::Point<float> (centre.x - headBounds.getCentreX(),
                                             centre.y + noteHeight / 2.0f - headBounds.getBottom());
 
-    g.setColour (chosen ? controls::accent : juce::Colour (0xff1b1b1b));
+    g.setColour (ink);
     glyphs.draw (g, glyph, origin);
 
     if (dotted)

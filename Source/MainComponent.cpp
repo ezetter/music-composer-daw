@@ -224,8 +224,9 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     staffSystems.onAddMeasure = [this] { addMeasure(); };
     staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
     staffSystems.onCloneMeasures = [this] { cloneMeasures(); };
-    // Whole, half or quarter notes, for clicking into the staff. Quarter notes to start with.
+    // Note lengths for clicking into the staff, quarter notes to start with, or dynamics to mark
     noteLengthPicker.onChange = [this] (double beats) { setNoteLength (beats); };
+    dynamicPicker.onChange = [this] (std::optional<music::Dynamic> dynamic) { setDynamic (dynamic); };
     setNoteLength (1.0);
 
     scorePanel.onCopyProgression = [this] { copyProgression(); };
@@ -297,6 +298,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     addAndMakeVisible (volumeColumn);
     addAndMakeVisible (noteLengthPicker);
+    addAndMakeVisible (dynamicPicker);
     staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
     staffViewport.onScroll = [this] { positionVolumeDials(); };
 
@@ -407,8 +409,10 @@ void MainComponent::resized()
     volumeColumn.setBounds (bounds.removeFromLeft (volumeColumnWidth));
     staffViewport.setBounds (bounds);
 
-    // The note length buttons stay in the top left corner of the score, over the staves as they scroll.
+    // The note length and dynamic buttons stay in the top left corner of the score, over the
+    // staves as they scroll.
     noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + 8);
+    dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
 }
@@ -519,9 +523,28 @@ void MainComponent::copyProgression()
 void MainComponent::setNoteLength (double beats)
 {
     noteLengthPicker.setLength (beats);
+    dynamicPicker.setDynamic ({});
 
     for (auto& view : staffSystems.views)
+    {
         view->setNoteLength (beats);
+        view->setDynamic ({});
+    }
+}
+
+void MainComponent::setDynamic (std::optional<music::Dynamic> dynamic)
+{
+    if (! dynamic.has_value())
+    {
+        setNoteLength (noteLengthPicker.getLength());
+        return;
+    }
+
+    dynamicPicker.setDynamic (dynamic);
+    noteLengthPicker.setChoiceShown (false);
+
+    for (auto& view : staffSystems.views)
+        view->setDynamic (dynamic);
 }
 
 void MainComponent::showPartTitles()

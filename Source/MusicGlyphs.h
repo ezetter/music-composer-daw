@@ -2,6 +2,7 @@
 
 #include <juce_graphics/juce_graphics.h>
 
+#include <array>
 #include <map>
 
 /** SMuFL code points of the music symbols we draw. */
@@ -30,6 +31,9 @@ namespace Smufl
     constexpr juce::juce_wchar rest8th               = 0xE4E6;
     constexpr juce::juce_wchar rest16th              = 0xE4E7;
     constexpr juce::juce_wchar wiggleArpeggiatoUp    = 0xEAA9;
+
+    /** The dynamics, from ppp to fff, in the order of music::Dynamic */
+    constexpr std::array<juce::juce_wchar, 8> dynamics { 0xE52A, 0xE52B, 0xE520, 0xE52C, 0xE52D, 0xE522, 0xE52F, 0xE530 };
 }
 
 /** Outlines of music symbols from the embedded Bravura font, sized for a given staff space.

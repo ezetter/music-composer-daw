@@ -763,4 +763,34 @@ std::vector<int> createRandomOrder (const std::vector<int>& midiNotes, int numSl
 
     return order;
 }
+
+//==============================================================================
+juce::String getDynamicMark (Dynamic dynamic)
+{
+    constexpr const char* marks[] { "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff" };
+    return marks[(size_t) dynamic];
+}
+
+juce::String getDynamicName (Dynamic dynamic)
+{
+    constexpr const char* names[] { "pianississimo", "pianissimo", "piano", "mezzo piano",
+                                    "mezzo forte", "forte", "fortissimo", "fortississimo" };
+    return names[(size_t) dynamic];
+}
+
+std::optional<Dynamic> findDynamic (const juce::String& mark)
+{
+    for (auto dynamic : allDynamics)
+        if (getDynamicMark (dynamic) == mark)
+            return dynamic;
+
+    return {};
+}
+
+int getDynamicVelocity (Dynamic dynamic)
+{
+    constexpr int softest = 20, loudest = 127;
+    const auto steps = (int) allDynamics.size() - 1;
+    return softest + juce::roundToInt ((double) ((loudest - softest) * (int) dynamic) / steps);
+}
 }

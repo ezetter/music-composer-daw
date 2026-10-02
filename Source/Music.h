@@ -190,4 +190,23 @@ namespace music
         shared out evenly, and no note twice in a row.
     */
     std::vector<int> createRandomOrder (const std::vector<int>& midiNotes, int numSlots, juce::Random&);
+
+    //==============================================================================
+    /** How loudly to play, softest first. */
+    enum class Dynamic { ppp, pp, p, mp, mf, f, ff, fff };
+
+    constexpr std::array<Dynamic, 8> allDynamics { Dynamic::ppp, Dynamic::pp, Dynamic::p, Dynamic::mp,
+                                                   Dynamic::mf, Dynamic::f, Dynamic::ff, Dynamic::fff };
+
+    /** How it's written: "ppp", "mf" and so on. */
+    juce::String getDynamicMark (Dynamic);
+
+    /** What it stands for: "pianississimo", "mezzo forte" and so on. */
+    juce::String getDynamicName (Dynamic);
+
+    /** The dynamic written this way, if any. */
+    std::optional<Dynamic> findDynamic (const juce::String& mark);
+
+    /** The MIDI velocity notes play at, spread evenly from 20 for ppp to 127 for fff. */
+    int getDynamicVelocity (Dynamic);
 }

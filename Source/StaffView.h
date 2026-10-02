@@ -20,6 +20,8 @@
     let go without moving. Dragging from a note to the next note of the same pitch ties them, or
     unties them; dragging anywhere else does nothing. Above each measure is a button to add a
     chord to it, or edit the one it has.
+
+    With a dynamic chosen, clicks mark it instead, between the staves, at the beat clicked.
 */
 class StaffView final : public juce::Component,
                         private juce::ChangeListener
@@ -34,6 +36,11 @@ public:
         halfway through beats as well as on them; the others go on beats.
     */
     void setNoteLength (double beats);
+
+    /** The dynamic clicks mark, rather than adding notes, or none to go back to adding notes.
+        Clicking where the same dynamic's marked takes it out; a different one is replaced.
+    */
+    void setDynamic (std::optional<music::Dynamic>);
 
     /** Marks the view as showing the active part, whose instrument the keyboard plays. */
     void setActive (bool);
@@ -57,6 +64,11 @@ public:
 
     /** The note that clicking at this point would add, if any. */
     std::optional<Note> getNoteAt (juce::Point<float>) const;
+
+    /** Where clicking at this point would mark a dynamic, as a measure and beat, if anywhere:
+        the nearest beat, or the nearest half beat if a note starts there.
+    */
+    std::optional<std::pair<int, double>> getDynamicPointAt (juce::Point<float>) const;
 
     /** The measure at this point, if any. */
     std::optional<int> getMeasureAt (juce::Point<float>) const;
@@ -104,6 +116,12 @@ private:
     float getOnsetX (int measure, double onset) const;
     float getEventX (int measure, const StaffEvent&) const;
     int findMeasure (float x) const;
+
+    /** The eighth note of a measure nearest to x, if a note could start there, or else the nearest beat's. */
+    int getSlotAt (int measure, float x, const std::function<bool (double beat)>& canStartBetweenBeats) const;
+
+    /** Whether the point's in reach of the staves, where clicks add notes or mark dynamics. */
+    bool isInClickRange (juce::Point<float>) const;
     juce::Rectangle<int> getBeatArea (int measure, double beat) const;
     juce::Rectangle<float> getMeasureBox (int measure) const;
     float getSymbolBaseline() const;
@@ -131,6 +149,9 @@ private:
     void drawRollSign (juce::Graphics&, float right, float top, float bottom) const;
     void drawLabels (juce::Graphics&, int measure) const;
     void drawHoverNote (juce::Graphics&) const;
+    void drawDynamics (juce::Graphics&, int measure) const;
+    void drawHoverDynamic (juce::Graphics&) const;
+    float getDynamicBaseline() const;
     void drawTies (juce::Graphics&, int firstMeasure, int lastMeasure) const;
     void drawTieDrag (juce::Graphics&) const;
     void drawTie (juce::Graphics&, juce::Point<float> start, juce::Point<float> end, bool upwards) const;
@@ -143,6 +164,10 @@ private:
 
     /** What a click without dragging does: adds or takes out a note. */
     void clickNote (const Note&);
+
+    /** What a click does with a dynamic chosen: marks it, or takes it out if it's there already. */
+    void clickDynamic (std::pair<int, double> point);
+    void setHoverDynamic (std::optional<std::pair<int, double>>);
 
     /** The note dragged from, and so a tie can be drawn to wherever the mouse is, if it's one
         clicked into the staff, rather than a chord's.
@@ -160,6 +185,8 @@ private:
     MusicGlyphs glyphs;
     bool active = false;
     double noteLength = 1.0;
+    std::optional<music::Dynamic> dynamic;          // marked by clicks, instead of adding notes
+    std::optional<std::pair<int, double>> hoverDynamic, pressedDynamic;
     juce::String title;
     std::optional<Note> hoverNote;
     std::optional<Note> pressedNote;                // where the mouse went down, and the note there, if any

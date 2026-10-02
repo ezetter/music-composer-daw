@@ -326,6 +326,34 @@ bool Score::removeNotesAt (int part, Staff staff, int measure, double beat, int 
 }
 
 //==============================================================================
+std::optional<music::Dynamic> Score::getDynamic (int part, int measure, double beat) const
+{
+    return getMeasure (part, measure).dynamics[(size_t) toSlot (beat)];
+}
+
+void Score::setDynamic (int part, int measure, double beat, std::optional<music::Dynamic> dynamic)
+{
+    jassert (juce::isPositiveAndBelow (toSlot (beat), maxSlotsPerMeasure));
+    auto& marked = getMeasure (part, measure).dynamics[(size_t) toSlot (beat)];
+
+    if (marked == dynamic)
+        return;
+
+    marked = dynamic;
+    sendSynchronousChangeMessage();
+}
+
+std::optional<music::Dynamic> Score::getDynamicInForce (int part, int measure, double beat) const
+{
+    for (auto slot = juce::jmin (toSlot (beat), getSlotsPerMeasure() - 1); measure >= 0; slot = getSlotsPerMeasure() - 1, --measure)
+        for (; slot >= 0; --slot)
+            if (const auto dynamic = getMeasure (part, measure).dynamics[(size_t) slot])
+                return dynamic;
+
+    return {};
+}
+
+//==============================================================================
 const MeasureChord* Score::getChord (int part, int measure) const
 {
     const auto& chord = getMeasure (part, measure).chord;
@@ -531,7 +559,8 @@ namespace
     // 2: the alternate staff is the score's, not each chord's
     // 3: two parts, each with its own measures and alternate staff
     // 4: notes by eighth note, rather than by beat, with their lengths in eighths
-    constexpr int formatVersion = 4;
+    // 5: dynamics
+    constexpr int formatVersion = 5;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -638,6 +667,17 @@ juce::var Score::toJSON() const
             }
 
             measureObject->setProperty (staff == Staff::treble ? "trebleTies" : "bassTies", ties);
+        }
+
+        // The dynamic marked at each eighth, or "" for none, if there are any
+        if (std::any_of (measure.dynamics.begin(), measure.dynamics.end(), [] (const auto& d) { return d.has_value(); }))
+        {
+            juce::Array<juce::var> dynamics;
+
+            for (const auto& dynamic : measure.dynamics)
+                dynamics.add (dynamic.has_value() ? music::getDynamicMark (*dynamic) : juce::String());
+
+            measureObject->setProperty ("dynamics", dynamics);
         }
 
         if (measure.chord.has_value())
@@ -759,6 +799,10 @@ juce::Result Score::loadJSON (const juce::var& json)
                                     measure.ties[(size_t) staff][slot].push_back (tied);
                 }
             }
+
+            if (const auto* dynamics = item.getProperty ("dynamics", {}).getArray())
+                for (int slot = 0; slot < maxSlotsPerMeasure && slot < dynamics->size(); ++slot)
+                    measure.dynamics[(size_t) slot] = music::findDynamic (dynamics->getReference (slot).toString());
 
             if (const auto& c = item.getProperty ("chord", {}); c.isObject())
             {

@@ -86,6 +86,12 @@ On a staff with a chord's notes, clicking works the same way on the chord:
 - **Resetting:** changing the chord in the chord window gives the alternate staff the chord's own notes back.
 - **Empty chord:** taking out all the chord's notes frees the staff for quarter notes again.
 
+### Dynamics
+
+Eight buttons beside the note lengths, showing **ppp**, **pp**, **p**, **mp**, **mf**, **f**, **ff** and **fff**, choose a dynamic for clicks to mark instead of adding notes. While one is chosen, no note length shows as chosen, and clicking either instrument's staves marks the dynamic between its staves, at the nearest beat, or halfway between beats where a note starts there on either staff. A faint copy shows where it will go. Clicking a different dynamic's mark replaces it, and clicking the same one's takes it out. Clicking the chosen dynamic's button again, or any note length, goes back to adding notes.
+
+Each instrument has its own dynamics. A dynamic sets how hard the instrument's notes are played, as MIDI velocity, from where it's marked until the next one, across barlines: ppp 20, pp 35, p 51, mp 66, mf 81, f 96, ff 112 and fff 127. Notes before the first dynamic play at 102, as every note did before there were dynamics. Playback that starts part way through the score uses the dynamic marked before that point. A tied note keeps the velocity it started with. Clone copies dynamics with the measures, and Copy Progression leaves the other instrument's dynamics as they are. A dynamic on a beat a shorter time signature leaves out is kept but doesn't show or play, as with notes. Dynamics are saved with the score.
+
 ### Chords
 
 Above each measure of each instrument is an **Add Chord** button, or **Edit Chord** if the measure has a chord. It makes the instrument active and opens the chord window for that measure, and outlines the measure while the window is open. Making the other instrument active closes it. For a chord that's already there, the window starts with its settings.
@@ -137,14 +143,15 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
 | `Source/MainComponent.*` | The File and MIDI menus, the toolbar, the sidebar, the two instruments' scrolling staves and their volume dials, the piano, and the audio output |
-| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, chords and alternate staff (a part, in the code), and saving it as JSON |
+| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, chords and alternate staff (a part, in the code), and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
-| `Source/Music.*` | Music theory: keys, spelling, and building, recognising and naming chords |
+| `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics and their velocities |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
-| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks into notes |
+| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks into notes and dynamics |
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, time signature and measures settings |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |
+| `Source/DynamicPicker.*` | The ppp to fff buttons for choosing a dynamic for clicks to mark |
 | `Source/NoteLengthPicker.*` | The whole, dotted half, half, quarter and eighth note buttons for choosing the length of the notes clicks add |
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls |

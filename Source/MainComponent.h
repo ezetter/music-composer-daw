@@ -5,6 +5,7 @@
 #include "InstrumentHost.h"
 #include "InstrumentPanel.h"
 #include "MidiInputs.h"
+#include "DynamicPicker.h"
 #include "NoteLengthPicker.h"
 #include "PianoKeyboard.h"
 #include "Score.h"
@@ -120,8 +121,15 @@ private:
     */
     void setActivePart (int part);
 
-    /** Chooses the length of the notes that clicking the staff adds, in beats: 4, 3, 2, 1 or 0.5. */
+    /** Chooses the length of the notes that clicking the staff adds, in beats: 4, 3, 2, 1 or 0.5.
+        Clicks add notes again, if they were marking a dynamic.
+    */
     void setNoteLength (double beats);
+
+    /** Chooses a dynamic for clicking the score to mark, instead of adding notes, or none to go
+        back to adding notes of the length chosen.
+    */
+    void setDynamic (std::optional<music::Dynamic>);
 
     /** Gives the other part the active part's chords, asking first if it has notes of its own. */
     void copyProgression();
@@ -189,6 +197,7 @@ private:
 
     controls::DialLookAndFeel dialLookAndFeel;
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
+    DynamicPicker dynamicPicker;        // beside it: a dynamic for clicks to mark instead
     juce::Component volumeColumn;       // to the left of the staves, holding a volume dial for each part
     std::array<controls::ClickableDial, Score::numParts> volumeDials;
 

@@ -9,7 +9,8 @@
 namespace
 {
     constexpr int midiChannel = 1;
-    constexpr float scoreVelocity = 0.8f;
+    // Notes play at their dynamic's velocity, or this one where no dynamic's been marked yet.
+    constexpr int unmarkedVelocity = 102;
 
     // A chord's notes sound this far apart, from the bottom up: a little for a block chord, so
     // it doesn't sound machine-struck, and more for a rolled one.
@@ -23,16 +24,17 @@ namespace
         int noteNumber;
         double start;
         double end;
+        int velocity;
     };
 
-    void addChord (std::vector<Sounding>& soundings, std::vector<music::Tone> tones, double start, double end, bool rolled)
+    void addChord (std::vector<Sounding>& soundings, std::vector<music::Tone> tones, double start, double end, bool rolled, int velocity)
     {
         std::sort (tones.begin(), tones.end(), [] (const music::Tone& a, const music::Tone& b) { return a.midi < b.midi; });
 
         const auto spread = rolled ? rolledChordSpread : blockChordSpread;
 
         for (size_t i = 0; i < tones.size(); ++i)
-            soundings.push_back ({ tones[i].midi, start + (double) i * spread, end });
+            soundings.push_back ({ tones[i].midi, start + (double) i * spread, end, velocity });
     }
 }
 
@@ -231,6 +233,10 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
                 const auto onset = start + event.onset * beatSeconds;
                 const auto end = onset + getBeats (event.duration) * beatSeconds;
 
+                // As loud as the dynamic marked last, at or before the note, wherever playing started
+                const auto dynamic = score.getDynamicInForce (part, measure, event.onset);
+                const auto velocity = dynamic.has_value() ? music::getDynamicVelocity (*dynamic) : unmarkedVelocity;
+
                 // A block or rolled chord, the chord's or the alternate staff's, is spread from the
                 // bottom up as it starts; everything else starts together.
                 const auto spreadAsChord = staff.source == StaffContent::Source::alternate
@@ -238,7 +244,7 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
 
                 if (spreadAsChord)
                 {
-                    addChord (soundings, event.tones, onset, end, event.rolled);
+                    addChord (soundings, event.tones, onset, end, event.rolled, velocity);
                     continue;
                 }
 
@@ -247,7 +253,7 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
                     const auto key = std::pair { staffIndex, tone.midi };
                     size_t index;
 
-                    // A note a tie leads to holds the note before it on, to its own end.
+                    // A note a tie leads to holds the note before it on, to its own end, as loud as it started.
                     if (const auto held = tiedOn.find (key); held != tiedOn.end() && std::abs (soundings[held->second].end - onset) < 1.0e-9)
                     {
                         index = held->second;
@@ -257,7 +263,7 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
                     else
                     {
                         index = soundings.size();
-                        soundings.push_back ({ tone.midi, onset, end });
+                        soundings.push_back ({ tone.midi, onset, end, velocity });
                     }
 
                     const auto& tied = staff.tiedNotes;
@@ -297,7 +303,7 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
         if (endSample <= startSample)
             continue;
 
-        events.push_back ({ startSample, sounding.noteNumber, true });
+        events.push_back ({ startSample, sounding.noteNumber, true, (juce::uint8) sounding.velocity });
         events.push_back ({ endSample, sounding.noteNumber, false });
     }
 
@@ -516,7 +522,7 @@ void InstrumentHost::addScoreEvents (int numSamples)
                 if (samplePosition >= numSamples)
                     break;
 
-                slot.midi.addEvent (event.isNoteOn ? juce::MidiMessage::noteOn (midiChannel, event.noteNumber, scoreVelocity)
+                slot.midi.addEvent (event.isNoteOn ? juce::MidiMessage::noteOn (midiChannel, event.noteNumber, event.velocity)
                                                    : juce::MidiMessage::noteOff (midiChannel, event.noteNumber),
                                     (int) juce::jmax ((int64_t) 0, samplePosition));
 

@@ -29,6 +29,22 @@ namespace controls
         }
     }
 
+    /** The tile behind one of the small symbol buttons over the score, such as a note length's,
+        and the colour to draw its symbol in.
+    */
+    inline juce::Colour drawSymbolButtonTile (juce::Graphics& g, const juce::Button& button, bool highlighted, bool down)
+    {
+        const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+        const auto chosen = button.getToggleState();
+
+        g.setColour (chosen ? accentLight : down ? juce::Colour (0xffe8e8ec) : highlighted ? juce::Colour (0xfff2f2f5) : juce::Colours::white);
+        g.fillRoundedRectangle (bounds, 5.0f);
+        g.setColour (chosen ? accent.withAlpha (0.6f) : juce::Colours::black.withAlpha (0.18f));
+        g.drawRoundedRectangle (bounds, 5.0f, 1.0f);
+
+        return chosen ? accent : juce::Colour (0xff1b1b1b);
+    }
+
     /** A small capitalised heading over a control, such as "KEY". */
     inline void makeHeading (juce::Label& label, const juce::String& text)
     {

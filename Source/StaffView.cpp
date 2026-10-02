@@ -352,6 +352,13 @@ void StaffView::setNoteLength (double beats)
     setHoverNote ({});
 }
 
+void StaffView::setDynamic (std::optional<music::Dynamic> newDynamic)
+{
+    dynamic = newDynamic;
+    setHoverNote ({});
+    setHoverDynamic ({});
+}
+
 void StaffView::setActive (bool shouldBeActive)
 {
     if (shouldBeActive == active)
@@ -594,23 +601,10 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
 {
     const auto measure = findMeasure (point.x);
 
-    if (measure < 0)
+    if (measure < 0 || ! isInClickRange (point))
         return {};
 
-    const auto trebleTop = getStaffTop (Staff::treble);
-    const auto bassBottom = getStaffTop (Staff::bass) + staffHeight * staffSpace;
-
-    if (point.y < trebleTop - noteRoom * staffSpace || point.y >= bassBottom + noteRoom * staffSpace)
-        return {};
-
-    // The nearest beat, or the nearest half beat for an eighth note, or where there are notes
-    // already halfway through a beat
-    const auto& layout = measureLayouts[(size_t) measure];
-    const auto slotWidth = layout.beatWidth / (float) Score::slotsPerBeat;
-    const auto slots = score.getBeatsPerMeasure() * Score::slotsPerBeat;
-    auto slot = juce::jlimit (0, slots - 1, (int) std::floor ((point.x - layout.x - layout.padding + slotWidth / 2.0f) / slotWidth));
-
-    const auto staffDivide = trebleTop + (staffHeight + staffGap / 2.0f) * staffSpace;
+    const auto staffDivide = getStaffTop (Staff::treble) + (staffHeight + staffGap / 2.0f) * staffSpace;
     const auto staff = point.y < staffDivide ? Staff::treble : Staff::bass;
 
     const auto position = juce::roundToInt ((getY (staff, 0) - point.y) / (staffSpace / 2.0f));
@@ -618,20 +612,61 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
                                      ? juce::jlimit (lowestTreblePosition, highestTreblePosition, position)
                                      : juce::jlimit (lowestBassPosition, highestBassPosition, position);
 
-    if (slot % Score::slotsPerBeat != 0 && noteLength >= 1.0
-        && score.getNotes (part, staff, measure, (double) slot / Score::slotsPerBeat).empty())
+    // The nearest beat, or the nearest half beat for an eighth note, or where there are notes
+    // already halfway through a beat
+    const auto slot = getSlotAt (measure, point.x, [&] (double beat)
     {
-        const auto onBeat = juce::jlimit (0, slots - Score::slotsPerBeat,
-                                          (int) std::floor ((point.x - layout.x - layout.padding + layout.beatWidth / 2.0f) / layout.beatWidth)
-                                              * Score::slotsPerBeat);
-        slot = onBeat;
-    }
+        return noteLength < 1.0 || ! score.getNotes (part, staff, measure, beat).empty();
+    });
 
     // The note takes its sharp or flat from the key signature.
     const auto step = getBottomLineStep (staff) + clampedPosition;
     const auto alter = music::getKeyAlterations (score.getKey())[(size_t) music::mod (step, 7)];
 
     return Note { staff, measure, (double) slot / Score::slotsPerBeat, { step, alter }, part, noteLength };
+}
+
+std::optional<std::pair<int, double>> StaffView::getDynamicPointAt (juce::Point<float> point) const
+{
+    const auto measure = findMeasure (point.x);
+
+    if (measure < 0 || ! isInClickRange (point))
+        return {};
+
+    // Between beats, only where a note starts, on either staff
+    const auto slot = getSlotAt (measure, point.x, [&] (double beat)
+    {
+        for (const auto& staff : measureLayouts[(size_t) measure].content.staves)
+            for (const auto& event : staff.events)
+                if (! event.isRest() && juce::exactlyEqual (event.onset, beat))
+                    return true;
+
+        return false;
+    });
+
+    return std::pair { measure, (double) slot / Score::slotsPerBeat };
+}
+
+bool StaffView::isInClickRange (juce::Point<float> point) const
+{
+    const auto trebleTop = getStaffTop (Staff::treble);
+    const auto bassBottom = getStaffTop (Staff::bass) + staffHeight * staffSpace;
+
+    return point.y >= trebleTop - noteRoom * staffSpace && point.y < bassBottom + noteRoom * staffSpace;
+}
+
+int StaffView::getSlotAt (int measure, float x, const std::function<bool (double beat)>& canStartBetweenBeats) const
+{
+    const auto& layout = measureLayouts[(size_t) measure];
+    const auto slotWidth = layout.beatWidth / (float) Score::slotsPerBeat;
+    const auto slots = score.getBeatsPerMeasure() * Score::slotsPerBeat;
+    const auto slot = juce::jlimit (0, slots - 1, (int) std::floor ((x - layout.x - layout.padding + slotWidth / 2.0f) / slotWidth));
+
+    if (slot % Score::slotsPerBeat == 0 || canStartBetweenBeats ((double) slot / Score::slotsPerBeat))
+        return slot;
+
+    return juce::jlimit (0, slots - Score::slotsPerBeat,
+                         (int) std::floor ((x - layout.x - layout.padding + layout.beatWidth / 2.0f) / layout.beatWidth) * Score::slotsPerBeat);
 }
 
 void StaffView::setPlaybackPosition (std::optional<double> beats)
@@ -710,6 +745,7 @@ void StaffView::paint (juce::Graphics& g)
     drawTies (g, juce::jmax (0, firstMeasure - 1), lastMeasure);
     drawTieDrag (g);
     drawHoverNote (g);
+    drawHoverDynamic (g);
 }
 
 void StaffView::drawHeader (juce::Graphics& g) const
@@ -797,6 +833,7 @@ void StaffView::drawMeasure (juce::Graphics& g, int measure) const
         drawStaff (g, measure, staff);
 
     drawLabels (g, measure);
+    drawDynamics (g, measure);
 
     g.setColour (measureNumberColour);
     g.setFont (juce::FontOptions (11.0f));
@@ -1246,6 +1283,47 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
         glyphs.draw (g, Smufl::augmentationDot, { left + width + 0.35f * staffSpace, getY (hoverNote->staff, isLine (position) ? position + 1 : position) });
 }
 
+float StaffView::getDynamicBaseline() const
+{
+    // Halfway between the staves, with the letters' middles on the halfway line
+    return (getY (Staff::treble, 0) + getY (Staff::bass, topLine)) / 2.0f + 0.45f * staffSpace;
+}
+
+void StaffView::drawDynamics (juce::Graphics& g, int measure) const
+{
+    g.setColour (inkColour);
+
+    // Ones on beats a shorter time signature leaves out are kept, but not shown.
+    for (int slot = 0; slot < score.getBeatsPerMeasure() * Score::slotsPerBeat; ++slot)
+    {
+        const auto beat = (double) slot / Score::slotsPerBeat;
+
+        if (const auto marked = score.getDynamic (part, measure, beat))
+        {
+            // Over a dynamic, a click will replace it or take it out, so it's highlighted.
+            const auto hovered = dynamic.has_value() && ! hoverHintHidden && hoverDynamic == std::pair { measure, beat };
+            g.setColour (hovered ? hoverColour : inkColour);
+            drawCentred (g, Smufl::dynamics[(size_t) *marked], getOnsetX (measure, beat), getDynamicBaseline());
+        }
+    }
+
+    g.setColour (inkColour);
+}
+
+void StaffView::drawHoverDynamic (juce::Graphics& g) const
+{
+    if (! dynamic.has_value() || ! hoverDynamic.has_value() || hoverHintHidden)
+        return;
+
+    const auto [measure, beat] = *hoverDynamic;
+
+    if (measure >= score.getNumMeasures() || beat >= score.getBeatsPerMeasure() || score.getDynamic (part, measure, beat).has_value())
+        return;
+
+    g.setColour (hoverColour);
+    drawCentred (g, Smufl::dynamics[(size_t) *dynamic], getOnsetX (measure, beat), getDynamicBaseline());
+}
+
 void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float centreX, float y) const
 {
     glyphs.draw (g, glyph, { centreX - glyphs.getPath (glyph).getBounds().getCentreX(), y });
@@ -1254,17 +1332,22 @@ void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float ce
 //==============================================================================
 void StaffView::mouseMove (const juce::MouseEvent& e)
 {
-    setHoverNote (getNoteAt (e.position));
+    if (dynamic.has_value())
+        setHoverDynamic (getDynamicPointAt (e.position));
+    else
+        setHoverNote (getNoteAt (e.position));
 }
 
 void StaffView::mouseExit (const juce::MouseEvent&)
 {
     setHoverNote ({});
+    setHoverDynamic ({});
 }
 
 void StaffView::mouseDown (const juce::MouseEvent& e)
 {
     pressedNote.reset();
+    pressedDynamic.reset();
     tieFrom.reset();
 
     if (e.mods.isPopupMenu())
@@ -1272,6 +1355,13 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
     if (onClicked != nullptr)
         onClicked();
+
+    // With a dynamic chosen, a click marks it, when the mouse is let go.
+    if (dynamic.has_value())
+    {
+        pressedDynamic = getDynamicPointAt (e.position);
+        return;
+    }
 
     // Nothing changes until the mouse is let go: a click adds or takes out a note, and a drag
     // from a note can tie it to the next one of the same pitch.
@@ -1294,9 +1384,17 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
 {
     const auto pressed = pressedNote;
     const auto from = tieFrom;
+    const auto pressedPoint = pressedDynamic;
     pressedNote.reset();
+    pressedDynamic.reset();
     tieFrom.reset();
     repaint();
+
+    if (pressedPoint.has_value() && dynamic.has_value() && ! e.mods.isPopupMenu() && ! e.mouseWasDraggedSinceMouseDown())
+    {
+        clickDynamic (*pressedPoint);
+        return;
+    }
 
     if (e.mods.isPopupMenu() || ! pressed.has_value())
         return;
@@ -1339,6 +1437,16 @@ void StaffView::clickNote (const Note& note)
     // Show what the click did, rather than what another click would do.
     hoverHintHidden = true;
     repaint (getBeatArea (note.measure, note.beat));
+}
+
+void StaffView::clickDynamic (std::pair<int, double> point)
+{
+    const auto [measure, beat] = point;
+    score.setDynamic (part, measure, beat, score.getDynamic (part, measure, beat) == dynamic ? std::nullopt : dynamic);
+
+    // Show what the click did, rather than what another click would do.
+    hoverHintHidden = true;
+    repaint (getBeatArea (measure, beat));
 }
 
 std::optional<Note> StaffView::getTieableNoteAt (juce::Point<float> point) const
@@ -1480,6 +1588,22 @@ void StaffView::drawTieDrag (juce::Graphics& g) const
     g.setColour (selectionColour.withAlpha (onTarget ? 1.0f : 0.5f));
     drawTie (g, end.x >= start.x ? start : end.translated (0.0f, offset), end.x >= start.x ? end.translated (0.0f, onTarget ? offset : 0.0f) : start,
              from->upwards);
+}
+
+void StaffView::setHoverDynamic (std::optional<std::pair<int, double>> point)
+{
+    if (point == hoverDynamic)
+        return;
+
+    hoverHintHidden = false;
+
+    if (hoverDynamic.has_value())
+        repaint (getBeatArea (hoverDynamic->first, hoverDynamic->second));
+
+    hoverDynamic = point;
+
+    if (hoverDynamic.has_value())
+        repaint (getBeatArea (hoverDynamic->first, hoverDynamic->second));
 }
 
 void StaffView::setHoverNote (std::optional<Note> note)

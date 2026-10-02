@@ -21,6 +21,11 @@ public:
     /** Chooses a length, in beats, without calling onChange. */
     void setLength (double beats);
 
+    /** Shows which length is chosen, or none while clicks are doing something else, such as
+        marking dynamics. Clicking a length shows it again, and calls onChange.
+    */
+    void setChoiceShown (bool);
+
     /** Called when a button's clicked, with the length it chooses. */
     std::function<void (double beats)> onChange;
 

@@ -94,6 +94,7 @@ private:
         int64_t sample;
         int noteNumber;
         bool isNoteOn;
+        juce::uint8 velocity = 0;       // a note-on's, from 1 to 127
     };
 
     /** Some measures of the score, ready to play. */
