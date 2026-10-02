@@ -72,7 +72,7 @@ The **File** menu saves and opens scores:
 
 Clicking the staff adds a note at that pitch and beat, taking its sharp or flat from the key signature. A blue note shows where it will go. Clicking between the staves puts the note on the nearer staff, with ledger lines. Rests fill the beats without notes.
 
-Four small buttons in the top left corner of the score, showing a whole, a dotted half, a half and a quarter note, choose the length of the notes that clicks add. They stay in the corner as the staves scroll. Quarter notes are chosen each time the app opens, and the blue note shows the length chosen. A note is as long as there's room for in its measure: a half note on the last beat of 4/4 is a quarter note, a dotted half on the third beat is a half note, and a whole note in 3/4 is a dotted half. A longer note takes the place of any notes on the beats it covers, and adding a note during a longer one cuts the longer one short. Notes starting on the same beat share a length, so a note added to them gives them its own. A shorter time signature shows notes shorter if it has to, and they're as long as they were again in 4/4. Notes play for as long as they're written, and their lengths are saved with the score; scores saved before there were note lengths open with quarter notes.
+Five small buttons in the top left corner of the score, showing a whole, a dotted half, a half, a quarter and an eighth note, choose the length of the notes that clicks add. They stay in the corner as the staves scroll. Quarter notes are chosen each time the app opens, and the blue note shows the length chosen. A note is as long as there's room for in its measure: a half note on the last beat of 4/4 is a quarter note, a dotted half on the third beat is a half note, and a whole note in 3/4 is a dotted half. A longer note takes the place of any notes on the beats it covers, and adding a note during a longer one cuts the longer one short. Notes starting on the same beat share a length, so a note added to them gives them its own. A shorter time signature shows notes shorter if it has to, and they're as long as they were again in 4/4. Eighth notes go on the beats and halfway between them, wherever the click is nearest; the other lengths go on the nearest beat, though a note already halfway through a beat can still be clicked to take it out. Eighths are beamed in pairs within a beat, a lone eighth has a flag, and half beats left empty get eighth rests. Notes play for as long as they're written, and their lengths are saved with the score; scores saved before there were note lengths open with quarter notes, and scores saved before eighth notes open with their notes on the same beats as before.
 
 Clicking a note takes it out again, whatever its sharp or flat. The note under the pointer turns red to show that a click will remove it. Notes are added and taken out when the mouse is let go, as long as it hasn't moved.
 
@@ -137,7 +137,7 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
 | `Source/MainComponent.*` | The File and MIDI menus, the toolbar, the sidebar, the two instruments' scrolling staves and their volume dials, the piano, and the audio output |
-| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's quarter notes, chords and alternate staff (a part, in the code), and saving it as JSON |
+| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, chords and alternate staff (a part, in the code), and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
 | `Source/Music.*` | Music theory: keys, spelling, and building, recognising and naming chords |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
@@ -145,7 +145,7 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, time signature and measures settings |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |
-| `Source/NoteLengthPicker.*` | The whole, dotted half, half and quarter note buttons for choosing the length of the notes clicks add |
+| `Source/NoteLengthPicker.*` | The whole, dotted half, half, quarter and eighth note buttons for choosing the length of the notes clicks add |
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls |
 | `Source/InstrumentHost.*` | Hosts each instrument's plugin, and plays them from the piano, MIDI controllers and the score, once or looping |

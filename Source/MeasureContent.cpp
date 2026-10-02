@@ -78,15 +78,17 @@ namespace
 
     StaffContent getNotesContent (const Score& score, int part, Staff staff, int measure, const std::array<int, 7>& keyAlterations)
     {
+        // Notes start on eighth notes: on a beat, or halfway through one.
         const auto beats = score.getBeatsPerMeasure();
+        const auto slots = beats * Score::slotsPerBeat;
+        const auto beatOf = [] (int slot) { return (double) slot / Score::slotsPerBeat; };
+        const auto isEmpty = [&] (int slot) { return score.getNotes (part, staff, measure, beatOf (slot)).empty(); };
         StaffContent content;
-
-        const auto isEmpty = [&] (int beat) { return score.getNotes (part, staff, measure, beat).empty(); };
 
         bool allEmpty = true;
 
-        for (int beat = 0; beat < beats; ++beat)
-            allEmpty = allEmpty && isEmpty (beat);
+        for (int slot = 0; slot < slots; ++slot)
+            allEmpty = allEmpty && isEmpty (slot);
 
         // An empty measure gets a whole rest in any time signature.
         if (allEmpty)
@@ -95,50 +97,73 @@ namespace
             return content;
         }
 
-        for (int beat = 0; beat < beats; ++beat)
-        {
-            if (! isEmpty (beat))
-            {
-                // As long as they were added, or as fits in what's left of the measure. Any notes
-                // on the beats they cover, which only a damaged file could have, aren't shown.
-                const auto length = juce::jlimit (1, beats - beat, score.getNoteLength (part, staff, measure, beat));
-                StaffEvent event { (double) beat, getDurationForBeats (length), {}, false, false };
+        auto eighths = false;
 
-                for (const auto& pitch : score.getNotes (part, staff, measure, beat))
+        for (int slot = 0; slot < slots;)
+        {
+            const auto onset = beatOf (slot);
+
+            if (! isEmpty (slot))
+            {
+                // As long as they were added, or as long as fits in what's left of the measure. Any
+                // notes they cover, which only a damaged file could have, aren't shown.
+                const auto added = (int) std::lround (score.getNoteLength (part, staff, measure, onset) * Score::slotsPerBeat);
+                const auto length = Score::fitNoteLength (added, slots - slot);
+                StaffEvent event { onset, getDurationForBeats (beatOf (length)), {}, false, false };
+
+                for (const auto& pitch : score.getNotes (part, staff, measure, onset))
                 {
                     event.tones.push_back (makeTone (pitch, keyAlterations));
 
-                    if (score.isTied (part, staff, measure, beat, pitch))
-                        content.tiedNotes.push_back ({ (double) beat, pitch });
+                    if (score.isTied (part, staff, measure, onset, pitch))
+                        content.tiedNotes.push_back ({ onset, pitch });
                 }
 
+                eighths = eighths || length == 1;
                 content.events.push_back (event);
-                beat += length - 1;
+                slot += length;
                 continue;
             }
 
-            // Two empty beats that make up the first half of 4/4 or 3/4, or the second half of
-            // 4/4, share a half rest.
-            if (beat % 2 == 0 && beat + 1 < beats && isEmpty (beat + 1))
+            // A whole beat that's empty gets a quarter rest, and two that make up the first half
+            // of 4/4 or 3/4, or the second half of 4/4, share a half rest. Half a beat gets an
+            // eighth rest.
+            const auto beat = slot / Score::slotsPerBeat;
+            const auto beatEmpty = slot % Score::slotsPerBeat == 0 && isEmpty (slot + 1);
+
+            if (beatEmpty && beat % 2 == 0 && beat + 1 < beats && isEmpty (slot + 2) && isEmpty (slot + 3))
             {
-                content.events.push_back ({ (double) beat, Duration::half, {}, false, false });
-                ++beat;
-                continue;
+                content.events.push_back ({ onset, Duration::half, {}, false, false });
+                slot += 2 * Score::slotsPerBeat;
             }
-
-            content.events.push_back ({ (double) beat, Duration::quarter, {}, false, false });
+            else if (beatEmpty)
+            {
+                content.events.push_back ({ onset, Duration::quarter, {}, false, false });
+                slot += Score::slotsPerBeat;
+            }
+            else
+            {
+                content.events.push_back ({ onset, Duration::eighth, {}, false, false });
+                eighths = true;
+                ++slot;
+            }
         }
+
+        // Eighths need room, and are beamed a beat at a time.
+        if (eighths)
+            content.notesPerBeat = 2;
 
         return content;
     }
 }
 
-Duration getDurationForBeats (int beats)
+Duration getDurationForBeats (double beats)
 {
-    return beats >= 4 ? Duration::whole
-         : beats == 3 ? Duration::dottedHalf
-         : beats == 2 ? Duration::half
-                      : Duration::quarter;
+    return beats >= 4.0 ? Duration::whole
+         : beats >= 3.0 ? Duration::dottedHalf
+         : beats >= 2.0 ? Duration::half
+         : beats >= 1.0 ? Duration::quarter
+                        : Duration::eighth;
 }
 
 double getBeats (Duration duration)

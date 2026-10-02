@@ -7,22 +7,22 @@
 #include <array>
 #include <functional>
 
-/** Small buttons, side by side, showing a whole, a dotted half, a half and a quarter note, for
-    choosing how long the notes that clicks add are. One is chosen at a time.
+/** Small buttons, side by side, showing a whole, a dotted half, a half, a quarter and an eighth
+    note, for choosing how long the notes that clicks add are. One is chosen at a time.
 */
 class NoteLengthPicker final : public juce::Component
 {
 public:
     NoteLengthPicker();
 
-    /** The length chosen, in beats: 4, 3, 2 or 1. */
-    int getLength() const noexcept { return length; }
+    /** The length chosen, in beats: 4, 3, 2, 1 or 0.5. */
+    double getLength() const noexcept { return length; }
 
     /** Chooses a length, in beats, without calling onChange. */
-    void setLength (int beats);
+    void setLength (double beats);
 
     /** Called when a button's clicked, with the length it chooses. */
-    std::function<void (int beats)> onChange;
+    std::function<void (double beats)> onChange;
 
     /** The size the buttons need, side by side. */
     juce::Rectangle<int> getIdealBounds() const;
@@ -35,17 +35,17 @@ private:
     /** A button showing a note. */
     struct NoteButton final : public juce::Button
     {
-        NoteButton (const MusicGlyphs&, int beats);
+        NoteButton (const MusicGlyphs&, double beats);
 
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
 
         const MusicGlyphs& glyphs;
-        const int beats;
+        const double beats;
     };
 
     MusicGlyphs glyphs;
-    std::array<std::unique_ptr<NoteButton>, 4> buttons;
-    int length = 1;
+    std::array<std::unique_ptr<NoteButton>, 5> buttons;
+    double length = 1.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoteLengthPicker)
 };

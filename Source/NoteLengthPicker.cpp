@@ -11,8 +11,9 @@ namespace
 NoteLengthPicker::NoteLengthPicker()
     : glyphs (glyphStaffSpace)
 {
-    // Whole, dotted half, half and quarter, longest first
-    for (auto [index, beats, name] : { std::tuple { 0, 4, "Whole" }, { 1, 3, "Dotted half" }, { 2, 2, "Half" }, { 3, 1, "Quarter" } })
+    // Whole, dotted half, half, quarter and eighth, longest first
+    for (auto [index, beats, name] : { std::tuple { 0, 4.0, "Whole" }, { 1, 3.0, "Dotted half" }, { 2, 2.0, "Half" },
+                                       { 3, 1.0, "Quarter" }, { 4, 0.5, "Eighth" } })
     {
         auto& button = buttons[(size_t) index];
         button = std::make_unique<NoteButton> (glyphs, beats);
@@ -30,16 +31,16 @@ NoteLengthPicker::NoteLengthPicker()
         addAndMakeVisible (*button);
     }
 
-    setLength (1);
+    setLength (1.0);
     setSize (getIdealBounds().getWidth(), getIdealBounds().getHeight());
 }
 
-void NoteLengthPicker::setLength (int beats)
+void NoteLengthPicker::setLength (double beats)
 {
     length = beats;
 
     for (auto& button : buttons)
-        button->setToggleState (button->beats == beats, juce::dontSendNotification);
+        button->setToggleState (juce::exactlyEqual (button->beats, beats), juce::dontSendNotification);
 }
 
 juce::Rectangle<int> NoteLengthPicker::getIdealBounds() const
@@ -54,7 +55,7 @@ void NoteLengthPicker::resized()
 }
 
 //==============================================================================
-NoteLengthPicker::NoteButton::NoteButton (const MusicGlyphs& glyphsToUse, int beatsToShow)
+NoteLengthPicker::NoteButton::NoteButton (const MusicGlyphs& glyphsToUse, double beatsToShow)
     : juce::Button ({}),
       glyphs (glyphsToUse),
       beats (beatsToShow)
@@ -71,17 +72,18 @@ void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highligh
     g.setColour (chosen ? controls::accent.withAlpha (0.6f) : juce::Colours::black.withAlpha (0.18f));
     g.drawRoundedRectangle (bounds, 5.0f, 1.0f);
 
-    // The note: an open notehead for a whole or half note, a filled one for a quarter, a stem up
-    // for all but the whole note, and a dot after a dotted half.
-    const auto glyph = beats >= 4 ? Smufl::noteheadWhole : beats >= 2 ? Smufl::noteheadHalf : Smufl::noteheadBlack;
-    const auto dotted = beats == 3;
+    // The note: an open notehead for a whole or half note, a filled one for a quarter or eighth,
+    // a stem up for all but the whole note, a flag on the eighth's stem and a dot after a dotted half.
+    const auto glyph = beats >= 4.0 ? Smufl::noteheadWhole : beats >= 2.0 ? Smufl::noteheadHalf : Smufl::noteheadBlack;
+    const auto dotted = juce::exactlyEqual (beats, 3.0);
+    const auto flagged = beats < 1.0;
     const auto headBounds = glyphs.getPath (glyph).getBounds();
-    const auto hasStem = beats < 4;
+    const auto hasStem = beats < 4.0;
     const auto stemLength = 2.8f * glyphStaffSpace;
     const auto noteHeight = headBounds.getHeight() + (hasStem ? stemLength - headBounds.getHeight() / 2.0f : 0.0f);
 
-    // A dotted note is moved left a little, to leave room for its dot.
-    const auto centre = bounds.getCentre().translated (dotted ? -0.35f * glyphStaffSpace : 0.0f, 0.0f);
+    // A dotted or flagged note is moved left a little, to leave room for its dot or flag.
+    const auto centre = bounds.getCentre().translated (dotted || flagged ? -0.35f * glyphStaffSpace : 0.0f, 0.0f);
     const auto origin = juce::Point<float> (centre.x - headBounds.getCentreX(),
                                             centre.y + noteHeight / 2.0f - headBounds.getBottom());
 
@@ -97,5 +99,9 @@ void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highligh
         const auto right = origin.x + headBounds.getRight();
         g.fillRect (juce::Rectangle<float>::leftTopRightBottom (right - stemThickness, origin.y - stemLength,
                                                                 right, origin.y - 0.168f * glyphStaffSpace));
+
+        // The flag's anchor meets the top of the stem, from Bravura's metadata.
+        if (flagged)
+            glyphs.draw (g, Smufl::flag8thUp, { right - stemThickness, origin.y - stemLength - 0.04f * glyphStaffSpace });
     }
 }

@@ -5,22 +5,28 @@
 #include <juce_events/juce_events.h>
 
 #include <array>
+#include <cmath>
 #include <optional>
 #include <vector>
 
 using music::Staff;
 
-/** A note starting on one beat of one staff, in one of the score's parts. */
+/** A note on one staff, in one of the score's parts, starting on a beat or halfway through one. */
 struct Note
 {
     Staff staff;
     int measure;
-    int beat;
+    double beat;        // from the start of the measure: 0, 0.5, 1, 1.5...
     music::Pitch pitch;
     int part = 0;
-    int length = 1;     // in beats: 1 for a quarter note, 2 for a half note, 4 for a whole note
+    double length = 1;  // in beats: 0.5 for an eighth note, 1 for a quarter, 2 for a half, 3 for a dotted half, 4 for a whole
 
-    bool operator== (const Note&) const = default;
+    bool operator== (const Note& other) const
+    {
+        // Beats and lengths are whole numbers of eighth notes, so they're compared exactly.
+        return staff == other.staff && measure == other.measure && juce::exactlyEqual (beat, other.beat)
+            && pitch == other.pitch && part == other.part && juce::exactlyEqual (length, other.length);
+    }
 };
 
 /** How a measure's chord is written: which staff it's on, and as what type of chord. What the
@@ -63,6 +69,10 @@ class Score : public juce::ChangeBroadcaster
 {
 public:
     static constexpr int maxBeatsPerMeasure = 4;
+
+    /** Notes start on eighth notes: on a beat, or halfway through one. */
+    static constexpr int slotsPerBeat = 2;
+    static constexpr int maxSlotsPerMeasure = maxBeatsPerMeasure * slotsPerBeat;
     static constexpr int initialMeasures = 4;
     static constexpr int numParts = 2;
 
@@ -116,45 +126,53 @@ public:
     void cloneMeasures();
 
     //==============================================================================
-    /** Adds a note, as long as it asks, or as fits in what's left of the measure. It takes the
-        place of any notes on the beats it covers, and cuts short a longer note it starts during.
-        The notes starting on the same beat all have the same length, so they take the new one's.
-        Returns false if the score already has it, or its staff is taken by the measure's chord.
+    /** Adds a note, as long as it asks, or as long as fits in what's left of the measure: the
+        longest of a whole, dotted half, half, quarter or eighth note that does. It takes the place
+        of any notes it covers, and cuts short a longer note it starts during. The notes starting
+        together all have the same length, so they take the new one's. Returns false if the score
+        already has it, or its staff is taken by the measure's chord.
+
+        Beats are counted from 0, and notes start on them or halfway through them.
     */
     bool addNote (const Note&);
 
-    /** The notes starting on one beat of one staff, lowest first. */
-    const std::vector<music::Pitch>& getNotes (int part, Staff, int measure, int beat) const;
+    /** The notes starting at one point of one staff, lowest first. */
+    const std::vector<music::Pitch>& getNotes (int part, Staff, int measure, double beat) const;
 
-    /** How many beats the notes starting on a beat last, as they were added. A shorter time
+    /** How many beats the notes starting at a point last, as they were added. A shorter time
         signature can leave less room than this, and they're shortened to fit when they're shown.
     */
-    int getNoteLength (int part, Staff, int measure, int beat) const;
+    double getNoteLength (int part, Staff, int measure, double beat) const;
 
-    static constexpr int maxNoteLength = 4;
+    static constexpr double maxNoteLength = 4.0;
+
+    /** The longest note that's no longer than asked, and fits in the room there is, both in
+        eighth notes: a whole, dotted half, half, quarter or eighth note.
+    */
+    static int fitNoteLength (int slots, int room);
 
     //==============================================================================
-    /** Where the notes starting on a beat end: the measure and beat the next notes would start
+    /** Where the notes starting at a point end: the measure and beat the next notes would start
         on, or nothing if that's past the end of the score.
     */
-    std::optional<std::pair<int, int>> getFollowingBeat (int part, Staff, int measure, int beat) const;
+    std::optional<std::pair<int, double>> getFollowingBeat (int part, Staff, int measure, double beat) const;
 
     /** Whether a note is tied to the note of the same pitch that starts just as it ends, which
         it's held on through. A tie can cross a barline.
     */
-    bool isTied (int part, Staff, int measure, int beat, music::Pitch) const;
+    bool isTied (int part, Staff, int measure, double beat, music::Pitch) const;
 
     /** Ties two notes of the same pitch together, either way round, or unties them if they're
         tied. They have to follow one another: the second starting just as the first ends.
         Returns false, changing nothing, if they can't be tied.
     */
-    bool toggleTie (int part, Staff, int measure, int beat, int otherMeasure, int otherBeat, music::Pitch);
+    bool toggleTie (int part, Staff, int measure, double beat, int otherMeasure, double otherBeat, music::Pitch);
 
-    /** Whether a beat of a staff has a quarter note on this line or space, whatever its sharp or flat. */
-    bool hasNoteAt (int part, Staff, int measure, int beat, int step) const;
+    /** Whether a staff has a note starting at a point on this line or space, whatever its sharp or flat. */
+    bool hasNoteAt (int part, Staff, int measure, double beat, int step) const;
 
-    /** Removes the quarter notes on a line or space of one beat. Returns false if there weren't any. */
-    bool removeNotesAt (int part, Staff, int measure, int beat, int step);
+    /** Removes the notes starting at a point on a line or space. Returns false if there weren't any. */
+    bool removeNotesAt (int part, Staff, int measure, double beat, int step);
 
     //==============================================================================
     /** The measure's chord, or null if it doesn't have one. */
@@ -225,21 +243,22 @@ public:
 private:
     struct Measure
     {
-        std::array<std::array<std::vector<music::Pitch>, maxBeatsPerMeasure>, 2> notes;
-        std::array<std::array<int, maxBeatsPerMeasure>, 2> lengths { { { 1, 1, 1, 1 }, { 1, 1, 1, 1 } } };     // in beats
-        std::array<std::array<std::vector<music::Pitch>, maxBeatsPerMeasure>, 2> ties;    // the notes tied to the next
+        // By eighth note: the notes starting there, how many eighths they last, and which are tied to the next
+        std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> notes;
+        std::array<std::array<int, maxSlotsPerMeasure>, 2> lengths { { { 2, 2, 2, 2, 2, 2, 2, 2 }, { 2, 2, 2, 2, 2, 2, 2, 2 } } };
+        std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> ties;
         std::optional<MeasureChord> chord;
 
         /** Takes out all of a staff's notes. */
         void clearNotes (Staff staff)
         {
-            for (auto& beat : notes[(size_t) staff])
-                beat.clear();
+            for (auto& slot : notes[(size_t) staff])
+                slot.clear();
 
-            for (auto& beat : ties[(size_t) staff])
-                beat.clear();
+            for (auto& slot : ties[(size_t) staff])
+                slot.clear();
 
-            lengths[(size_t) staff].fill (1);
+            lengths[(size_t) staff].fill (slotsPerBeat);
         }
     };
 
@@ -255,6 +274,11 @@ private:
 
     /** Lets go of ties whose notes aren't there any more, or don't follow one another now. */
     void pruneTies();
+
+    int getSlotsPerMeasure() const noexcept { return beatsPerMeasure * slotsPerBeat; }
+    static int toSlot (double beat) { return (int) std::lround (beat * slotsPerBeat); }
+    static double toBeats (int slots) { return (double) slots / slotsPerBeat; }
+    std::optional<std::pair<int, int>> getFollowingSlot (int part, Staff, int measure, int slot) const;
 
     std::array<Part, numParts> parts;
     int keyIndex = 0;

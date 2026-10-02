@@ -150,9 +150,11 @@ void Score::removeLastMeasure()
 //==============================================================================
 bool Score::addNote (const Note& note)
 {
-    jassert (juce::isPositiveAndBelow (note.measure, getNumMeasures()));
-    jassert (juce::isPositiveAndBelow (note.beat, beatsPerMeasure));
+    const auto slot = toSlot (note.beat);
+    const auto slots = getSlotsPerMeasure();
 
+    jassert (juce::isPositiveAndBelow (note.measure, getNumMeasures()));
+    jassert (juce::isPositiveAndBelow (slot, slots));
     jassert (juce::isPositiveAndBelow (note.part, numParts));
 
     if (chordUsesStaff (note.part, note.measure, note.staff))
@@ -161,28 +163,28 @@ bool Score::addNote (const Note& note)
     auto& measure = getMeasure (note.part, note.measure);
     auto& staffNotes = measure.notes[(size_t) note.staff];
     auto& lengths = measure.lengths[(size_t) note.staff];
-    auto& notes = staffNotes[(size_t) note.beat];
-    const auto length = juce::jlimit (1, beatsPerMeasure - note.beat, note.length);
+    auto& notes = staffNotes[(size_t) slot];
+    const auto length = fitNoteLength (toSlot (note.length), slots - slot);
     const auto insertionPoint = std::lower_bound (notes.begin(), notes.end(), note.pitch, comesBefore);
     const auto alreadyThere = insertionPoint != notes.end() && *insertionPoint == note.pitch;
 
-    if (alreadyThere && lengths[(size_t) note.beat] == length)
+    if (alreadyThere && lengths[(size_t) slot] == length)
         return false;
 
-    // A longer note held over this beat is cut short to end here.
-    for (int earlier = 0; earlier < note.beat; ++earlier)
-        if (! staffNotes[(size_t) earlier].empty() && earlier + lengths[(size_t) earlier] > note.beat)
-            lengths[(size_t) earlier] = note.beat - earlier;
+    // A longer note held over this point is cut short to end here, as long as a note can be.
+    for (int earlier = 0; earlier < slot; ++earlier)
+        if (! staffNotes[(size_t) earlier].empty() && earlier + lengths[(size_t) earlier] > slot)
+            lengths[(size_t) earlier] = fitNoteLength (slot - earlier, slot - earlier);
 
-    // The new note takes the place of the notes on the beats it covers.
-    for (auto covered = note.beat + 1; covered < note.beat + length; ++covered)
+    // The new note takes the place of the notes it covers.
+    for (auto covered = slot + 1; covered < slot + length; ++covered)
     {
         staffNotes[(size_t) covered].clear();
-        lengths[(size_t) covered] = 1;
+        lengths[(size_t) covered] = slotsPerBeat;
     }
 
-    // Notes already on the beat take the new length, as notes starting together share one.
-    lengths[(size_t) note.beat] = length;
+    // Notes already there take the new length, as notes starting together share one.
+    lengths[(size_t) slot] = length;
 
     if (! alreadyThere)
         notes.insert (insertionPoint, note.pitch);
@@ -192,24 +194,35 @@ bool Score::addNote (const Note& note)
     return true;
 }
 
-const std::vector<music::Pitch>& Score::getNotes (int part, Staff staff, int measure, int beat) const
+int Score::fitNoteLength (int slots, int room)
 {
-    return getMeasure (part, measure).notes[(size_t) staff][(size_t) beat];
+    // Whole, dotted half, half, quarter and eighth notes, in eighths
+    for (auto length : { 8, 6, 4, 2, 1 })
+        if (length <= slots && length <= room)
+            return length;
+
+    return 1;
 }
 
-int Score::getNoteLength (int part, Staff staff, int measure, int beat) const
+const std::vector<music::Pitch>& Score::getNotes (int part, Staff staff, int measure, double beat) const
 {
-    return getMeasure (part, measure).lengths[(size_t) staff][(size_t) beat];
+    return getMeasure (part, measure).notes[(size_t) staff][(size_t) toSlot (beat)];
+}
+
+double Score::getNoteLength (int part, Staff staff, int measure, double beat) const
+{
+    return toBeats (getMeasure (part, measure).lengths[(size_t) staff][(size_t) toSlot (beat)]);
 }
 
 //==============================================================================
-std::optional<std::pair<int, int>> Score::getFollowingBeat (int part, Staff staff, int measure, int beat) const
+std::optional<std::pair<int, int>> Score::getFollowingSlot (int part, Staff staff, int measure, int slot) const
 {
     // As long as the notes are shown: as added, or as fits in the measure.
-    const auto length = juce::jlimit (1, beatsPerMeasure - beat, getNoteLength (part, staff, measure, beat));
+    const auto slots = getSlotsPerMeasure();
+    const auto length = fitNoteLength (getMeasure (part, measure).lengths[(size_t) staff][(size_t) slot], slots - slot);
 
-    if (beat + length < beatsPerMeasure)
-        return std::pair { measure, beat + length };
+    if (slot + length < slots)
+        return std::pair { measure, slot + length };
 
     if (measure + 1 < getNumMeasures())
         return std::pair { measure + 1, 0 };
@@ -217,44 +230,56 @@ std::optional<std::pair<int, int>> Score::getFollowingBeat (int part, Staff staf
     return {};
 }
 
-bool Score::isTied (int part, Staff staff, int measure, int beat, music::Pitch pitch) const
+std::optional<std::pair<int, double>> Score::getFollowingBeat (int part, Staff staff, int measure, double beat) const
 {
-    if (beat >= beatsPerMeasure)
+    if (const auto next = getFollowingSlot (part, staff, measure, toSlot (beat)))
+        return std::pair { next->first, toBeats (next->second) };
+
+    return {};
+}
+
+bool Score::isTied (int part, Staff staff, int measure, double beat, music::Pitch pitch) const
+{
+    const auto slot = toSlot (beat);
+
+    if (slot >= getSlotsPerMeasure())
         return false;
 
-    const auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) beat];
+    const auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) slot];
 
     if (std::find (ties.begin(), ties.end(), pitch) == ties.end())
         return false;
 
     const auto& notes = getNotes (part, staff, measure, beat);
-    const auto next = getFollowingBeat (part, staff, measure, beat);
+    const auto next = getFollowingSlot (part, staff, measure, slot);
 
     if (std::find (notes.begin(), notes.end(), pitch) == notes.end() || ! next.has_value())
         return false;
 
-    const auto& nextNotes = getNotes (part, staff, next->first, next->second);
+    const auto& nextNotes = getMeasure (part, next->first).notes[(size_t) staff][(size_t) next->second];
     return std::find (nextNotes.begin(), nextNotes.end(), pitch) != nextNotes.end();
 }
 
-bool Score::toggleTie (int part, Staff staff, int measure, int beat, int otherMeasure, int otherBeat, music::Pitch pitch)
+bool Score::toggleTie (int part, Staff staff, int measure, double beat, int otherMeasure, double otherBeat, music::Pitch pitch)
 {
+    auto slot = toSlot (beat), otherSlot = toSlot (otherBeat);
+
     // The tie goes from the earlier note to the later.
-    if (std::pair { otherMeasure, otherBeat } < std::pair { measure, beat })
+    if (std::pair { otherMeasure, otherSlot } < std::pair { measure, slot })
     {
         std::swap (measure, otherMeasure);
-        std::swap (beat, otherBeat);
+        std::swap (slot, otherSlot);
     }
 
-    const auto& notes = getNotes (part, staff, measure, beat);
-    const auto& otherNotes = getNotes (part, staff, otherMeasure, otherBeat);
+    const auto& notes = getMeasure (part, measure).notes[(size_t) staff][(size_t) slot];
+    const auto& otherNotes = getMeasure (part, otherMeasure).notes[(size_t) staff][(size_t) otherSlot];
 
     if (std::find (notes.begin(), notes.end(), pitch) == notes.end()
         || std::find (otherNotes.begin(), otherNotes.end(), pitch) == otherNotes.end()
-        || getFollowingBeat (part, staff, measure, beat) != std::optional<std::pair<int, int>> ({ otherMeasure, otherBeat }))
+        || getFollowingSlot (part, staff, measure, slot) != std::optional<std::pair<int, int>> ({ otherMeasure, otherSlot }))
         return false;
 
-    auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) beat];
+    auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) slot];
 
     if (std::erase (ties, pitch) == 0)
         ties.push_back (pitch);
@@ -265,36 +290,34 @@ bool Score::toggleTie (int part, Staff staff, int measure, int beat, int otherMe
 
 void Score::pruneTies()
 {
+    // Notes a shorter time signature hides keep their ties, for when they're back.
     for (int part = 0; part < numParts; ++part)
         for (int measure = 0; measure < getNumMeasures(); ++measure)
             for (auto staff : { Staff::treble, Staff::bass })
-                for (int beat = 0; beat < maxBeatsPerMeasure; ++beat)
+                for (int slot = 0; slot < getSlotsPerMeasure(); ++slot)
                 {
-                    // Beats a shorter time signature hides keep their ties, for when they're back.
-                    if (beat >= beatsPerMeasure)
-                        continue;
-
-                    auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) beat];
-                    std::erase_if (ties, [&] (const music::Pitch& pitch) { return ! isTied (part, staff, measure, beat, pitch); });
+                    auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) slot];
+                    std::erase_if (ties, [&] (const music::Pitch& pitch) { return ! isTied (part, staff, measure, toBeats (slot), pitch); });
                 }
 }
 
-bool Score::hasNoteAt (int part, Staff staff, int measure, int beat, int step) const
+bool Score::hasNoteAt (int part, Staff staff, int measure, double beat, int step) const
 {
     const auto& notes = getNotes (part, staff, measure, beat);
     return std::any_of (notes.begin(), notes.end(), [step] (const music::Pitch& pitch) { return pitch.step == step; });
 }
 
-bool Score::removeNotesAt (int part, Staff staff, int measure, int beat, int step)
+bool Score::removeNotesAt (int part, Staff staff, int measure, double beat, int step)
 {
+    const auto slot = (size_t) toSlot (beat);
     auto& target = getMeasure (part, measure);
-    auto& notes = target.notes[(size_t) staff][(size_t) beat];
+    auto& notes = target.notes[(size_t) staff][slot];
 
     if (std::erase_if (notes, [step] (const music::Pitch& pitch) { return pitch.step == step; }) == 0)
         return false;
 
     if (notes.empty())
-        target.lengths[(size_t) staff][(size_t) beat] = 1;
+        target.lengths[(size_t) staff][slot] = slotsPerBeat;
 
     pruneTies();
 
@@ -507,7 +530,8 @@ namespace
     constexpr auto formatName = "Anthropocene Music score";
     // 2: the alternate staff is the score's, not each chord's
     // 3: two parts, each with its own measures and alternate staff
-    constexpr int formatVersion = 3;
+    // 4: notes by eighth note, rather than by beat, with their lengths in eighths
+    constexpr int formatVersion = 4;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -575,7 +599,7 @@ juce::var Score::toJSON() const
     {
         auto* measureObject = new juce::DynamicObject();
 
-        // Every beat is kept, including ones hidden by a shorter time signature.
+        // By eighth note, every one kept, including ones hidden by a shorter time signature
         for (auto staff : { Staff::treble, Staff::bass })
         {
             juce::Array<juce::var> beats;
@@ -592,7 +616,7 @@ juce::var Score::toJSON() const
 
             measureObject->setProperty (staff == Staff::treble ? "treble" : "bass", beats);
 
-            // How many beats the notes on each beat last
+            // How many eighths the notes starting at each eighth last
             juce::Array<juce::var> lengths;
 
             for (auto length : measure.lengths[(size_t) staff])
@@ -600,7 +624,7 @@ juce::var Score::toJSON() const
 
             measureObject->setProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", lengths);
 
-            // The notes on each beat that are tied to the next
+            // The notes starting at each eighth that are tied to the next
             juce::Array<juce::var> ties;
 
             for (const auto& tied : measure.ties[(size_t) staff])
@@ -694,19 +718,25 @@ juce::Result Score::loadJSON (const juce::var& json)
         std::vector<Measure> loaded;
         std::vector<music::AlternateStaff> chordAlternates;     // each chord's own, in scores from before version 2
 
+        // Scores from before version 4 have their notes by beat, and their lengths in beats.
+        const auto eighthsPerEntry = readInt (json.getProperty ("version", {}), 1, 1000, 1) >= 4 ? 1 : slotsPerBeat;
+
         for (const auto& item : *measureList)
         {
             Measure measure;
 
             for (auto staff : { Staff::treble, Staff::bass })
             {
-                const auto& beats = item.getProperty (staff == Staff::treble ? "treble" : "bass", {});
+                const auto& entries = item.getProperty (staff == Staff::treble ? "treble" : "bass", {});
+                const auto* lengths = item.getProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", {}).getArray();
+                const auto* ties = item.getProperty (staff == Staff::treble ? "trebleTies" : "bassTies", {}).getArray();
 
-                for (int beat = 0; beat < maxBeatsPerMeasure; ++beat)
+                for (int entry = 0; entry < maxSlotsPerMeasure / eighthsPerEntry; ++entry)
                 {
-                    auto& notes = measure.notes[(size_t) staff][(size_t) beat];
+                    const auto slot = (size_t) (entry * eighthsPerEntry);
+                    auto& notes = measure.notes[(size_t) staff][slot];
 
-                    if (const auto* pitches = beats[beat].getArray())
+                    if (const auto* pitches = entries[entry].getArray())
                         for (const auto& pitch : *pitches)
                             if (const auto step = readInt (pitch[0], 0, 80, -1); step >= 0)
                                 notes.push_back ({ step, readInt (pitch[1], -2, 2, 0) });
@@ -715,18 +745,18 @@ juce::Result Score::loadJSON (const juce::var& json)
                     notes.erase (std::unique (notes.begin(), notes.end()), notes.end());
 
                     // Scores from before notes had lengths have quarter notes.
-                    const auto* lengths = item.getProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", {}).getArray();
-                    const auto hasLength = lengths != nullptr && beat < lengths->size();
-                    measure.lengths[(size_t) staff][(size_t) beat] = notes.empty() || ! hasLength ? 1 : readInt (lengths->getReference (beat), 1, maxNoteLength, 1);
+                    const auto hasLength = lengths != nullptr && entry < lengths->size();
+                    const auto length = hasLength ? readInt (lengths->getReference (entry), 1, maxSlotsPerMeasure / eighthsPerEntry, 0) * eighthsPerEntry : 0;
+                    measure.lengths[(size_t) staff][slot] = notes.empty() || length == 0 ? slotsPerBeat : fitNoteLength (length, maxSlotsPerMeasure - (int) slot);
 
                     // Ties, from notes that are there. Ones that don't lead anywhere are let go
                     // once the whole score's loaded.
-                    if (const auto* ties = item.getProperty (staff == Staff::treble ? "trebleTies" : "bassTies", {}).getArray(); ties != nullptr && beat < ties->size())
-                        if (const auto* pitches = ties->getReference (beat).getArray())
+                    if (ties != nullptr && entry < ties->size())
+                        if (const auto* pitches = ties->getReference (entry).getArray())
                             for (const auto& pitch : *pitches)
                                 if (const music::Pitch tied { readInt (pitch[0], 0, 80, -1), readInt (pitch[1], -2, 2, 0) };
                                     std::find (notes.begin(), notes.end(), tied) != notes.end())
-                                    measure.ties[(size_t) staff][(size_t) beat].push_back (tied);
+                                    measure.ties[(size_t) staff][slot].push_back (tied);
                 }
             }
 

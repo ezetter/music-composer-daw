@@ -225,8 +225,8 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
     staffSystems.onCloneMeasures = [this] { cloneMeasures(); };
     // Whole, half or quarter notes, for clicking into the staff. Quarter notes to start with.
-    noteLengthPicker.onChange = [this] (int beats) { setNoteLength (beats); };
-    setNoteLength (1);
+    noteLengthPicker.onChange = [this] (double beats) { setNoteLength (beats); };
+    setNoteLength (1.0);
 
     scorePanel.onCopyProgression = [this] { copyProgression(); };
     sidebarContent.addAndMakeVisible (scorePanel);
@@ -516,7 +516,7 @@ void MainComponent::copyProgression()
                                   });
 }
 
-void MainComponent::setNoteLength (int beats)
+void MainComponent::setNoteLength (double beats)
 {
     noteLengthPicker.setLength (beats);
 

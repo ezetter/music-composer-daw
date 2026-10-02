@@ -29,10 +29,11 @@ public:
 
     int getPart() const noexcept { return part; }
 
-    /** How long the notes that clicks add are, in beats: 1 for quarter notes, 2 for half notes,
-        3 for dotted half notes and 4 for whole notes.
+    /** How long the notes that clicks add are, in beats: 0.5 for eighth notes, 1 for quarter
+        notes, 2 for half notes, 3 for dotted half notes and 4 for whole notes. Clicks add eighths
+        halfway through beats as well as on them; the others go on beats.
     */
-    void setNoteLength (int beats);
+    void setNoteLength (double beats);
 
     /** Marks the view as showing the active part, whose instrument the keyboard plays. */
     void setActive (bool);
@@ -103,7 +104,7 @@ private:
     float getOnsetX (int measure, double onset) const;
     float getEventX (int measure, const StaffEvent&) const;
     int findMeasure (float x) const;
-    juce::Rectangle<int> getBeatArea (int measure, int beat) const;
+    juce::Rectangle<int> getBeatArea (int measure, double beat) const;
     juce::Rectangle<float> getMeasureBox (int measure) const;
     float getSymbolBaseline() const;
     float getSymbolOffset() const;          // these offsets are in staff spaces, from the outer staff lines
@@ -132,7 +133,7 @@ private:
         chord, up from its upper notes and down from its lower ones.
     */
     struct TiePoint { juce::Point<float> centre; float halfWidth; bool upwards; };
-    std::optional<TiePoint> getTiePoint (int measure, Staff, int beat, music::Pitch) const;
+    std::optional<TiePoint> getTiePoint (int measure, Staff, double beat, music::Pitch) const;
 
     /** What a click without dragging does: adds or takes out a note. */
     void clickNote (const Note&);
@@ -152,7 +153,7 @@ private:
     const int part;
     MusicGlyphs glyphs;
     bool active = false;
-    int noteLength = 1;
+    double noteLength = 1.0;
     juce::String title;
     std::optional<Note> hoverNote;
     std::optional<Note> pressedNote;                // where the mouse went down, and the note there, if any

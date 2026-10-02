@@ -346,9 +346,9 @@ float StaffView::getMarginBelow() const
     return juce::jmax (minMarginBelow, getNumeralOffset() + 1.4f);
 }
 
-void StaffView::setNoteLength (int beats)
+void StaffView::setNoteLength (double beats)
 {
-    noteLength = juce::jlimit (1, Score::maxNoteLength, beats);
+    noteLength = juce::jlimit (0.5, Score::maxNoteLength, beats);
     setHoverNote ({});
 }
 
@@ -539,7 +539,7 @@ int StaffView::findMeasure (float x) const
     return x < layout.x + layout.width ? measure : -1;
 }
 
-juce::Rectangle<int> StaffView::getBeatArea (int measure, int beat) const
+juce::Rectangle<int> StaffView::getBeatArea (int measure, double beat) const
 {
     if (! juce::isPositiveAndBelow (measure, (int) measureLayouts.size()))
         return {};
@@ -603,10 +603,12 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
     if (point.y < trebleTop - noteRoom * staffSpace || point.y >= bassBottom + noteRoom * staffSpace)
         return {};
 
+    // The nearest beat, or the nearest half beat for an eighth note, or where there are notes
+    // already halfway through a beat
     const auto& layout = measureLayouts[(size_t) measure];
-    const auto beat = juce::jlimit (0, score.getBeatsPerMeasure() - 1,
-                                    (int) std::floor ((point.x - layout.x - layout.padding + layout.beatWidth / 2.0f)
-                                                      / layout.beatWidth));
+    const auto slotWidth = layout.beatWidth / (float) Score::slotsPerBeat;
+    const auto slots = score.getBeatsPerMeasure() * Score::slotsPerBeat;
+    auto slot = juce::jlimit (0, slots - 1, (int) std::floor ((point.x - layout.x - layout.padding + slotWidth / 2.0f) / slotWidth));
 
     const auto staffDivide = trebleTop + (staffHeight + staffGap / 2.0f) * staffSpace;
     const auto staff = point.y < staffDivide ? Staff::treble : Staff::bass;
@@ -616,11 +618,20 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
                                      ? juce::jlimit (lowestTreblePosition, highestTreblePosition, position)
                                      : juce::jlimit (lowestBassPosition, highestBassPosition, position);
 
+    if (slot % Score::slotsPerBeat != 0 && noteLength >= 1.0
+        && score.getNotes (part, staff, measure, (double) slot / Score::slotsPerBeat).empty())
+    {
+        const auto onBeat = juce::jlimit (0, slots - Score::slotsPerBeat,
+                                          (int) std::floor ((point.x - layout.x - layout.padding + layout.beatWidth / 2.0f) / layout.beatWidth)
+                                              * Score::slotsPerBeat);
+        slot = onBeat;
+    }
+
     // The note takes its sharp or flat from the key signature.
     const auto step = getBottomLineStep (staff) + clampedPosition;
     const auto alter = music::getKeyAlterations (score.getKey())[(size_t) music::mod (step, 7)];
 
-    return Note { staff, measure, beat, { step, alter }, part, noteLength };
+    return Note { staff, measure, (double) slot / Score::slotsPerBeat, { step, alter }, part, noteLength };
 }
 
 void StaffView::setPlaybackPosition (std::optional<double> beats)
@@ -821,8 +832,8 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
         notes.emplace_back (event, staff, getEventX (measure, event), alterationsInForce, keyAlterations);
         rolled.push_back (event.rolled);
 
-        // Eighths and sixteenths are beamed a beat at a time.
-        if (beamable)
+        // Eighths and sixteenths are beamed a beat at a time; longer notes break the beams.
+        if (beamable && (event.duration == Duration::eighth || event.duration == Duration::sixteenth))
         {
             const auto beat = (int) std::floor (event.onset);
 
@@ -832,6 +843,10 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
                 beamGroups.push_back ({ notes.size() - 1 });
 
             groupBeat = beat;
+        }
+        else
+        {
+            groupBeat = -1;
         }
     }
 
@@ -1188,11 +1203,14 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
     if (findNoteUnder (*hoverNote).has_value())
         return;
 
-    // The notehead of the length a click adds: filled for a quarter note, open for a half or whole note
-    const auto duration = getDurationForBeats (juce::jmin (hoverNote->length, score.getBeatsPerMeasure() - hoverNote->beat));
+    // The notehead of the length a click adds, once it's fitted into what's left of the measure:
+    // filled for a quarter or eighth note, open for a half or whole note
+    const auto room = (int) std::lround ((score.getBeatsPerMeasure() - hoverNote->beat) * Score::slotsPerBeat);
+    const auto slots = Score::fitNoteLength ((int) std::lround (hoverNote->length * Score::slotsPerBeat), room);
+    const auto duration = getDurationForBeats ((double) slots / Score::slotsPerBeat);
     const auto notehead = duration == Duration::whole ? Smufl::noteheadWhole
-                        : duration == Duration::quarter ? Smufl::noteheadBlack
-                                                        : Smufl::noteheadHalf;
+                        : duration == Duration::quarter || duration == Duration::eighth ? Smufl::noteheadBlack
+                                                                                         : Smufl::noteheadHalf;
     const auto width = getNoteheadWidth (duration) * staffSpace;
     const auto position = hoverNote->pitch.step - getBottomLineStep (hoverNote->staff);
     const auto left = getOnsetX (hoverNote->measure, hoverNote->beat) - width / 2.0f;
@@ -1270,7 +1288,7 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
     // Let go over the next note of the same pitch, the drag ties them, or unties them. Anywhere
     // else, nothing happens.
     if (const auto to = getTieableNoteAt (e.position); from.has_value() && to.has_value() && to->staff == from->staff
-                                                       && to->pitch == from->pitch && (to->measure != from->measure || to->beat != from->beat))
+                                                       && to->pitch == from->pitch && (to->measure != from->measure || ! juce::exactlyEqual (to->beat, from->beat)))
         score.toggleTie (part, from->staff, from->measure, from->beat, to->measure, to->beat, from->pitch);
 }
 
@@ -1323,7 +1341,7 @@ std::optional<Note> StaffView::getTieableNoteAt (juce::Point<float> point) const
 }
 
 //==============================================================================
-std::optional<StaffView::TiePoint> StaffView::getTiePoint (int measure, Staff staff, int beat, music::Pitch pitch) const
+std::optional<StaffView::TiePoint> StaffView::getTiePoint (int measure, Staff staff, double beat, music::Pitch pitch) const
 {
     if (! juce::isPositiveAndBelow (measure, (int) measureLayouts.size()))
         return {};
@@ -1335,7 +1353,7 @@ std::optional<StaffView::TiePoint> StaffView::getTiePoint (int measure, Staff st
 
     for (const auto& event : content.events)
     {
-        if (event.isRest() || ! juce::exactlyEqual (event.onset, (double) beat))
+        if (event.isRest() || ! juce::exactlyEqual (event.onset, beat))
             continue;
 
         std::map<int, int> alterations;
@@ -1392,7 +1410,7 @@ void StaffView::drawTies (juce::Graphics& g, int firstMeasure, int lastMeasure) 
         {
             for (const auto& [onset, pitch] : measureLayouts[(size_t) measure].content.staves[(size_t) staff].tiedNotes)
             {
-                const auto beat = (int) onset;
+                const auto beat = onset;
                 const auto next = score.getFollowingBeat (part, staff, measure, beat);
                 const auto from = getTiePoint (measure, staff, beat, pitch);
                 const auto to = next.has_value() ? getTiePoint (next->first, staff, next->second, pitch) : std::nullopt;
@@ -1425,7 +1443,7 @@ void StaffView::drawTieDrag (juce::Graphics& g) const
 
     if (const auto to = getTieableNoteAt (dragPoint); to.has_value() && to->staff == tieFrom->staff && to->pitch == tieFrom->pitch
                                                       && score.getFollowingBeat (part, to->staff, tieFrom->measure, tieFrom->beat)
-                                                             == std::optional<std::pair<int, int>> ({ to->measure, to->beat }))
+                                                             == std::optional<std::pair<int, double>> ({ to->measure, to->beat }))
     {
         if (const auto point = getTiePoint (to->measure, to->staff, to->beat, to->pitch))
         {

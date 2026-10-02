@@ -120,8 +120,8 @@ private:
     */
     void setActivePart (int part);
 
-    /** Chooses the length of the notes that clicking the staff adds, in beats: 4, 2 or 1. */
-    void setNoteLength (int beats);
+    /** Chooses the length of the notes that clicking the staff adds, in beats: 4, 3, 2, 1 or 0.5. */
+    void setNoteLength (double beats);
 
     /** Gives the other part the active part's chords, asking first if it has notes of its own. */
     void copyProgression();
