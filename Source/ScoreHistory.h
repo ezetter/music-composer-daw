@@ -12,7 +12,8 @@
     redone.
 
     Everything that changes in the score while handling one event, such as a click or a menu
-    command, counts as one change, so it's undone in one go.
+    command, counts as one change, so it's undone in one go, and so does everything changed
+    during a gesture, such as an eraser stroke.
 */
 class ScoreHistory final : private juce::ChangeListener,
                            private juce::AsyncUpdater
@@ -33,6 +34,12 @@ public:
     /** Forgets every change, e.g. when a score's opened, so the score as it is now is where undoing stops. */
     void clear();
 
+    /** Changes made from here until endGesture() count as one, e.g. everything an eraser stroke
+        takes out. Undo and Redo do nothing in the meantime.
+    */
+    void beginGesture();
+    void endGesture();
+
     /** Called when what can be undone or redone changes. */
     std::function<void()> onChange;
 
@@ -50,6 +57,7 @@ private:
     juce::String current;                   // the score as it was after the last change remembered
     std::vector<juce::String> undoStates, redoStates;
     bool restoring = false;
+    int gestures = 0;               // how many are under way
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScoreHistory)
 };

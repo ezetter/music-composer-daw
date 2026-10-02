@@ -227,6 +227,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     // Note lengths for clicking into the staff, quarter notes to start with, or dynamics and hairpins to mark
     noteLengthPicker.onChange = [this] (double beats) { setNoteLength (beats); };
     dynamicPicker.onChange = [this] (std::optional<music::Marking> marking) { setMarking (marking); };
+    eraserButton.onClick = [this] { setErasing (! eraserButton.getToggleState()); };
     setNoteLength (1.0);
 
     scorePanel.onCopyProgression = [this] { copyProgression(); };
@@ -241,6 +242,10 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
         const auto part = view->getPart();
         view->onClicked = [this, part] { setActivePart (part); };
         view->onChordButtonClicked = [this, part] (int measure) { editChord (part, measure); };
+
+        // An eraser stroke is undone in one go, however much it takes out.
+        view->onEraseStarted = [this] { history.beginGesture(); };
+        view->onEraseFinished = [this] { history.endGesture(); };
     }
 
     staffViewport.setViewedComponent (&staffSystems, false);
@@ -299,6 +304,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (volumeColumn);
     addAndMakeVisible (noteLengthPicker);
     addAndMakeVisible (dynamicPicker);
+    addAndMakeVisible (eraserButton);
     staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
     staffViewport.onScroll = [this] { positionVolumeDials(); };
 
@@ -415,6 +421,7 @@ void MainComponent::resized()
     // staves as they scroll.
     noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + 8);
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
+    eraserButton.setBounds (dynamicPicker.getRight() + 14, noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
 }
@@ -526,6 +533,7 @@ void MainComponent::setNoteLength (double beats)
 {
     noteLengthPicker.setLength (beats);
     dynamicPicker.setChoice ({});
+    eraserButton.setToggleState (false, juce::dontSendNotification);
 
     for (auto& view : staffSystems.views)
     {
@@ -544,9 +552,26 @@ void MainComponent::setMarking (std::optional<music::Marking> marking)
 
     dynamicPicker.setChoice (marking);
     noteLengthPicker.setChoiceShown (false);
+    eraserButton.setToggleState (false, juce::dontSendNotification);
 
     for (auto& view : staffSystems.views)
         view->setMarking (marking);
+}
+
+void MainComponent::setErasing (bool shouldErase)
+{
+    if (! shouldErase)
+    {
+        setNoteLength (noteLengthPicker.getLength());
+        return;
+    }
+
+    eraserButton.setToggleState (true, juce::dontSendNotification);
+    dynamicPicker.setChoice ({});
+    noteLengthPicker.setChoiceShown (false);
+
+    for (auto& view : staffSystems.views)
+        view->setErasing (true);
 }
 
 void MainComponent::showPartTitles()

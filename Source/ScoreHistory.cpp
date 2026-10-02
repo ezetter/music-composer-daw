@@ -15,13 +15,13 @@ ScoreHistory::~ScoreHistory()
 bool ScoreHistory::canUndo()
 {
     handleUpdateNowIfNeeded();
-    return ! undoStates.empty();
+    return gestures == 0 && ! undoStates.empty();
 }
 
 bool ScoreHistory::canRedo()
 {
     handleUpdateNowIfNeeded();
-    return ! redoStates.empty();
+    return gestures == 0 && ! redoStates.empty();
 }
 
 void ScoreHistory::undo()
@@ -29,7 +29,7 @@ void ScoreHistory::undo()
     // A change still waiting to be remembered is the one undone.
     handleUpdateNowIfNeeded();
 
-    if (undoStates.empty())
+    if (gestures > 0 || undoStates.empty())
         return;
 
     redoStates.push_back (current);
@@ -43,7 +43,7 @@ void ScoreHistory::redo()
 {
     handleUpdateNowIfNeeded();
 
-    if (redoStates.empty())
+    if (gestures > 0 || redoStates.empty())
         return;
 
     undoStates.push_back (current);
@@ -62,6 +62,24 @@ void ScoreHistory::clear()
     changed();
 }
 
+void ScoreHistory::beginGesture()
+{
+    // What changed before it is a change of its own.
+    handleUpdateNowIfNeeded();
+    ++gestures;
+}
+
+void ScoreHistory::endGesture()
+{
+    jassert (gestures > 0);
+
+    if (gestures > 0 && --gestures == 0)
+    {
+        cancelPendingUpdate();
+        handleAsyncUpdate();
+    }
+}
+
 void ScoreHistory::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     // The changes made while handling this event are remembered together, once it's done.
@@ -71,6 +89,10 @@ void ScoreHistory::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void ScoreHistory::handleAsyncUpdate()
 {
+    // A gesture's changes are remembered together when it ends.
+    if (gestures > 0)
+        return;
+
     auto now = capture();
 
     if (now == current)

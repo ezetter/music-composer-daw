@@ -23,7 +23,8 @@
 
     With a dynamic chosen, clicks mark it instead, between the staves, at the beat clicked. With
     a crescendo or decrescendo chosen, dragging along the staves marks one as long as the drag,
-    and dragging the end of one stretches it.
+    and dragging the end of one stretches it. With the eraser, whatever the mouse passes over
+    with its button held down is taken out.
 */
 class StaffView final : public juce::Component,
                         private juce::ChangeListener
@@ -47,6 +48,33 @@ public:
         stretches it, and clicking a hairpin takes it out.
     */
     void setMarking (std::optional<music::Marking>);
+
+    /** Turns the eraser on or off. While it's on, whatever the mouse passes over with its button
+        held down is taken out: notes, a chord's notes, ties, dynamics and hairpins. What's under
+        the mouse is red, to show it would go. Nothing's added.
+    */
+    void setErasing (bool);
+
+    /** Called when an eraser stroke starts and finishes, so everything it takes out can be undone together. */
+    std::function<void()> onEraseStarted, onEraseFinished;
+
+    /** What the eraser would take out at a point. */
+    struct Erasable
+    {
+        std::optional<Note> note;                       // a note whose head is there
+        std::optional<music::Tone> tone;                // and the note as written, for a chord's
+        std::optional<Note> tie;                        // the note a tie there is from
+        std::optional<std::pair<int, double>> dynamic;  // the measure and beat of a dynamic there
+        std::optional<HairpinMark> hairpin;
+
+        bool isEmpty() const { return ! note.has_value() && ! tie.has_value() && ! dynamic.has_value() && ! hairpin.has_value(); }
+        bool operator== (const Erasable& other) const
+        {
+            return note == other.note && tie == other.tie && dynamic == other.dynamic && hairpin == other.hairpin;
+        }
+    };
+
+    Erasable findErasableAt (juce::Point<float>) const;
 
     /** Marks the view as showing the active part, whose instrument the keyboard plays. */
     void setActive (bool);
@@ -185,6 +213,25 @@ private:
     void drawTieDrag (juce::Graphics&) const;
     void drawTie (juce::Graphics&, juce::Point<float> start, juce::Point<float> end, bool upwards) const;
 
+    /** A tie as it's drawn: the note it's from, and where its curve starts and ends. */
+    struct TieShape
+    {
+        Note from;
+        juce::Point<float> start, end;
+        bool upwards;
+    };
+
+    std::vector<TieShape> getTieShapes (int firstMeasure, int lastMeasure) const;
+
+    /** The point on a tie's curve a fraction of the way along it. */
+    juce::Point<float> getPointOnTie (const TieShape&, float proportion) const;
+    float getTieHeight (juce::Point<float> start, juce::Point<float> end, bool upwards) const;
+
+    /** Takes out whatever the eraser's over at a point, or along the way from one point to another. */
+    void eraseAt (juce::Point<float>);
+    void eraseAlong (juce::Point<float> from, juce::Point<float> to);
+    void setHoverErasable (Erasable);
+
     /** Where a note's head is, and which way a tie from it curves: away from its stem, or for a
         chord, up from its upper notes and down from its lower ones.
     */
@@ -231,6 +278,9 @@ private:
     std::optional<std::pair<int, double>> hoverMarkPoint, pressedDynamic;
     std::optional<HairpinMark> hoverHairpin, pressedHairpin;     // the hairpin under the mouse, and one a click would take out
     std::optional<HairpinDrag> hairpinDrag;
+    bool erasing = false, erasingStroke = false;    // the eraser's chosen, and its button's down
+    juce::Point<float> lastErasePoint;
+    Erasable hoverErasable;
     juce::String title;
     std::optional<Note> hoverNote;
     std::optional<Note> pressedNote;                // where the mouse went down, and the note there, if any

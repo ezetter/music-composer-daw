@@ -6,6 +6,7 @@
 #include "InstrumentPanel.h"
 #include "MidiInputs.h"
 #include "DynamicPicker.h"
+#include "EraserButton.h"
 #include "NoteLengthPicker.h"
 #include "PianoKeyboard.h"
 #include "Score.h"
@@ -135,6 +136,11 @@ private:
     */
     void setMarking (std::optional<music::Marking>);
 
+    /** Turns the eraser on, for taking out whatever the mouse passes over with its button held
+        down, or off, back to adding notes of the length chosen.
+    */
+    void setErasing (bool);
+
     /** Gives the other part the active part's chords, asking first if it has notes of its own. */
     void copyProgression();
 
@@ -203,6 +209,7 @@ private:
     controls::DialLookAndFeel dialLookAndFeel;
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
     DynamicPicker dynamicPicker;        // beside it: a dynamic or hairpin to mark instead
+    EraserButton eraserButton;          // and then the eraser
     juce::Component volumeColumn;       // to the left of the staves, holding a volume dial for each part
     std::array<controls::ClickableDial, Score::numParts> volumeDials;
 

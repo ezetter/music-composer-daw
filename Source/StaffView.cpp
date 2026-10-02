@@ -1,5 +1,7 @@
 #include "StaffView.h"
 
+#include "EraserButton.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -355,11 +357,22 @@ void StaffView::setNoteLength (double beats)
 void StaffView::setMarking (std::optional<music::Marking> newMarking)
 {
     marking = newMarking;
+    erasing = false;
+    hoverErasable = {};
     hoverHairpin.reset();
     setMouseCursor (juce::MouseCursor::NormalCursor);
     setHoverNote ({});
     setHoverMarkPoint ({});
     repaint();
+}
+
+void StaffView::setErasing (bool shouldErase)
+{
+    setMarking ({});
+    erasing = shouldErase;
+
+    if (erasing)
+        setMouseCursor (EraserButton::createCursor());
 }
 
 std::optional<music::Dynamic> StaffView::getChosenDynamic() const
@@ -1427,7 +1440,8 @@ void StaffView::drawHairpins (juce::Graphics& g) const
 
         // Under the mouse, a click will take it out, or a drag stretch it, so it's highlighted.
         const auto hovered = getChosenHairpin().has_value() && ! hoverHintHidden && hoverHairpin == hairpin;
-        g.setColour (hovered ? hoverColour : inkColour);
+        const auto underEraser = erasing && hoverErasable.hairpin == hairpin;
+        g.setColour (underEraser ? removalColour : hovered ? hoverColour : inkColour);
         drawHairpin (g, hairpin.type, getHairpinSpan (hairpin.measure, hairpin.beat, toScoreBeats (hairpin.measure, hairpin.beat) + hairpin.length));
     }
 
@@ -1467,7 +1481,8 @@ void StaffView::drawDynamics (juce::Graphics& g, int measure) const
         {
             // Over a dynamic, a click will replace it or take it out, so it's highlighted.
             const auto hovered = getChosenDynamic().has_value() && ! hoverHintHidden && hoverMarkPoint == std::pair { measure, beat };
-            g.setColour (hovered ? hoverColour : inkColour);
+            const auto underEraser = erasing && hoverErasable.dynamic == std::pair { measure, beat };
+            g.setColour (underEraser ? removalColour : hovered ? hoverColour : inkColour);
             drawCentred (g, Smufl::dynamics[(size_t) *marked], getOnsetX (measure, beat), getDynamicBaseline());
         }
     }
@@ -1499,6 +1514,12 @@ void StaffView::drawCentred (juce::Graphics& g, juce::juce_wchar glyph, float ce
 //==============================================================================
 void StaffView::mouseMove (const juce::MouseEvent& e)
 {
+    if (erasing)
+    {
+        setHoverErasable (findErasableAt (e.position));
+        return;
+    }
+
     if (! marking.has_value())
     {
         setHoverNote (getNoteAt (e.position));
@@ -1522,6 +1543,9 @@ void StaffView::mouseMove (const juce::MouseEvent& e)
 
 void StaffView::mouseExit (const juce::MouseEvent&)
 {
+    if (! erasingStroke)
+        setHoverErasable ({});
+
     setHoverNote ({});
     setHoverMarkPoint ({});
 
@@ -1545,6 +1569,20 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
     if (onClicked != nullptr)
         onClicked();
+
+    // With the eraser, everything the mouse goes over until it's let go is taken out.
+    if (erasing)
+    {
+        erasingStroke = true;
+        lastErasePoint = e.position;
+
+        if (onEraseStarted != nullptr)
+            onEraseStarted();
+
+        eraseAt (e.position);
+        setHoverErasable (findErasableAt (e.position));
+        return;
+    }
 
     // With a dynamic chosen, a click marks it, when the mouse is let go.
     if (getChosenDynamic().has_value())
@@ -1584,6 +1622,14 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
 void StaffView::mouseDrag (const juce::MouseEvent& e)
 {
+    if (erasingStroke)
+    {
+        eraseAlong (lastErasePoint, e.position);
+        lastErasePoint = e.position;
+        setHoverErasable (findErasableAt (e.position));
+        return;
+    }
+
     // A hairpin stretches to the beat nearest the mouse, at least an eighth note long.
     if (hairpinDrag.has_value())
     {
@@ -1609,6 +1655,16 @@ void StaffView::mouseDrag (const juce::MouseEvent& e)
 
 void StaffView::mouseUp (const juce::MouseEvent& e)
 {
+    if (erasingStroke)
+    {
+        erasingStroke = false;
+
+        if (onEraseFinished != nullptr)
+            onEraseFinished();
+
+        return;
+    }
+
     const auto pressed = pressedNote;
     const auto from = tieFrom;
     const auto pressedPoint = pressedDynamic;
@@ -1697,6 +1753,112 @@ void StaffView::clickNote (const Note& note)
     repaint (getBeatArea (note.measure, note.beat));
 }
 
+StaffView::Erasable StaffView::findErasableAt (juce::Point<float> point) const
+{
+    Erasable found;
+
+    // A notehead: on the line or space under the mouse, and near enough across
+    if (const auto spot = getNoteAt (point))
+    {
+        const auto& content = measureLayouts[(size_t) spot->measure].content.staves[(size_t) spot->staff];
+
+        for (const auto& event : content.events)
+            for (const auto& tone : event.tones)
+                if (tone.pitch.step == spot->pitch.step && ! found.note.has_value()
+                    && std::abs (point.x - getEventX (spot->measure, event)) <= 1.4f * staffSpace)
+                {
+                    found.note = Note { spot->staff, spot->measure, event.onset, tone.pitch, part, 1.0 };
+                    found.tone = tone;
+                }
+    }
+
+    // A tie, near its curve
+    const auto measure = findMeasure (point.x);
+    const auto nearMeasure = measure >= 0 ? measure : score.getNumMeasures() - 1;
+
+    for (const auto& tie : getTieShapes (nearMeasure - 1, nearMeasure))
+    {
+        for (int i = 0; i <= 20 && ! found.tie.has_value(); ++i)
+            if (point.getDistanceFrom (getPointOnTie (tie, (float) i / 20.0f)) <= 0.5f * staffSpace)
+                found.tie = tie.from;
+    }
+
+    // A dynamic's letters
+    for (int m = juce::jmax (0, nearMeasure - 1); m <= nearMeasure + 1 && m < score.getNumMeasures() && ! found.dynamic.has_value(); ++m)
+    {
+        for (int slot = 0; slot < score.getBeatsPerMeasure() * Score::slotsPerBeat; ++slot)
+        {
+            const auto beat = (double) slot / Score::slotsPerBeat;
+
+            if (const auto dynamic = score.getDynamic (part, m, beat))
+            {
+                const auto& glyph = glyphs.getPath (Smufl::dynamics[(size_t) *dynamic]);
+                const auto bounds = glyph.getBounds().translated (getOnsetX (m, beat) - glyph.getBounds().getCentreX(), getDynamicBaseline());
+
+                if (bounds.expanded (0.3f * staffSpace).contains (point))
+                    found.dynamic = std::pair { m, beat };
+            }
+        }
+    }
+
+    // A hairpin, anywhere along it
+    if (const auto hairpin = findHairpinAt (point))
+        found.hairpin = hairpin->first;
+
+    return found;
+}
+
+void StaffView::eraseAt (juce::Point<float> point)
+{
+    const auto found = findErasableAt (point);
+
+    // The tie first, as taking out its note would let go of it anyway.
+    if (found.tie.has_value())
+        if (const auto next = score.getFollowingBeat (part, found.tie->staff, found.tie->measure, found.tie->beat))
+            score.toggleTie (part, found.tie->staff, found.tie->measure, found.tie->beat, next->first, next->second, found.tie->pitch);
+
+    if (found.hairpin.has_value())
+        score.removeHairpin (part, found.hairpin->measure, found.hairpin->beat);
+
+    if (found.dynamic.has_value())
+        score.setDynamic (part, found.dynamic->first, found.dynamic->second, std::nullopt);
+
+    // A note is taken out as a click takes it out: from the chord, if it's a chord's.
+    if (found.note.has_value() && found.tone.has_value())
+    {
+        const auto& note = *found.note;
+
+        if (! score.chordUsesStaff (part, note.measure, note.staff))
+            score.removeNotesAt (part, note.staff, note.measure, note.beat, note.pitch.step);
+        else if (const auto* chord = score.getChord (part, note.measure); chord != nullptr && chord->style.staff == note.staff)
+            score.toggleChordNote (part, note.measure, found.tone->midi, chord->style);
+        else
+            score.toggleAlternateNote (part, note.measure, { found.tone->midi, found.tone->pitch.getSpelling() });
+    }
+}
+
+void StaffView::eraseAlong (juce::Point<float> from, juce::Point<float> to)
+{
+    // Every little way along, so a quick stroke doesn't skip over anything
+    const auto steps = juce::jmax (1, (int) std::ceil (from.getDistanceFrom (to) / (0.4f * staffSpace)));
+
+    for (int i = 1; i <= steps; ++i)
+        eraseAt (from + (to - from) * ((float) i / (float) steps));
+}
+
+void StaffView::setHoverErasable (Erasable erasable)
+{
+    if (erasable == hoverErasable)
+        return;
+
+    hoverErasable = std::move (erasable);
+
+    // A note's highlighted as it is when a click would take it out.
+    hoverHintHidden = false;
+    setHoverNote (hoverErasable.note);
+    repaint();
+}
+
 void StaffView::clickDynamic (std::pair<int, double> point)
 {
     const auto [measure, beat] = point;
@@ -1778,8 +1940,7 @@ void StaffView::drawTie (juce::Graphics& g, juce::Point<float> start, juce::Poin
 {
     // A slur-shaped curve, thickest in the middle and fine at its ends
     const auto direction = upwards ? -1.0f : 1.0f;
-    const auto length = end.x - start.x;
-    const auto height = juce::jlimit (0.5f, 1.6f, 0.12f * length / staffSpace + 0.3f) * staffSpace * direction;
+    const auto height = getTieHeight (start, end, upwards);
     const auto thickness = 0.16f * staffSpace * direction;
     const auto middle = juce::Point<float> ((start.x + end.x) / 2.0f, (start.y + end.y) / 2.0f);
 
@@ -1791,17 +1952,24 @@ void StaffView::drawTie (juce::Graphics& g, juce::Point<float> start, juce::Poin
     g.fillPath (tie);
 }
 
-void StaffView::drawTies (juce::Graphics& g, int firstMeasure, int lastMeasure) const
+float StaffView::getTieHeight (juce::Point<float> start, juce::Point<float> end, bool upwards) const
 {
-    for (auto measure = firstMeasure; measure <= lastMeasure && measure < (int) measureLayouts.size(); ++measure)
+    // Higher the longer it is, within limits
+    return juce::jlimit (0.5f, 1.6f, 0.12f * (end.x - start.x) / staffSpace + 0.3f) * staffSpace * (upwards ? -1.0f : 1.0f);
+}
+
+std::vector<StaffView::TieShape> StaffView::getTieShapes (int firstMeasure, int lastMeasure) const
+{
+    std::vector<TieShape> shapes;
+
+    for (auto measure = juce::jmax (0, firstMeasure); measure <= lastMeasure && measure < (int) measureLayouts.size(); ++measure)
     {
         for (auto staff : { Staff::treble, Staff::bass })
         {
             for (const auto& [onset, pitch] : measureLayouts[(size_t) measure].content.staves[(size_t) staff].tiedNotes)
             {
-                const auto beat = onset;
-                const auto next = score.getFollowingBeat (part, staff, measure, beat);
-                const auto from = getTiePoint (measure, staff, beat, pitch);
+                const auto next = score.getFollowingBeat (part, staff, measure, onset);
+                const auto from = getTiePoint (measure, staff, onset, pitch);
                 const auto to = next.has_value() ? getTiePoint (next->first, staff, next->second, pitch) : std::nullopt;
 
                 if (! from.has_value() || ! to.has_value())
@@ -1809,11 +1977,35 @@ void StaffView::drawTies (juce::Graphics& g, int firstMeasure, int lastMeasure) 
 
                 // From just after the first notehead to just before the second, a little away from their centres
                 const auto offset = 0.45f * staffSpace * (from->upwards ? -1.0f : 1.0f);
-                drawTie (g, from->centre.translated (from->halfWidth + 0.15f * staffSpace, offset),
-                         to->centre.translated (-to->halfWidth - 0.15f * staffSpace, offset), from->upwards);
+                shapes.push_back ({ Note { staff, measure, onset, pitch, part, 1.0 },
+                                    from->centre.translated (from->halfWidth + 0.15f * staffSpace, offset),
+                                    to->centre.translated (-to->halfWidth - 0.15f * staffSpace, offset), from->upwards });
             }
         }
     }
+
+    return shapes;
+}
+
+juce::Point<float> StaffView::getPointOnTie (const TieShape& tie, float proportion) const
+{
+    // The middle of the curve's thickness, along the quadratic curve drawTie draws
+    const auto middle = (tie.start + tie.end) / 2.0f;
+    const auto control = middle.translated (0.0f, getTieHeight (tie.start, tie.end, tie.upwards) * 2.0f);
+    const auto t = proportion, u = 1.0f - proportion;
+    return tie.start * (u * u) + control * (2.0f * u * t) + tie.end * (t * t);
+}
+
+void StaffView::drawTies (juce::Graphics& g, int firstMeasure, int lastMeasure) const
+{
+    for (const auto& tie : getTieShapes (firstMeasure, lastMeasure))
+    {
+        // Under the eraser, it's red, to show it would go.
+        g.setColour (erasing && hoverErasable.tie == tie.from ? removalColour : inkColour);
+        drawTie (g, tie.start, tie.end, tie.upwards);
+    }
+
+    g.setColour (inkColour);
 }
 
 void StaffView::drawTieDrag (juce::Graphics& g) const

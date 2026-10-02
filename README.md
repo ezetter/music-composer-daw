@@ -63,7 +63,7 @@ The **File** menu saves and opens scores:
 
 The **Edit** menu's **Undo** (⌘Z) undoes the last change to the score, and pressing it again undoes the one before, back to how the score was when it was opened or started (the last 500 changes are remembered). **Redo** (⇧⌘Z) makes an undone change again, until something else is changed. Each is greyed out when there's nothing to undo or redo.
 
-- Everything about the score can be undone: notes, ties, chords and the chord window's changes, dynamics and hairpins, the key, time signature, tempo and alternate staff, and adding, removing, cloning and copying measures and progressions. What one click, drag or command does is undone in one go, e.g. a whole Copy Progression, or a hairpin however far it was dragged.
+- Everything about the score can be undone: notes, ties, chords and the chord window's changes, dynamics and hairpins, the key, time signature, tempo and alternate staff, and adding, removing, cloning and copying measures and progressions. What one click, drag or command does is undone in one go, e.g. a whole Copy Progression, a hairpin however far it was dragged, or everything an eraser stroke took out.
 - The chord window shows the chord as undoing leaves it, and closes if its measure's undone away.
 - Undoing counts as a change that needs saving. The instruments, their volumes and muting, and what's chosen to add, such as the note length, aren't part of what's undone.
 - Typing in the BPM box, ⌘Z undoes the typing instead.
@@ -104,6 +104,12 @@ Each instrument has its own dynamics. A dynamic sets how hard the instrument's n
 **Crescendos and decrescendos.** After the dynamics are a crescendo button (<) and a decrescendo button (>). With one chosen, drag along an instrument's staves to mark it: it's drawn between the staves as a hairpin, a wedge opening out for a crescendo or closing for a decrescendo, and stretches with the mouse as you drag, from the beat where the mouse went down to the beat nearest where it's let go (or a barline, or halfway through a beat where a note starts). A click without dragging marks one a beat long. Drag the end of a hairpin to stretch or shrink it; the pointer becomes a left-right arrow over it. Clicking a hairpin takes it out. Hairpins can run across barlines, but not past the end of the score, and one marked over others takes their place. A hairpin starts after a dynamic marked where it starts, and ends before one where it ends.
 
 Through a hairpin, each beat takes the velocity 10% of the way from where it is to the loudest, 127, for a crescendo, or to the softest, 20, for a decrescendo, so a crescendo from pp grows faster than one from ff: from pp (35) a beat later it's 44, and from ff (112) 114. Notes part way through a beat are part of the way there. After the hairpin, the velocity stays where it left it, until the next dynamic. A dynamic in the middle of a hairpin sets the velocity, and the hairpin carries on from there. Hairpins are saved with the score, and Clone copies them with the measures.
+
+### Eraser
+
+The eraser button, after the hairpins, turns the eraser on, and the pointer becomes an eraser. Hold the mouse button down and move over the staves, and whatever the eraser passes over is taken out: notes, by their noteheads; a chord's notes, which come out of the chord, as clicking them does; ties, letting go of the notes they join; dynamics; and hairpins, anywhere along them. It catches everything along the way, however quickly it's moved. A click without moving takes out what's under the pointer. Before you press, whatever the eraser is over is shown in red. It works on either instrument's staves, and never adds anything.
+
+Everything one stroke takes out is undone in one go. Clicking the eraser button again, or choosing a note length, dynamic or hairpin, goes back to adding those. Chord names and numerals aren't erased; take a chord out with Remove Chord in its window, or by erasing its notes.
 
 ### Chords
 
@@ -158,14 +164,15 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | `Source/MainComponent.*` | The File, Edit and MIDI menus, the toolbar, the sidebar, the two instruments' scrolling staves and their volume dials, the piano, and the audio output |
 | `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, crescendos and decrescendos, chords and alternate staff (a part, in the code), and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
-| `Source/ScoreHistory.*` | Remembers the score before each change, for Undo and Redo |
+| `Source/ScoreHistory.*` | Remembers the score before each change, or each eraser stroke, for Undo and Redo |
 | `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics, hairpins and their velocities |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
-| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks and drags into notes, dynamics and hairpins |
+| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks and drags into notes, dynamics and hairpins, or erases them |
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, time signature and measures settings |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |
 | `Source/DynamicPicker.*` | The ppp to fff, crescendo and decrescendo buttons for choosing what clicks and drags mark |
+| `Source/EraserButton.*` | The eraser button, and the eraser the pointer becomes |
 | `Source/NoteLengthPicker.*` | The whole, dotted half, half, quarter and eighth note buttons for choosing the length of the notes clicks add |
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls |
