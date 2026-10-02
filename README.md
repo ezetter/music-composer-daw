@@ -59,6 +59,15 @@ The **File** menu saves and opens scores:
 - If a file can't be opened, because it isn't a score, you're told why and the current score stays as it was. A score with values out of range, say from editing the file by hand, opens with those values set back to their defaults.
 - A newly opened or new score starts scrolled to the beginning, with the chord window closed.
 
+### Undo
+
+The **Edit** menu's **Undo** (⌘Z) undoes the last change to the score, and pressing it again undoes the one before, back to how the score was when it was opened or started (the last 500 changes are remembered). **Redo** (⇧⌘Z) makes an undone change again, until something else is changed. Each is greyed out when there's nothing to undo or redo.
+
+- Everything about the score can be undone: notes, ties, chords and the chord window's changes, dynamics and hairpins, the key, time signature, tempo and alternate staff, and adding, removing, cloning and copying measures and progressions. What one click, drag or command does is undone in one go, e.g. a whole Copy Progression, or a hairpin however far it was dragged.
+- The chord window shows the chord as undoing leaves it, and closes if its measure's undone away.
+- Undoing counts as a change that needs saving. The instruments, their volumes and muting, and what's chosen to add, such as the note length, aren't part of what's undone.
+- Typing in the BPM box, ⌘Z undoes the typing instead.
+
 ### Score
 
 | Setting | What it does |
@@ -146,9 +155,10 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | File | Contents |
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
-| `Source/MainComponent.*` | The File and MIDI menus, the toolbar, the sidebar, the two instruments' scrolling staves and their volume dials, the piano, and the audio output |
+| `Source/MainComponent.*` | The File, Edit and MIDI menus, the toolbar, the sidebar, the two instruments' scrolling staves and their volume dials, the piano, and the audio output |
 | `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, crescendos and decrescendos, chords and alternate staff (a part, in the code), and saving it as JSON |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
+| `Source/ScoreHistory.*` | Remembers the score before each change, for Undo and Redo |
 | `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics, hairpins and their velocities |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
 | `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instrument's, and turns clicks and drags into notes, dynamics and hairpins |

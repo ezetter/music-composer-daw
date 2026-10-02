@@ -323,7 +323,9 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     score.addChangeListener (this);
     document.addChangeListener (this);
 
-    // The File menu, with its keyboard shortcuts
+    // The File and Edit menus, with their keyboard shortcuts. Undo and Redo are greyed out when
+    // there's nothing to undo or redo.
+    history.onChange = [this] { commandManager.commandStatusChanged(); };
     commandManager.registerAllCommandsForTarget (this);
     commandManager.setFirstCommandTarget (this);
     setApplicationCommandManagerToWatch (&commandManager);
@@ -637,6 +639,7 @@ void MainComponent::editChord (int part, int measure)
     };
 
     chordWindow = std::make_unique<ChordWindow> (std::move (editor), [this] { closeChordEditor(); });
+    chordWindow->addKeyListener (commandManager.getKeyMappings());     // so Undo works from the chord window too
 
     // Over the sidebar, to start with, leaving the staff and the piano clear.
     const auto sidebarArea = localAreaToGlobal (sidebar.getBounds());
@@ -784,7 +787,7 @@ void MainComponent::removeMeasure()
 //==============================================================================
 juce::StringArray MainComponent::getMenuBarNames()
 {
-    return { "File", "MIDI" };
+    return { "File", "Edit", "MIDI" };
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex (int menuIndex, const juce::String&)
@@ -792,6 +795,13 @@ juce::PopupMenu MainComponent::getMenuForIndex (int menuIndex, const juce::Strin
     juce::PopupMenu menu;
 
     if (menuIndex == 1)
+    {
+        menu.addCommandItem (&commandManager, undoChange);
+        menu.addCommandItem (&commandManager, redoChange);
+        return menu;
+    }
+
+    if (menuIndex == 2)
     {
         // Each MIDI input, ticked when it's on.
         midiMenuDevices = midiInputs.getDevices();
@@ -876,7 +886,7 @@ void MainComponent::menuItemSelected (int menuItemID, int topLevelMenuIndex)
 
     const auto index = (size_t) (menuItemID - firstMidiInputItem);
 
-    if (topLevelMenuIndex == 1 && menuItemID >= firstMidiInputItem && index < midiMenuDevices.size())
+    if (topLevelMenuIndex == 2 && menuItemID >= firstMidiInputItem && index < midiMenuDevices.size())
         midiInputs.setEnabled (midiMenuDevices[index].info.identifier, ! midiMenuDevices[index].enabled);
 }
 
@@ -887,7 +897,7 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
 
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& commands)
 {
-    commands.addArray ({ newScore, openScore, saveScore, saveScoreAs });
+    commands.addArray ({ newScore, openScore, saveScore, saveScoreAs, undoChange, redoChange });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID command, juce::ApplicationCommandInfo& info)
@@ -904,6 +914,12 @@ void MainComponent::getCommandInfo (juce::CommandID command, juce::ApplicationCo
                            info.addDefaultKeypress ('s', cmd); break;
         case saveScoreAs:  info.setInfo (juce::String (juce::CharPointer_UTF8 ("Save As\xe2\x80\xa6")), "Saves the score in a new file", "File", 0);
                            info.addDefaultKeypress ('s', cmd | juce::ModifierKeys::shiftModifier); break;
+        case undoChange:   info.setInfo ("Undo", "Undoes the last change to the score", "Edit", 0);
+                           info.setActive (history.canUndo());
+                           info.addDefaultKeypress ('z', cmd); break;
+        case redoChange:   info.setInfo ("Redo", "Makes the last change undone again", "Edit", 0);
+                           info.setActive (history.canRedo());
+                           info.addDefaultKeypress ('z', cmd | juce::ModifierKeys::shiftModifier); break;
         default:           break;
     }
 }
@@ -935,6 +951,14 @@ bool MainComponent::perform (const InvocationInfo& invocation)
             document.saveAsInteractiveAsync (true, nullptr);
             return true;
 
+        case undoChange:
+            history.undo();
+            return true;
+
+        case redoChange:
+            history.redo();
+            return true;
+
         default:
             return false;
     }
@@ -955,7 +979,8 @@ void MainComponent::saveChangesThen (std::function<void()> action)
 
 void MainComponent::scoreReplaced()
 {
-    // A new score starts from the beginning, with nothing playing or selected.
+    // A new score starts from the beginning, with nothing playing or selected, and nothing to undo.
+    history.clear();
     instrumentHost.stop();
     showPlaybackPosition();
     closeChordEditor();

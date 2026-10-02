@@ -10,6 +10,7 @@
 #include "PianoKeyboard.h"
 #include "Score.h"
 #include "ScoreDocument.h"
+#include "ScoreHistory.h"
 #include "ScorePanel.h"
 #include "StaffView.h"
 
@@ -17,7 +18,8 @@
 
 /** The main window's contents: a toolbar, a sidebar with the score's and chords' settings, the
     scrolling grand staff, and a piano keyboard, all playing through an instrument plugin. It
-    also puts the File menu in the menu bar, for saving and opening scores.
+    also puts the File, Edit and MIDI menus in the menu bar, for saving and opening scores,
+    undoing and redoing changes to them, and choosing MIDI controllers.
 */
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
@@ -96,7 +98,9 @@ private:
         newScore = 1,
         openScore,
         saveScore,
-        saveScoreAs
+        saveScoreAs,
+        undoChange,
+        redoChange
     };
 
     juce::StringArray getMenuBarNames() override;
@@ -179,6 +183,7 @@ private:
     std::vector<MidiInputs::Device> midiMenuDevices;
     Score score;
     ScoreDocument document;
+    ScoreHistory history { score };
     juce::ApplicationCommandManager commandManager;
 
     juce::TextButton playButton { "Play" };
