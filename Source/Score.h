@@ -133,6 +133,23 @@ public:
 
     static constexpr int maxNoteLength = 4;
 
+    //==============================================================================
+    /** Where the notes starting on a beat end: the measure and beat the next notes would start
+        on, or nothing if that's past the end of the score.
+    */
+    std::optional<std::pair<int, int>> getFollowingBeat (int part, Staff, int measure, int beat) const;
+
+    /** Whether a note is tied to the note of the same pitch that starts just as it ends, which
+        it's held on through. A tie can cross a barline.
+    */
+    bool isTied (int part, Staff, int measure, int beat, music::Pitch) const;
+
+    /** Ties two notes of the same pitch together, either way round, or unties them if they're
+        tied. They have to follow one another: the second starting just as the first ends.
+        Returns false, changing nothing, if they can't be tied.
+    */
+    bool toggleTie (int part, Staff, int measure, int beat, int otherMeasure, int otherBeat, music::Pitch);
+
     /** Whether a beat of a staff has a quarter note on this line or space, whatever its sharp or flat. */
     bool hasNoteAt (int part, Staff, int measure, int beat, int step) const;
 
@@ -210,12 +227,16 @@ private:
     {
         std::array<std::array<std::vector<music::Pitch>, maxBeatsPerMeasure>, 2> notes;
         std::array<std::array<int, maxBeatsPerMeasure>, 2> lengths { { { 1, 1, 1, 1 }, { 1, 1, 1, 1 } } };     // in beats
+        std::array<std::array<std::vector<music::Pitch>, maxBeatsPerMeasure>, 2> ties;    // the notes tied to the next
         std::optional<MeasureChord> chord;
 
         /** Takes out all of a staff's notes. */
         void clearNotes (Staff staff)
         {
             for (auto& beat : notes[(size_t) staff])
+                beat.clear();
+
+            for (auto& beat : ties[(size_t) staff])
                 beat.clear();
 
             lengths[(size_t) staff].fill (1);
@@ -231,6 +252,9 @@ private:
     Measure& getMeasure (int part, int measure);
     const Measure& getMeasure (int part, int measure) const;
     void tidyChord (Measure&, bool reshuffleRandomOrder = false);
+
+    /** Lets go of ties whose notes aren't there any more, or don't follow one another now. */
+    void pruneTies();
 
     std::array<Part, numParts> parts;
     int keyIndex = 0;

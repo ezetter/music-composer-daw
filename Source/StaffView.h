@@ -15,8 +15,10 @@
     It shows one of the score's parts. Its measures are as wide as any part needs, so the parts'
     staves line up when they're stacked.
 
-    Clicking the staff adds a note and clicking a note takes it out again: a quarter note, or on
-    a staff with a chord's notes, a note of the chord. Above each measure is a button to add a
+    Clicking the staff adds a note and clicking a note takes it out again: a note of the length
+    chosen, or on a staff with a chord's notes, a note of the chord. Both happen when the mouse is
+    let go without moving. Dragging from a note to the next note of the same pitch ties them, or
+    unties them; dragging anywhere else does nothing. Above each measure is a button to add a
     chord to it, or edit the one it has.
 */
 class StaffView final : public juce::Component,
@@ -75,6 +77,8 @@ public:
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
 
     inline static const juce::Colour paperColour { 0xffffffff };
 
@@ -120,6 +124,23 @@ private:
     void drawRollSign (juce::Graphics&, float right, float top, float bottom) const;
     void drawLabels (juce::Graphics&, int measure) const;
     void drawHoverNote (juce::Graphics&) const;
+    void drawTies (juce::Graphics&, int firstMeasure, int lastMeasure) const;
+    void drawTieDrag (juce::Graphics&) const;
+    void drawTie (juce::Graphics&, juce::Point<float> start, juce::Point<float> end, bool upwards) const;
+
+    /** Where a note's head is, and which way a tie from it curves: away from its stem, or for a
+        chord, up from its upper notes and down from its lower ones.
+    */
+    struct TiePoint { juce::Point<float> centre; float halfWidth; bool upwards; };
+    std::optional<TiePoint> getTiePoint (int measure, Staff, int beat, music::Pitch) const;
+
+    /** What a click without dragging does: adds or takes out a note. */
+    void clickNote (const Note&);
+
+    /** The note dragged from, and so a tie can be drawn to wherever the mouse is, if it's one
+        clicked into the staff, rather than a chord's.
+    */
+    std::optional<Note> getTieableNoteAt (juce::Point<float>) const;
     void drawCentred (juce::Graphics&, juce::juce_wchar glyph, float centreX, float y) const;
 
     /** The note already written where this note would go, if any. */
@@ -134,6 +155,9 @@ private:
     int noteLength = 1;
     juce::String title;
     std::optional<Note> hoverNote;
+    std::optional<Note> pressedNote;                // where the mouse went down, and the note there, if any
+    std::optional<Note> tieFrom;                    // the note a tie's being dragged from
+    juce::Point<float> dragPoint;
     bool hoverHintHidden = false;       // after a click, until the pointer moves to another spot
     std::optional<int> selectedMeasure;
     juce::OwnedArray<juce::TextButton> chordButtons;    // one above each measure

@@ -105,7 +105,12 @@ namespace
                 StaffEvent event { (double) beat, getDurationForBeats (length), {}, false, false };
 
                 for (const auto& pitch : score.getNotes (part, staff, measure, beat))
+                {
                     event.tones.push_back (makeTone (pitch, keyAlterations));
+
+                    if (score.isTied (part, staff, measure, beat, pitch))
+                        content.tiedNotes.push_back ({ (double) beat, pitch });
+                }
 
                 content.events.push_back (event);
                 beat += length - 1;

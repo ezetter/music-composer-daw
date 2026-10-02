@@ -25,6 +25,9 @@ struct StaffContent
     Source source = Source::notes;
     std::vector<StaffEvent> events;     // in time order
     int notesPerBeat = 1;               // 2 for eighths and 4 for sixteenths
+
+    /** The notes tied to the next note of the same pitch, by when they start, in beats. */
+    std::vector<std::pair<double, music::Pitch>> tiedNotes;
 };
 
 /** Everything written in a measure, worked out from the score. */

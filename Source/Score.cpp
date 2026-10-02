@@ -143,6 +143,7 @@ void Score::removeLastMeasure()
     for (auto& part : parts)
         part.measures.pop_back();
 
+    pruneTies();
     sendSynchronousChangeMessage();
 }
 
@@ -186,6 +187,7 @@ bool Score::addNote (const Note& note)
     if (! alreadyThere)
         notes.insert (insertionPoint, note.pitch);
 
+    pruneTies();
     sendSynchronousChangeMessage();
     return true;
 }
@@ -198,6 +200,83 @@ const std::vector<music::Pitch>& Score::getNotes (int part, Staff staff, int mea
 int Score::getNoteLength (int part, Staff staff, int measure, int beat) const
 {
     return getMeasure (part, measure).lengths[(size_t) staff][(size_t) beat];
+}
+
+//==============================================================================
+std::optional<std::pair<int, int>> Score::getFollowingBeat (int part, Staff staff, int measure, int beat) const
+{
+    // As long as the notes are shown: as added, or as fits in the measure.
+    const auto length = juce::jlimit (1, beatsPerMeasure - beat, getNoteLength (part, staff, measure, beat));
+
+    if (beat + length < beatsPerMeasure)
+        return std::pair { measure, beat + length };
+
+    if (measure + 1 < getNumMeasures())
+        return std::pair { measure + 1, 0 };
+
+    return {};
+}
+
+bool Score::isTied (int part, Staff staff, int measure, int beat, music::Pitch pitch) const
+{
+    if (beat >= beatsPerMeasure)
+        return false;
+
+    const auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) beat];
+
+    if (std::find (ties.begin(), ties.end(), pitch) == ties.end())
+        return false;
+
+    const auto& notes = getNotes (part, staff, measure, beat);
+    const auto next = getFollowingBeat (part, staff, measure, beat);
+
+    if (std::find (notes.begin(), notes.end(), pitch) == notes.end() || ! next.has_value())
+        return false;
+
+    const auto& nextNotes = getNotes (part, staff, next->first, next->second);
+    return std::find (nextNotes.begin(), nextNotes.end(), pitch) != nextNotes.end();
+}
+
+bool Score::toggleTie (int part, Staff staff, int measure, int beat, int otherMeasure, int otherBeat, music::Pitch pitch)
+{
+    // The tie goes from the earlier note to the later.
+    if (std::pair { otherMeasure, otherBeat } < std::pair { measure, beat })
+    {
+        std::swap (measure, otherMeasure);
+        std::swap (beat, otherBeat);
+    }
+
+    const auto& notes = getNotes (part, staff, measure, beat);
+    const auto& otherNotes = getNotes (part, staff, otherMeasure, otherBeat);
+
+    if (std::find (notes.begin(), notes.end(), pitch) == notes.end()
+        || std::find (otherNotes.begin(), otherNotes.end(), pitch) == otherNotes.end()
+        || getFollowingBeat (part, staff, measure, beat) != std::optional<std::pair<int, int>> ({ otherMeasure, otherBeat }))
+        return false;
+
+    auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) beat];
+
+    if (std::erase (ties, pitch) == 0)
+        ties.push_back (pitch);
+
+    sendSynchronousChangeMessage();
+    return true;
+}
+
+void Score::pruneTies()
+{
+    for (int part = 0; part < numParts; ++part)
+        for (int measure = 0; measure < getNumMeasures(); ++measure)
+            for (auto staff : { Staff::treble, Staff::bass })
+                for (int beat = 0; beat < maxBeatsPerMeasure; ++beat)
+                {
+                    // Beats a shorter time signature hides keep their ties, for when they're back.
+                    if (beat >= beatsPerMeasure)
+                        continue;
+
+                    auto& ties = getMeasure (part, measure).ties[(size_t) staff][(size_t) beat];
+                    std::erase_if (ties, [&] (const music::Pitch& pitch) { return ! isTied (part, staff, measure, beat, pitch); });
+                }
 }
 
 bool Score::hasNoteAt (int part, Staff staff, int measure, int beat, int step) const
@@ -217,6 +296,8 @@ bool Score::removeNotesAt (int part, Staff staff, int measure, int beat, int ste
     if (notes.empty())
         target.lengths[(size_t) staff][(size_t) beat] = 1;
 
+    pruneTies();
+
     sendSynchronousChangeMessage();
     return true;
 }
@@ -233,6 +314,7 @@ void Score::setChord (int part, int measure, std::optional<MeasureChord> chord)
     auto& target = getMeasure (part, measure);
     target.chord = std::move (chord);
     tidyChord (target);
+    pruneTies();
     sendSynchronousChangeMessage();
 }
 
@@ -272,6 +354,7 @@ void Score::toggleChordNote (int part, int measure, int midiNote, const ChordSty
 
     toggleChordNote (*target.chord, midiNote);
     tidyChord (target);
+    pruneTies();
     sendSynchronousChangeMessage();
 }
 
@@ -382,6 +465,7 @@ void Score::copyChords (int fromPart, int toPart)
         tidyChord (measure);
     }
 
+    pruneTies();
     sendSynchronousChangeMessage();
 }
 
@@ -515,6 +599,21 @@ juce::var Score::toJSON() const
                 lengths.add (length);
 
             measureObject->setProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", lengths);
+
+            // The notes on each beat that are tied to the next
+            juce::Array<juce::var> ties;
+
+            for (const auto& tied : measure.ties[(size_t) staff])
+            {
+                juce::Array<juce::var> pitches;
+
+                for (const auto& pitch : tied)
+                    pitches.add (juce::Array<juce::var> { pitch.step, pitch.alter });
+
+                ties.add (pitches);
+            }
+
+            measureObject->setProperty (staff == Staff::treble ? "trebleTies" : "bassTies", ties);
         }
 
         if (measure.chord.has_value())
@@ -619,6 +718,15 @@ juce::Result Score::loadJSON (const juce::var& json)
                     const auto* lengths = item.getProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", {}).getArray();
                     const auto hasLength = lengths != nullptr && beat < lengths->size();
                     measure.lengths[(size_t) staff][(size_t) beat] = notes.empty() || ! hasLength ? 1 : readInt (lengths->getReference (beat), 1, maxNoteLength, 1);
+
+                    // Ties, from notes that are there. Ones that don't lead anywhere are let go
+                    // once the whole score's loaded.
+                    if (const auto* ties = item.getProperty (staff == Staff::treble ? "trebleTies" : "bassTies", {}).getArray(); ties != nullptr && beat < ties->size())
+                        if (const auto* pitches = ties->getReference (beat).getArray())
+                            for (const auto& pitch : *pitches)
+                                if (const music::Pitch tied { readInt (pitch[0], 0, 80, -1), readInt (pitch[1], -2, 2, 0) };
+                                    std::find (notes.begin(), notes.end(), tied) != notes.end())
+                                    measure.ties[(size_t) staff][(size_t) beat].push_back (tied);
                 }
             }
 
@@ -708,6 +816,7 @@ juce::Result Score::loadJSON (const juce::var& json)
         for (auto& measure : part.measures)
             tidyChord (measure);
 
+    pruneTies();
     sendSynchronousChangeMessage();
     return juce::Result::ok();
 }

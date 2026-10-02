@@ -695,6 +695,9 @@ void StaffView::paint (juce::Graphics& g)
     for (auto measure = firstMeasure; measure <= lastMeasure; ++measure)
         drawMeasure (g, measure);
 
+    g.setColour (inkColour);
+    drawTies (g, juce::jmax (0, firstMeasure - 1), lastMeasure);
+    drawTieDrag (g);
     drawHoverNote (g);
 }
 
@@ -1221,38 +1224,222 @@ void StaffView::mouseExit (const juce::MouseEvent&)
 
 void StaffView::mouseDown (const juce::MouseEvent& e)
 {
+    pressedNote.reset();
+    tieFrom.reset();
+
     if (e.mods.isPopupMenu())
         return;
 
     if (onClicked != nullptr)
         onClicked();
 
-    if (const auto note = getNoteAt (e.position))
+    // Nothing changes until the mouse is let go: a click adds or takes out a note, and a drag
+    // from a note can tie it to the next one of the same pitch.
+    pressedNote = getNoteAt (e.position);
+    tieFrom = getTieableNoteAt (e.position);
+}
+
+void StaffView::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! tieFrom.has_value() || ! e.mouseWasDraggedSinceMouseDown())
+        return;
+
+    // A tie follows the mouse from the note.
+    dragPoint = e.position;
+    hoverHintHidden = true;
+    repaint();
+}
+
+void StaffView::mouseUp (const juce::MouseEvent& e)
+{
+    const auto pressed = pressedNote;
+    const auto from = tieFrom;
+    pressedNote.reset();
+    tieFrom.reset();
+    repaint();
+
+    if (e.mods.isPopupMenu() || ! pressed.has_value())
+        return;
+
+    if (! e.mouseWasDraggedSinceMouseDown())
     {
-        // On a staff with a chord's notes, clicking one of them takes it out of the chord, and
-        // clicking anywhere else adds a note to them.
-        if (score.chordUsesStaff (part, note->measure, note->staff))
-        {
-            const auto existing = findNoteUnder (*note);
-            const auto* chord = score.getChord (part, note->measure);
-            const music::KeyboardNote clicked { existing ? existing->midi : note->pitch.getMidiNoteNumber(),
-                                                existing ? existing->pitch.getSpelling() : note->pitch.getSpelling() };
-
-            if (note->staff == chord->style.staff)
-                score.toggleChordNote (part, note->measure, clicked.midi, chord->style);
-            else
-                score.toggleAlternateNote (part, note->measure, clicked);
-        }
-        // Clicking a note takes it out, whatever its sharp or flat; clicking anywhere else adds one.
-        else if (score.hasNoteAt (part, note->staff, note->measure, note->beat, note->pitch.step))
-            score.removeNotesAt (part, note->staff, note->measure, note->beat, note->pitch.step);
-        else
-            score.addNote (*note);
-
-        // Show what the click did, rather than what another click would do.
-        hoverHintHidden = true;
-        repaint (getBeatArea (note->measure, note->beat));
+        clickNote (*pressed);
+        return;
     }
+
+    // Let go over the next note of the same pitch, the drag ties them, or unties them. Anywhere
+    // else, nothing happens.
+    if (const auto to = getTieableNoteAt (e.position); from.has_value() && to.has_value() && to->staff == from->staff
+                                                       && to->pitch == from->pitch && (to->measure != from->measure || to->beat != from->beat))
+        score.toggleTie (part, from->staff, from->measure, from->beat, to->measure, to->beat, from->pitch);
+}
+
+void StaffView::clickNote (const Note& note)
+{
+    // On a staff with a chord's notes, clicking one of them takes it out of the chord, and
+    // clicking anywhere else adds a note to them.
+    if (score.chordUsesStaff (part, note.measure, note.staff))
+    {
+        const auto existing = findNoteUnder (note);
+        const auto* chord = score.getChord (part, note.measure);
+        const music::KeyboardNote clicked { existing ? existing->midi : note.pitch.getMidiNoteNumber(),
+                                            existing ? existing->pitch.getSpelling() : note.pitch.getSpelling() };
+
+        if (note.staff == chord->style.staff)
+            score.toggleChordNote (part, note.measure, clicked.midi, chord->style);
+        else
+            score.toggleAlternateNote (part, note.measure, clicked);
+    }
+    // Clicking a note takes it out, whatever its sharp or flat; clicking anywhere else adds one.
+    else if (score.hasNoteAt (part, note.staff, note.measure, note.beat, note.pitch.step))
+        score.removeNotesAt (part, note.staff, note.measure, note.beat, note.pitch.step);
+    else
+        score.addNote (note);
+
+    // Show what the click did, rather than what another click would do.
+    hoverHintHidden = true;
+    repaint (getBeatArea (note.measure, note.beat));
+}
+
+std::optional<Note> StaffView::getTieableNoteAt (juce::Point<float> point) const
+{
+    // A note clicked into the staff, with its own pitch, sharp or flat, rather than the one a
+    // click there would add
+    auto note = getNoteAt (point);
+
+    if (! note.has_value() || score.chordUsesStaff (part, note->measure, note->staff))
+        return {};
+
+    for (const auto& pitch : score.getNotes (part, note->staff, note->measure, note->beat))
+    {
+        if (pitch.step == note->pitch.step)
+        {
+            note->pitch = pitch;
+            return note;
+        }
+    }
+
+    return {};
+}
+
+//==============================================================================
+std::optional<StaffView::TiePoint> StaffView::getTiePoint (int measure, Staff staff, int beat, music::Pitch pitch) const
+{
+    if (! juce::isPositiveAndBelow (measure, (int) measureLayouts.size()))
+        return {};
+
+    const auto& content = measureLayouts[(size_t) measure].content.staves[(size_t) staff];
+
+    if (content.source != StaffContent::Source::notes)
+        return {};
+
+    for (const auto& event : content.events)
+    {
+        if (event.isRest() || ! juce::exactlyEqual (event.onset, (double) beat))
+            continue;
+
+        std::map<int, int> alterations;
+        const NoteLayout layout (event, staff, getEventX (measure, event), alterations, music::getKeyAlterations (score.getKey()));
+
+        // The layout's notes are low to high, as the event's are.
+        auto tones = event.tones;
+        std::sort (tones.begin(), tones.end(), [] (const music::Tone& a, const music::Tone& b)
+        {
+            return a.pitch.step != b.pitch.step ? a.pitch.step < b.pitch.step : a.pitch.alter < b.pitch.alter;
+        });
+
+        for (size_t i = 0; i < tones.size(); ++i)
+        {
+            if (tones[i].pitch != pitch)
+                continue;
+
+            // A single note's tie curves away from its stem; a chord's upper notes' curve up and
+            // its lower notes' down.
+            const auto upwards = tones.size() == 1 ? ! layout.stemUp
+                               : (tones.size() % 2 == 1 && i == tones.size() / 2) ? ! layout.stemUp
+                                                                                  : i >= tones.size() / 2;
+
+            return TiePoint { { layout.headLefts[i] + layout.headWidth / 2.0f, getY (staff, layout.positions[i]) },
+                              layout.headWidth / 2.0f, upwards };
+        }
+    }
+
+    return {};
+}
+
+void StaffView::drawTie (juce::Graphics& g, juce::Point<float> start, juce::Point<float> end, bool upwards) const
+{
+    // A slur-shaped curve, thickest in the middle and fine at its ends
+    const auto direction = upwards ? -1.0f : 1.0f;
+    const auto length = end.x - start.x;
+    const auto height = juce::jlimit (0.5f, 1.6f, 0.12f * length / staffSpace + 0.3f) * staffSpace * direction;
+    const auto thickness = 0.16f * staffSpace * direction;
+    const auto middle = juce::Point<float> ((start.x + end.x) / 2.0f, (start.y + end.y) / 2.0f);
+
+    juce::Path tie;
+    tie.startNewSubPath (start);
+    tie.quadraticTo (middle.translated (0.0f, height * 2.0f), end);
+    tie.quadraticTo (middle.translated (0.0f, (height - thickness) * 2.0f), start);
+    tie.closeSubPath();
+    g.fillPath (tie);
+}
+
+void StaffView::drawTies (juce::Graphics& g, int firstMeasure, int lastMeasure) const
+{
+    for (auto measure = firstMeasure; measure <= lastMeasure && measure < (int) measureLayouts.size(); ++measure)
+    {
+        for (auto staff : { Staff::treble, Staff::bass })
+        {
+            for (const auto& [onset, pitch] : measureLayouts[(size_t) measure].content.staves[(size_t) staff].tiedNotes)
+            {
+                const auto beat = (int) onset;
+                const auto next = score.getFollowingBeat (part, staff, measure, beat);
+                const auto from = getTiePoint (measure, staff, beat, pitch);
+                const auto to = next.has_value() ? getTiePoint (next->first, staff, next->second, pitch) : std::nullopt;
+
+                if (! from.has_value() || ! to.has_value())
+                    continue;
+
+                // From just after the first notehead to just before the second, a little away from their centres
+                const auto offset = 0.45f * staffSpace * (from->upwards ? -1.0f : 1.0f);
+                drawTie (g, from->centre.translated (from->halfWidth + 0.15f * staffSpace, offset),
+                         to->centre.translated (-to->halfWidth - 0.15f * staffSpace, offset), from->upwards);
+            }
+        }
+    }
+}
+
+void StaffView::drawTieDrag (juce::Graphics& g) const
+{
+    if (! tieFrom.has_value() || ! hoverHintHidden)
+        return;
+
+    const auto from = getTiePoint (tieFrom->measure, tieFrom->staff, tieFrom->beat, tieFrom->pitch);
+
+    if (! from.has_value())
+        return;
+
+    // To the note it would tie to, if the mouse is over one, or else to the mouse.
+    auto end = dragPoint;
+    auto onTarget = false;
+
+    if (const auto to = getTieableNoteAt (dragPoint); to.has_value() && to->staff == tieFrom->staff && to->pitch == tieFrom->pitch
+                                                      && score.getFollowingBeat (part, to->staff, tieFrom->measure, tieFrom->beat)
+                                                             == std::optional<std::pair<int, int>> ({ to->measure, to->beat }))
+    {
+        if (const auto point = getTiePoint (to->measure, to->staff, to->beat, to->pitch))
+        {
+            end = point->centre.translated (-point->halfWidth - 0.15f * staffSpace, 0.0f);
+            onTarget = true;
+        }
+    }
+
+    const auto offset = 0.45f * staffSpace * (from->upwards ? -1.0f : 1.0f);
+    const auto start = from->centre.translated ((end.x >= from->centre.x ? 1.0f : -1.0f) * (from->halfWidth + 0.15f * staffSpace), offset);
+
+    g.setColour (selectionColour.withAlpha (onTarget ? 1.0f : 0.5f));
+    drawTie (g, end.x >= start.x ? start : end.translated (0.0f, offset), end.x >= start.x ? end.translated (0.0f, onTarget ? offset : 0.0f) : start,
+             from->upwards);
 }
 
 void StaffView::setHoverNote (std::optional<Note> note)

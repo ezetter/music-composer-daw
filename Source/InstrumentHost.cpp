@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 namespace
 {
@@ -209,13 +210,19 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
     const auto beatSeconds = measureSeconds / score.getBeatsPerMeasure();
     std::vector<Sounding> soundings;
 
+    // Notes tied to the next note of the same pitch, by staff and pitch, waiting for that note
+    // to hold them on through it, rather than playing it again
+    std::map<std::pair<size_t, int>, size_t> tiedOn;
+
     for (auto measure = firstMeasure; measure <= lastMeasure; ++measure)
     {
         const auto start = (double) (measure - firstMeasure) * measureSeconds;
         const auto content = getMeasureContent (score, part, measure);
 
-        for (const auto& staff : content.staves)
+        for (size_t staffIndex = 0; staffIndex < content.staves.size(); ++staffIndex)
         {
+            const auto& staff = content.staves[staffIndex];
+
             for (const auto& event : staff.events)
             {
                 // Every note is held for exactly as long as it's written: a beat for a quarter note,
@@ -232,11 +239,33 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
                 if (spreadAsChord)
                 {
                     addChord (soundings, event.tones, onset, end, event.rolled);
+                    continue;
                 }
-                else
+
+                for (const auto& tone : event.tones)
                 {
-                    for (const auto& tone : event.tones)
+                    const auto key = std::pair { staffIndex, tone.midi };
+                    size_t index;
+
+                    // A note a tie leads to holds the note before it on, to its own end.
+                    if (const auto held = tiedOn.find (key); held != tiedOn.end() && std::abs (soundings[held->second].end - onset) < 1.0e-9)
+                    {
+                        index = held->second;
+                        soundings[index].end = end;
+                        tiedOn.erase (held);
+                    }
+                    else
+                    {
+                        index = soundings.size();
                         soundings.push_back ({ tone.midi, onset, end });
+                    }
+
+                    const auto& tied = staff.tiedNotes;
+
+                    if (std::any_of (tied.begin(), tied.end(), [&] (const auto& t) { return juce::exactlyEqual (t.first, event.onset) && t.second == tone.pitch; }))
+                        tiedOn[key] = index;
+                    else
+                        tiedOn.erase (key);
                 }
             }
         }
