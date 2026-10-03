@@ -194,6 +194,9 @@ private:
     void showPlaybackPosition();
     void addMeasure();
     void removeMeasure();
+
+    /** Lets − take the last measure away only when it shows nothing but rests, in every part. */
+    void updateRemoveMeasureButton();
     void cloneMeasures();
     void showHeldNotes();
     void tempoEdited (bool finished);

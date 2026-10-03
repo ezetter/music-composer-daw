@@ -659,6 +659,24 @@ bool Score::hasNotes (int part) const
     return hasChords (part);
 }
 
+bool Score::isMeasureEmpty (int measure) const
+{
+    for (int part = 0; part < getNumParts(); ++part)
+    {
+        const auto& target = getMeasure (part, measure);
+
+        if (target.chord.has_value() && target.chord->hasNotes())
+            return false;
+
+        for (const auto& staff : target.notes)
+            for (int slot = 0; slot < getSlotsPerMeasure(); ++slot)
+                if (! staff[(size_t) slot].empty())
+                    return false;
+    }
+
+    return true;
+}
+
 bool Score::isPartEmpty (int part) const
 {
     if (hasNotes (part) || ! getHairpins (part).empty())

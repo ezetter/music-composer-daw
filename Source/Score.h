@@ -309,6 +309,11 @@ public:
     */
     bool hasNotes (int part) const;
 
+    /** Whether a measure shows only rests, in every part: no notes where the time signature
+        shows them, and no chord with notes.
+    */
+    bool isMeasureEmpty (int measure) const;
+
     /** Whether a part has nothing in it at all: no notes, chords, dynamics or hairpins. */
     bool isPartEmpty (int part) const;
 

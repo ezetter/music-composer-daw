@@ -212,7 +212,6 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     // + adds a measure at the end and − takes the last one away, and Clone repeats every measure
     // after the last, in every part.
     addMeasureButton.setTooltip ("Add a measure at the end");
-    removeMeasureButton.setTooltip ("Remove the last measure");
     cloneButton.setTooltip ("Repeat all the measures after the last one, with everything in them");
     addMeasureButton.onClick = [this] { addMeasure(); };
     removeMeasureButton.onClick = [this] { removeMeasure(); };
@@ -251,7 +250,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     for (auto* component : std::initializer_list<juce::Component*> { &addMeasureButton, &removeMeasureButton, &cloneButton })
         staffSystems.addAndMakeVisible (component);
 
-    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
+    updateRemoveMeasureButton();
     staffSystems.onLayoutChanged = [this] { positionVolumeDials(); positionMeasureButtons(); };
     staffViewport.onScroll = [this] { positionVolumeDials(); positionMeasureButtons(); };
 
@@ -435,7 +434,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     // Parts may have been added or taken out, or a whole new score loaded.
     updateTracks();
-    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
+    updateRemoveMeasureButton();
 
     // The tempo can change by loading a score, so show it unless it's being typed.
     if (! tempoEditor.hasKeyboardFocus (false))
@@ -1034,7 +1033,19 @@ void MainComponent::cloneMeasures()
 
 void MainComponent::removeMeasure()
 {
-    score.removeLastMeasure();
+    if (removeMeasureButton.isEnabled())
+        score.removeLastMeasure();
+}
+
+void MainComponent::updateRemoveMeasureButton()
+{
+    // Only an empty last measure can be taken away, and not the only one.
+    const auto last = score.getNumMeasures() - 1;
+    const auto canRemove = last > 0 && score.isMeasureEmpty (last);
+    removeMeasureButton.setEnabled (canRemove);
+    removeMeasureButton.setTooltip (canRemove ? "Remove the last measure"
+                                              : last == 0 ? "The only measure can't be removed"
+                                                          : "Only an empty last measure, with nothing but rests in every instrument, can be removed");
 }
 
 //==============================================================================
