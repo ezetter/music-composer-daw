@@ -209,10 +209,6 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     // + adds a measure at the end and − takes the last one away, and Clone repeats every measure
     // after the last, in every part.
-    measuresLabel.setText ("Measures", juce::dontSendNotification);
-    measuresLabel.setFont (juce::FontOptions (12.5f));
-    measuresLabel.setColour (juce::Label::textColourId, controls::secondaryText);
-    measuresLabel.setJustificationType (juce::Justification::centred);
     addMeasureButton.setTooltip ("Add a measure at the end");
     removeMeasureButton.setTooltip ("Remove the last measure");
     cloneButton.setTooltip ("Repeat all the measures after the last one, with everything in them");
@@ -250,7 +246,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (dynamicPicker);
     addAndMakeVisible (eraserButton);
 
-    for (auto* component : std::initializer_list<juce::Component*> { &measuresLabel, &addMeasureButton, &removeMeasureButton, &cloneButton })
+    for (auto* component : std::initializer_list<juce::Component*> { &addMeasureButton, &removeMeasureButton, &cloneButton })
         measureColumn.addAndMakeVisible (component);
 
     addAndMakeVisible (measureColumn);
@@ -394,15 +390,14 @@ void MainComponent::resized()
     eraserButton.setBounds (juce::Rectangle<int> (EraserButton::buttonWidth, EraserButton::buttonHeight)
                                 .withCentre ({ measureColumn.getBounds().getCentreX(), noteLengthPicker.getY() + EraserButton::buttonHeight / 2 }));
 
-    // The measure buttons, one above the other, halfway down the column to the right of the staves
-    constexpr int labelHeight = 16, gap = 6;
-    const auto stackHeight = labelHeight + gap + measureButtonSize * 2 + gap + 2 * gap + cloneButtonHeight;
-    auto stack = juce::Rectangle<int> (measureColumnWidth, stackHeight).withCentre (measureColumn.getLocalBounds().getCentre());
-    measuresLabel.setBounds (stack.removeFromTop (labelHeight));
-    stack.removeFromTop (gap);
-    addMeasureButton.setBounds (stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
-    stack.removeFromTop (gap);
-    removeMeasureButton.setBounds (stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
+    // The measure buttons halfway down the column to the right of the staves: + and − side by
+    // side, over Clone
+    constexpr int gap = 6;
+    auto stack = juce::Rectangle<int> (measureColumnWidth, measureButtonSize + 2 * gap + cloneButtonHeight)
+                     .withCentre (measureColumn.getLocalBounds().getCentre());
+    auto pair = stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize * 2 + gap, measureButtonSize);
+    addMeasureButton.setBounds (pair.removeFromLeft (measureButtonSize));
+    removeMeasureButton.setBounds (pair.removeFromRight (measureButtonSize));
     stack.removeFromTop (2 * gap);
     cloneButton.setBounds (stack.removeFromTop (cloneButtonHeight).withSizeKeepingCentre (cloneButtonWidth, cloneButtonHeight));
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());

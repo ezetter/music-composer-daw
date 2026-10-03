@@ -255,7 +255,6 @@ private:
     // every part
     juce::Component measureColumn;
     controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
-    juce::Label measuresLabel;
     juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
     juce::TextButton cloneButton { "Clone" };
     juce::Component volumeColumn;       // to the left of the staves, holding each part's volume dial and delete button
