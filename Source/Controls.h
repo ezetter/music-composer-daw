@@ -157,6 +157,51 @@ namespace controls
         }
     };
 
+    /** A combo box that says whenever an item's chosen from its menu, even the one that's already
+        chosen, which onChange doesn't.
+    */
+    struct ReselectableComboBox final : public juce::ComboBox
+    {
+        /** Called with the item chosen from the menu. */
+        std::function<void (int itemId)> onItemChosen;
+
+        void showPopup() override
+        {
+            if (! isEnabled())
+                return;
+
+            // The menu as the combo box shows it, with the chosen item ticked
+            auto menu = *getRootMenu();
+
+            for (juce::PopupMenu::MenuItemIterator iterator (menu, true); iterator.next();)
+                if (auto& item = iterator.getItem(); item.itemID != 0)
+                    item.isTicked = item.itemID == getSelectedId();
+
+            menu.setLookAndFeel (&getLookAndFeel());
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                                                          .withItemThatMustBeVisible (getSelectedId())
+                                                          .withInitiallySelectedItem (getSelectedId())
+                                                          .withMinimumWidth (getWidth())
+                                                          .withMaximumNumColumns (1)
+                                                          .withStandardItemHeight (getHeight()),
+                                [safeThis = juce::Component::SafePointer (this)] (int result)
+                                {
+                                    if (safeThis == nullptr)
+                                        return;
+
+                                    safeThis->hidePopup();
+
+                                    if (result == 0)
+                                        return;
+
+                                    safeThis->setSelectedId (result, juce::dontSendNotification);
+
+                                    if (safeThis->onItemChosen != nullptr)
+                                        safeThis->onItemChosen (result);
+                                });
+        }
+    };
+
     /** A small button showing a waste bin, for taking something out: grey, and red under the mouse. */
     struct BinButton final : public juce::Button
     {

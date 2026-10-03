@@ -124,10 +124,9 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
 
     chordTypeBox.addItemList ({ "Block chord", "Arpeggio (asc)", "Arpeggio (desc)", "Random", "Rolled chord" }, 1);
     chordTypeBox.setTooltip ("How the chord is written and played");
-    chordTypeBox.onChange = [this]
-    {
-        edit ([this] (MeasureChord& c) { c.style.type = (music::ChordType) (chordTypeBox.getSelectedId() - 1); });
-    };
+    // Choosing Random picks a new random order, even if the chord's Random already.
+    chordTypeBox.onChange = [this] { chooseChordType (chordTypeBox.getSelectedId()); };
+    chordTypeBox.onItemChosen = [this] (int itemId) { chooseChordType (itemId); };
     // How long the notes are: a block or rolled chord is repeated in notes this long until the
     // measure's full, and the others have a note this long for each note they play.
     noteLengthLabel.setText ("Note length", juce::dontSendNotification);
@@ -145,9 +144,6 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
             edit ([index] (MeasureChord& c) { c.style.noteLength = noteLengths[(size_t) index].first; });
     };
 
-    reshuffleButton.setWantsKeyboardFocus (false);
-    reshuffleButton.setTooltip ("Picks a new random order");
-    reshuffleButton.onClick = [this] { score.reshuffle (part, measure); };
 
     for (auto* label : { &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel })
     {
@@ -175,7 +171,7 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
              &title, &flatButton, &majorButton, &minorButton, &alterButton, &numeralBox, &addedNoteBox,
              &positionButtons[0], &positionButtons[1], &positionButtons[2], &positionButtons[3],
              &octaveButtons[0], &octaveButtons[1], &octaveButtons[2], &trebleButton, &bassButton,
-             &chordTypeBox, &noteLengthLabel, &noteLengthBox, &reshuffleButton,
+             &chordTypeBox, &noteLengthLabel, &noteLengthBox,
              &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel, &removeButton, &doneButton })
         addAndMakeVisible (component);
 
@@ -240,6 +236,17 @@ void ChordEditor::edit (const std::function<void (MeasureChord&)>& change)
 
     // Every change goes straight into the score, which sends it back here to show.
     score.setChord (part, measure, newChord);
+}
+
+void ChordEditor::chooseChordType (int itemId)
+{
+    const auto type = (music::ChordType) (itemId - 1);
+
+    if (type != chord.style.type)
+        edit ([type] (MeasureChord& c) { c.style.type = type; });
+
+    if (type == music::ChordType::random && score.getChord (part, measure) != nullptr && chord.hasNotes())
+        score.reshuffle (part, measure);
 }
 
 void ChordEditor::finish()
@@ -327,8 +334,6 @@ void ChordEditor::update()
 
     noteLengthBox.setSelectedId (selected, juce::dontSendNotification);
 
-    reshuffleButton.setVisible (style.type == music::ChordType::random);
-    reshuffleButton.setEnabled (chord.hasNotes());
 
     // The chord's tones, as the builder's chord tones table lists them
     const auto notes = score.getChordNotes (chord);
@@ -442,17 +447,9 @@ void ChordEditor::resized()
     layOutSegments (octaves);
     layOutSegments (clefs);
 
-    // The note length, and Reshuffle beside it for a Random chord
     bounds.removeFromTop (sectionGap - gap);
     auto lengthRow = bounds.removeFromTop (rowHeight);
     noteLengthLabel.setBounds (lengthRow.removeFromLeft (86));
-
-    if (reshuffleButton.isVisible())
-    {
-        reshuffleButton.setBounds (lengthRow.removeFromRight (86));
-        lengthRow.removeFromRight (gap);
-    }
-
     noteLengthBox.setBounds (lengthRow);
     bounds.removeFromTop (sectionGap);
 

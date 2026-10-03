@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Controls.h"
 #include "Score.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -51,6 +52,9 @@ private:
     void loadChord();
     void update();
     void edit (const std::function<void (MeasureChord&)>&);
+
+    /** Makes the chord the type chosen, and a Random chord's order new, even if it was Random already. */
+    void chooseChordType (int itemId);
     void finish();
 
     Score& score;
@@ -65,10 +69,9 @@ private:
     std::array<juce::TextButton, 4> positionButtons;
     std::array<juce::TextButton, 3> octaveButtons;
     juce::TextButton trebleButton { "Treble clef" }, bassButton { "Bass clef" };
-    juce::ComboBox chordTypeBox;            // beside the title
+    controls::ReselectableComboBox chordTypeBox;     // beside the title
     juce::Label noteLengthLabel;
     juce::ComboBox noteLengthBox;           // how long the chord's notes are
-    juce::TextButton reshuffleButton { "Reshuffle" };
     juce::Label nameLabel, notesLabel, fitLabel, keyboardNotesLabel;
     juce::TextButton removeButton { "Remove Chord" }, doneButton { "Done" };
 
