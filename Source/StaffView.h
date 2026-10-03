@@ -42,9 +42,10 @@ public:
     */
     void followPart();
 
-    /** How long the notes that clicks add are, in beats: 0.5 for eighth notes, 1 for quarter
-        notes, 2 for half notes, 3 for dotted half notes and 4 for whole notes. Clicks add eighths
-        halfway through beats as well as on them; the others go on beats.
+    /** How long the notes that clicks add are, in beats: 0.125 for 32nd notes, 0.25 for 16ths,
+        0.5 for eighths, 1 for quarter notes, 2 for half notes, 3 for dotted half notes and 4 for
+        whole notes. Clicks add notes shorter than a beat at the nearest step of their length,
+        e.g. every 16th for 16ths; the others go on beats.
     */
     void setNoteLength (double beats);
 
@@ -170,8 +171,10 @@ private:
     float getEventX (int measure, const StaffEvent&) const;
     int findMeasure (float x) const;
 
-    /** The eighth note of a measure nearest to x, if a note could start there, or else the nearest beat's. */
-    int getSlotAt (int measure, float x, const std::function<bool (double beat)>& canStartBetweenBeats) const;
+    /** The 32nd note of a measure nearest to x, if notes start there, or else the nearest step of
+        a grid, in 32nds: 8 for beats, 4 for eighths and so on.
+    */
+    int getSlotAt (int measure, float x, int grid, const std::function<bool (double beat)>& hasNotesAt) const;
 
     /** Whether the point's in reach of the staves, where clicks add notes or mark dynamics. */
     bool isInClickRange (juce::Point<float>) const;
@@ -189,9 +192,10 @@ private:
     void drawMeasure (juce::Graphics&, int measure) const;
     void drawStaff (juce::Graphics&, int measure, Staff) const;
 
-    /** Which of a staff's notes, given in order, share a beam. In a run of eighths, each starting
-        as the one before ends, every four in a row share a beam; the rest of the run, and
-        sixteenths, are beamed a beat at a time. A note on its own in a group keeps its flag.
+    /** Which of a staff's notes, given in order, share a beam. In a run of eighths and shorter
+        notes, each starting as the one before ends, every four eighths in a row share a beam; the
+        rest of the run is beamed a beat at a time, 16ths and 32nds with the eighths in their beat.
+        A note on its own in a group keeps its flag.
     */
     static std::vector<std::vector<size_t>> groupBeams (const std::vector<const StaffEvent*>& notes);
     void drawNote (juce::Graphics&, Staff, const NoteLayout&, bool rolled, std::optional<int> highlightedPosition) const;

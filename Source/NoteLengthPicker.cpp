@@ -11,9 +11,9 @@ namespace
 NoteLengthPicker::NoteLengthPicker()
     : glyphs (glyphStaffSpace)
 {
-    // Whole, dotted half, half, quarter and eighth, longest first
+    // Whole, dotted half, half, quarter, eighth, 16th and 32nd, longest first
     for (auto [index, beats, name] : { std::tuple { 0, 4.0, "Whole" }, { 1, 3.0, "Dotted half" }, { 2, 2.0, "Half" },
-                                       { 3, 1.0, "Quarter" }, { 4, 0.5, "Eighth" } })
+                                       { 3, 1.0, "Quarter" }, { 4, 0.5, "Eighth" }, { 5, 0.25, "16th" }, { 6, 0.125, "32nd" } })
     {
         auto& button = buttons[(size_t) index];
         button = std::make_unique<NoteButton> (glyphs, beats);
@@ -71,14 +71,17 @@ void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highligh
     const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
     const auto ink = controls::drawSymbolButtonTile (g, *this, highlighted, down);
 
-    // The note: an open notehead for a whole or half note, a filled one for a quarter or eighth,
-    // a stem up for all but the whole note, a flag on the eighth's stem and a dot after a dotted half.
+    // The note: an open notehead for a whole or half note, a filled one for a quarter or shorter,
+    // a stem up for all but the whole note, flags on the stems of an eighth, 16th or 32nd, and a
+    // dot after a dotted half.
     const auto glyph = beats >= 4.0 ? Smufl::noteheadWhole : beats >= 2.0 ? Smufl::noteheadHalf : Smufl::noteheadBlack;
     const auto dotted = juce::exactlyEqual (beats, 3.0);
     const auto flagged = beats < 1.0;
     const auto headBounds = glyphs.getPath (glyph).getBounds();
     const auto hasStem = beats < 4.0;
-    const auto stemLength = 2.8f * glyphStaffSpace;
+    const auto flagGlyph = beats >= 0.5 ? Smufl::flag8thUp : beats >= 0.25 ? Smufl::flag16thUp : Smufl::flag32ndUp;
+    const auto flagAnchor = beats >= 0.5 ? -0.04f : beats >= 0.25 ? -0.088f : 0.376f;     // from Bravura's metadata
+    const auto stemLength = (beats < 0.25 ? 3.4f : 2.8f) * glyphStaffSpace;
     const auto noteHeight = headBounds.getHeight() + (hasStem ? stemLength - headBounds.getHeight() / 2.0f : 0.0f);
 
     // A dotted or flagged note is moved left a little, to leave room for its dot or flag.
@@ -99,8 +102,8 @@ void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highligh
         g.fillRect (juce::Rectangle<float>::leftTopRightBottom (right - stemThickness, origin.y - stemLength,
                                                                 right, origin.y - 0.168f * glyphStaffSpace));
 
-        // The flag's anchor meets the top of the stem, from Bravura's metadata.
+        // The flag's anchor meets the top of the stem.
         if (flagged)
-            glyphs.draw (g, Smufl::flag8thUp, { right - stemThickness, origin.y - stemLength - 0.04f * glyphStaffSpace });
+            glyphs.draw (g, flagGlyph, { right - stemThickness, origin.y - stemLength + flagAnchor * glyphStaffSpace });
     }
 }

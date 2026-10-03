@@ -76,7 +76,7 @@ namespace
 
     float getBeatWidth (int notesPerBeat)
     {
-        return notesPerBeat >= 4 ? 10.0f : notesPerBeat == 2 ? 6.4f : 5.0f;
+        return notesPerBeat >= 8 ? 17.0f : notesPerBeat >= 4 ? 10.0f : notesPerBeat == 2 ? 6.4f : 5.0f;
     }
 
     bool isLine (int staffPosition)
@@ -89,9 +89,10 @@ namespace
         return duration != Duration::whole;
     }
 
+    /** How many flags a note has on its own, or beams when it's beamed: 1 for an eighth, 2 for a 16th and 3 for a 32nd. */
     int getFlagCount (Duration duration)
     {
-        return duration == Duration::eighth ? 1 : duration == Duration::sixteenth ? 2 : 0;
+        return duration == Duration::eighth ? 1 : duration == Duration::sixteenth ? 2 : duration == Duration::thirtySecond ? 3 : 0;
     }
 
     juce::juce_wchar getNoteheadGlyph (Duration duration)
@@ -103,7 +104,8 @@ namespace
             case Duration::half:         return Smufl::noteheadHalf;
             case Duration::quarter:
             case Duration::eighth:
-            case Duration::sixteenth:    break;
+            case Duration::sixteenth:
+            case Duration::thirtySecond: break;
         }
 
         return Smufl::noteheadBlack;
@@ -124,6 +126,7 @@ namespace
             case Duration::quarter:      return Smufl::restQuarter;
             case Duration::eighth:       return Smufl::rest8th;
             case Duration::sixteenth:    return Smufl::rest16th;
+            case Duration::thirtySecond: return Smufl::rest32nd;
         }
 
         return Smufl::restQuarter;
@@ -351,7 +354,7 @@ float StaffView::getMarginBelow() const
 
 void StaffView::setNoteLength (double beats)
 {
-    noteLength = juce::jlimit (0.5, Score::maxNoteLength, beats);
+    noteLength = juce::jlimit (1.0 / Score::slotsPerBeat, Score::maxNoteLength, beats);
     setHoverNote ({});
 }
 
@@ -663,11 +666,12 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
                                      ? juce::jlimit (lowestTreblePosition, highestTreblePosition, position)
                                      : juce::jlimit (lowestBassPosition, highestBassPosition, position);
 
-    // The nearest beat, or the nearest half beat for an eighth note, or where there are notes
-    // already halfway through a beat
-    const auto slot = getSlotAt (measure, point.x, [&] (double beat)
+    // The nearest beat, or for a shorter note, the nearest step of its length: an eighth, 16th or
+    // 32nd. Notes already there can be clicked wherever they start.
+    const auto grid = (int) std::lround (juce::jmin (noteLength, 1.0) * Score::slotsPerBeat);
+    const auto slot = getSlotAt (measure, point.x, grid, [&] (double beat)
     {
-        return noteLength < 1.0 || ! score.getNotes (part, staff, measure, beat).empty();
+        return ! score.getNotes (part, staff, measure, beat).empty();
     });
 
     // The note takes its sharp or flat from the key signature.
@@ -685,7 +689,7 @@ std::optional<std::pair<int, double>> StaffView::getDynamicPointAt (juce::Point<
         return {};
 
     // Between beats, only where a note starts, on either staff
-    const auto slot = getSlotAt (measure, point.x, [&] (double beat) { return hasNoteStartingAt (measure, beat); });
+    const auto slot = getSlotAt (measure, point.x, Score::slotsPerBeat, [&] (double beat) { return hasNoteStartingAt (measure, beat); });
     return std::pair { measure, (double) slot / Score::slotsPerBeat };
 }
 
@@ -707,13 +711,13 @@ double StaffView::getHairpinEndAt (float x) const
     if (measure < 0)
         return x < measureLayouts.front().x ? 0.0 : (double) (score.getNumMeasures() * beats);
 
-    // The nearest beat, counting the barline after the last, or half beat with a note starting there
+    // The nearest beat, counting the barline after the last, or 32nd note with a note starting there
     const auto& layout = measureLayouts[(size_t) measure];
     const auto inBeats = (x - layout.x - layout.padding) / layout.beatWidth;
     const auto slot = juce::jlimit (0, beats * Score::slotsPerBeat, juce::roundToInt (inBeats * (float) Score::slotsPerBeat));
-    const auto halfBeat = (double) slot / Score::slotsPerBeat;
-    const auto beat = slot % Score::slotsPerBeat != 0 && hasNoteStartingAt (measure, halfBeat)
-                          ? halfBeat
+    const auto between = (double) slot / Score::slotsPerBeat;
+    const auto beat = slot % Score::slotsPerBeat != 0 && hasNoteStartingAt (measure, between)
+                          ? between
                           : (double) juce::jlimit (0, beats, juce::roundToInt (inBeats));
 
     return toScoreBeats (measure, beat);
@@ -758,18 +762,20 @@ bool StaffView::isInClickRange (juce::Point<float> point) const
     return point.y >= trebleTop - noteRoom * staffSpace && point.y < bassBottom + noteRoom * staffSpace;
 }
 
-int StaffView::getSlotAt (int measure, float x, const std::function<bool (double beat)>& canStartBetweenBeats) const
+int StaffView::getSlotAt (int measure, float x, int grid, const std::function<bool (double beat)>& hasNotesAt) const
 {
     const auto& layout = measureLayouts[(size_t) measure];
     const auto slotWidth = layout.beatWidth / (float) Score::slotsPerBeat;
     const auto slots = score.getBeatsPerMeasure() * Score::slotsPerBeat;
-    const auto slot = juce::jlimit (0, slots - 1, (int) std::floor ((x - layout.x - layout.padding + slotWidth / 2.0f) / slotWidth));
+    const auto inSlots = (x - layout.x - layout.padding) / slotWidth;
 
-    if (slot % Score::slotsPerBeat == 0 || canStartBetweenBeats ((double) slot / Score::slotsPerBeat))
+    // The nearest 32nd note, if notes start there
+    if (const auto slot = juce::jlimit (0, slots - 1, juce::roundToInt (inSlots)); hasNotesAt ((double) slot / Score::slotsPerBeat))
         return slot;
 
-    return juce::jlimit (0, slots - Score::slotsPerBeat,
-                         (int) std::floor ((x - layout.x - layout.padding + layout.beatWidth / 2.0f) / layout.beatWidth) * Score::slotsPerBeat);
+    // Or else the nearest step of the grid
+    grid = juce::jlimit (1, Score::slotsPerBeat, grid);
+    return juce::jlimit (0, slots - grid, juce::roundToInt (inSlots / (float) grid) * grid);
 }
 
 void StaffView::setPlaybackPosition (std::optional<double> beats)
@@ -952,33 +958,58 @@ void StaffView::drawMeasure (juce::Graphics& g, int measure) const
 std::vector<std::vector<size_t>> StaffView::groupBeams (const std::vector<const StaffEvent*>& notes)
 {
     std::vector<std::vector<size_t>> groups;
+    const auto beamable = [&] (size_t i) { return getFlagCount (notes[i]->duration) > 0; };
+    const auto isEighth = [&] (size_t i) { return notes[i]->duration == Duration::eighth; };
 
     for (size_t first = 0; first < notes.size();)
     {
-        const auto duration = notes[first]->duration;
-
-        if (duration != Duration::eighth && duration != Duration::sixteenth)
+        if (! beamable (first))
         {
             ++first;
             continue;
         }
 
+        // A run of eighths and shorter notes, each starting as the one before ends
         auto end = first + 1;
 
-        while (end < notes.size() && notes[end]->duration == duration
-               && juce::exactlyEqual (notes[end]->onset, notes[end - 1]->onset + getBeats (duration)))
+        while (end < notes.size() && beamable (end)
+               && juce::exactlyEqual (notes[end]->onset, notes[end - 1]->onset + getBeats (notes[end - 1]->duration)))
             ++end;
 
-        if (duration == Duration::eighth)
-            for (; end - first >= 4; first += 4)
-                groups.push_back ({ first, first + 1, first + 2, first + 3 });
-
-        for (auto i = first; i < end; ++i)
+        // Every four eighths in a row share a beam, counting from the first of them; the rest of
+        // the run is beamed a beat at a time.
+        const auto startsFourEighths = [&] (size_t i)
         {
-            if (i > first && (int) std::floor (notes[i]->onset) == (int) std::floor (notes[i - 1]->onset))
+            if (i + 3 >= end || ! (isEighth (i) && isEighth (i + 1) && isEighth (i + 2) && isEighth (i + 3)))
+                return false;
+
+            auto stretchStart = i;
+
+            while (stretchStart > first && isEighth (stretchStart - 1))
+                --stretchStart;
+
+            return (i - stretchStart) % 4 == 0;
+        };
+
+        auto addingToBeat = false;      // whether the last group is a beat's, which the next note may join
+
+        for (auto i = first; i < end;)
+        {
+            if (startsFourEighths (i))
+            {
+                groups.push_back ({ i, i + 1, i + 2, i + 3 });
+                i += 4;
+                addingToBeat = false;
+                continue;
+            }
+
+            if (addingToBeat && (int) std::floor (notes[i]->onset) == (int) std::floor (notes[groups.back().back()]->onset))
                 groups.back().push_back (i);
             else
                 groups.push_back ({ i });
+
+            addingToBeat = true;
+            ++i;
         }
 
         first = end;
@@ -1016,7 +1047,6 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
 
     const auto beamGroups = beamable ? groupBeams (noteEvents) : std::vector<std::vector<size_t>>();
 
-    const auto beamCount = content.notesPerBeat >= 4 ? 2 : 1;
     std::vector<std::vector<NoteLayout*>> beams;
 
     for (const auto& group : beamGroups)
@@ -1065,8 +1095,14 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
 
         const auto beamY = [&] (float x) { return x2 > x1 ? y1 + (y2 - y1) * (x - x1) / (x2 - x1) : y1; };
 
-        // Move the beam away from the notes until every stem is long enough.
-        const auto minStem = (beamCount > 1 ? 3.0f : 2.5f) * staffSpace;
+        // Move the beam away from the notes until every stem is long enough, longer the more
+        // beams there are.
+        auto beamCount = 1;
+
+        for (const auto* note : beamed)
+            beamCount = juce::jmax (beamCount, getFlagCount (note->duration));
+
+        const auto minStem = (beamCount > 1 ? 3.0f + 0.75f * (float) (beamCount - 2) : 2.5f) * staffSpace;
         auto shift = 0.0f;
 
         for (const auto* note : beamed)
@@ -1180,7 +1216,7 @@ void StaffView::drawStem (juce::Graphics& g, Staff staff, const NoteLayout& note
     if (! note.beamed)
     {
         // The stem reaches an octave past the outermost note, and at least to the middle line.
-        const auto length = (stemLength + (flags == 2 ? 0.5f : 0.0f)) * staffSpace;
+        const auto length = (stemLength + (flags == 3 ? 1.25f : flags == 2 ? 0.5f : 0.0f)) * staffSpace;
         const auto middleY = getY (staff, middleLine);
 
         end = note.stemUp ? juce::jmin (getY (staff, note.positions.back()) - length, middleY)
@@ -1196,9 +1232,10 @@ void StaffView::drawStem (juce::Graphics& g, Staff staff, const NoteLayout& note
     if (flags > 0)
     {
         // The flag's anchor, which meets the end of the stem, from Bravura's metadata
-        const auto glyph = note.stemUp ? (flags == 1 ? Smufl::flag8thUp : Smufl::flag16thUp)
-                                       : (flags == 1 ? Smufl::flag8thDown : Smufl::flag16thDown);
-        const auto anchor = note.stemUp ? (flags == 1 ? -0.04f : -0.088f) : (flags == 1 ? 0.132f : 0.128f);
+        const auto glyph = note.stemUp ? (flags == 1 ? Smufl::flag8thUp : flags == 2 ? Smufl::flag16thUp : Smufl::flag32ndUp)
+                                       : (flags == 1 ? Smufl::flag8thDown : flags == 2 ? Smufl::flag16thDown : Smufl::flag32ndDown);
+        const auto anchor = note.stemUp ? (flags == 1 ? -0.04f : flags == 2 ? -0.088f : 0.376f)
+                                        : (flags == 1 ? 0.132f : flags == 2 ? 0.128f : -0.448f);
 
         glyphs.draw (g, glyph, { stemLeft, end + anchor * staffSpace });
     }
@@ -1211,20 +1248,54 @@ void StaffView::drawBeams (juce::Graphics& g, Staff, std::vector<NoteLayout*>& b
     const auto left = first.getStemLeft();
     const auto right = last.getStemLeft() + stemThickness * staffSpace;
     const auto towardsNotes = first.stemUp ? 1.0f : -1.0f;
-    const auto beamCount = first.duration == Duration::sixteenth ? 2 : 1;
+    const auto thickness = towardsNotes * beamThickness * staffSpace;
+    const auto beamY = [&] (float x) { return right > left ? first.stemEnd + (last.stemEnd - first.stemEnd) * (x - left) / (right - left) : first.stemEnd; };
 
-    for (int beam = 0; beam < beamCount; ++beam)
+    const auto drawBeam = [&] (int level, float from, float to)
     {
-        const auto offset = towardsNotes * (float) beam * (beamThickness + beamSpacing) * staffSpace;
-        const auto thickness = towardsNotes * beamThickness * staffSpace;
-
+        const auto offset = towardsNotes * (float) level * (beamThickness + beamSpacing) * staffSpace;
         juce::Path path;
-        path.startNewSubPath (left, first.stemEnd + offset);
-        path.lineTo (right, last.stemEnd + offset);
-        path.lineTo (right, last.stemEnd + offset + thickness);
-        path.lineTo (left, first.stemEnd + offset + thickness);
+        path.startNewSubPath (from, beamY (from) + offset);
+        path.lineTo (to, beamY (to) + offset);
+        path.lineTo (to, beamY (to) + offset + thickness);
+        path.lineTo (from, beamY (from) + offset + thickness);
         path.closeSubPath();
         g.fillPath (path);
+    };
+
+    // The main beam joins them all. Each beam after it joins the notes next to one another that
+    // are short enough to have it: a second for 16ths and 32nds, and a third for 32nds. A note
+    // without a neighbour to share it with has a short one, pointing into the group.
+    drawBeam (0, left, right);
+
+    for (int level = 1; level < 3; ++level)
+    {
+        for (size_t i = 0; i < beamed.size();)
+        {
+            if (getFlagCount (beamed[i]->duration) <= level)
+            {
+                ++i;
+                continue;
+            }
+
+            auto end = i + 1;
+
+            while (end < beamed.size() && getFlagCount (beamed[end]->duration) > level)
+                ++end;
+
+            const auto from = beamed[i]->getStemLeft();
+            const auto to = beamed[end - 1]->getStemLeft() + stemThickness * staffSpace;
+            const auto stub = 1.1f * staffSpace;
+
+            if (end - i > 1)
+                drawBeam (level, from, to);
+            else if (i == 0)
+                drawBeam (level, from, from + stub);
+            else
+                drawBeam (level, to - stub, to);
+
+            i = end;
+        }
     }
 }
 
@@ -1370,13 +1441,13 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
         return;
 
     // The notehead of the length a click adds, once it's fitted into what's left of the measure:
-    // filled for a quarter or eighth note, open for a half or whole note
+    // filled for a quarter note or shorter, open for a half or whole note
     const auto room = (int) std::lround ((score.getBeatsPerMeasure() - hoverNote->beat) * Score::slotsPerBeat);
     const auto slots = Score::fitNoteLength ((int) std::lround (hoverNote->length * Score::slotsPerBeat), room);
     const auto duration = getDurationForBeats ((double) slots / Score::slotsPerBeat);
     const auto notehead = duration == Duration::whole ? Smufl::noteheadWhole
-                        : duration == Duration::quarter || duration == Duration::eighth ? Smufl::noteheadBlack
-                                                                                         : Smufl::noteheadHalf;
+                        : getBeats (duration) <= 1.0 ? Smufl::noteheadBlack
+                                                     : Smufl::noteheadHalf;
     const auto width = getNoteheadWidth (duration) * staffSpace;
     const auto position = hoverNote->pitch.step - getBottomLineStep (hoverNote->staff);
     const auto left = getOnsetX (hoverNote->measure, hoverNote->beat) - width / 2.0f;
@@ -1665,7 +1736,7 @@ void StaffView::mouseDrag (const juce::MouseEvent& e)
         if (e.mouseWasDraggedSinceMouseDown())
         {
             const auto start = toScoreBeats (hairpinDrag->start.measure, hairpinDrag->start.beat);
-            hairpinDrag->end = juce::jmax (start + 1.0 / Score::slotsPerBeat, getHairpinEndAt (e.position.x));
+            hairpinDrag->end = juce::jmax (start + 0.5, getHairpinEndAt (e.position.x));
             hoverHintHidden = true;
             repaint();
         }

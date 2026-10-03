@@ -11,19 +11,19 @@
 
 using music::Staff;
 
-/** A note on one staff, in one of the score's parts, starting on a beat or halfway through one. */
+/** A note on one staff, in one of the score's parts, starting on a beat or on a 32nd note between beats. */
 struct Note
 {
     Staff staff;
     int measure;
-    double beat;        // from the start of the measure: 0, 0.5, 1, 1.5...
+    double beat;        // from the start of the measure, in steps of a 32nd note: 0, 0.125, 0.25...
     music::Pitch pitch;
     int part = 0;
-    double length = 1;  // in beats: 0.5 for an eighth note, 1 for a quarter, 2 for a half, 3 for a dotted half, 4 for a whole
+    double length = 1;  // in beats: 0.125 for a 32nd note, 0.25 for a 16th, 0.5 for an eighth, 1 for a quarter, 2 for a half, 3 for a dotted half, 4 for a whole
 
     bool operator== (const Note& other) const
     {
-        // Beats and lengths are whole numbers of eighth notes, so they're compared exactly.
+        // Beats and lengths are whole numbers of 32nd notes, so they're compared exactly.
         return staff == other.staff && measure == other.measure && juce::exactlyEqual (beat, other.beat)
             && pitch == other.pitch && part == other.part && juce::exactlyEqual (length, other.length);
     }
@@ -33,9 +33,9 @@ struct Note
 struct HairpinMark
 {
     int measure;
-    double beat;            // from the start of the measure: 0, 0.5, 1, 1.5...
+    double beat;            // from the start of the measure, in steps of a 32nd note
     music::Hairpin type;
-    double length;          // in beats, a whole number of eighth notes, which can run on into later measures
+    double length;          // in beats, a whole number of 32nd notes, which can run on into later measures
 
     bool operator== (const HairpinMark& other) const
     {
@@ -88,8 +88,8 @@ class Score : public juce::ChangeBroadcaster
 public:
     static constexpr int maxBeatsPerMeasure = 4;
 
-    /** Notes start on eighth notes: on a beat, or halfway through one. */
-    static constexpr int slotsPerBeat = 2;
+    /** Notes start on 32nd notes: on a beat, or a number of 32nds through one. */
+    static constexpr int slotsPerBeat = 8;
     static constexpr int maxSlotsPerMeasure = maxBeatsPerMeasure * slotsPerBeat;
     static constexpr int initialMeasures = 4;
     static constexpr int initialParts = 2;
@@ -161,12 +161,12 @@ public:
 
     //==============================================================================
     /** Adds a note, as long as it asks, or as long as fits in what's left of the measure: the
-        longest of a whole, dotted half, half, quarter or eighth note that does. It takes the place
+        longest of a whole, dotted half, half, quarter, eighth, 16th or 32nd note that does. It takes the place
         of any notes it covers, and cuts short a longer note it starts during. The notes starting
         together all have the same length, so they take the new one's. Returns false if the score
         already has it, or its staff is taken by the measure's chord.
 
-        Beats are counted from 0, and notes start on them or halfway through them.
+        Beats are counted from 0, and notes start on them or on a 32nd note between them.
     */
     bool addNote (const Note&);
 
@@ -181,7 +181,7 @@ public:
     static constexpr double maxNoteLength = 4.0;
 
     /** The longest note that's no longer than asked, and fits in the room there is, both in
-        eighth notes: a whole, dotted half, half, quarter or eighth note.
+        32nd notes: a whole, dotted half, half, quarter, eighth, 16th or 32nd note.
     */
     static int fitNoteLength (int slots, int room);
 
@@ -322,7 +322,7 @@ public:
     juce::Result loadJSON (const juce::var&);
 
 private:
-    /** A hairpin, where it starts: which it is and how many eighth notes it lasts. */
+    /** A hairpin, where it starts: which it is and how many 32nd notes it lasts. */
     struct HairpinStart
     {
         music::Hairpin type;
@@ -333,12 +333,18 @@ private:
 
     struct Measure
     {
-        // By eighth note: the notes starting there, how many eighths they last, and which are tied to the next
+        Measure()
+        {
+            for (auto& staffLengths : lengths)
+                staffLengths.fill (slotsPerBeat);
+        }
+
+        // By 32nd note: the notes starting there, how many 32nds they last, and which are tied to the next
         std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> notes;
-        std::array<std::array<int, maxSlotsPerMeasure>, 2> lengths { { { 2, 2, 2, 2, 2, 2, 2, 2 }, { 2, 2, 2, 2, 2, 2, 2, 2 } } };
+        std::array<std::array<int, maxSlotsPerMeasure>, 2> lengths;
         std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> ties;
-        std::array<std::optional<music::Dynamic>, maxSlotsPerMeasure> dynamics;      // by eighth note, for both staves
-        std::array<std::optional<HairpinStart>, maxSlotsPerMeasure> hairpins;      // starting at each eighth
+        std::array<std::optional<music::Dynamic>, maxSlotsPerMeasure> dynamics;      // by 32nd note, for both staves
+        std::array<std::optional<HairpinStart>, maxSlotsPerMeasure> hairpins;      // starting at each 32nd
         std::optional<MeasureChord> chord;
 
         /** Takes out all of a staff's notes. */

@@ -78,7 +78,7 @@ namespace
 
     StaffContent getNotesContent (const Score& score, int part, Staff staff, int measure, const std::array<int, 7>& keyAlterations)
     {
-        // Notes start on eighth notes: on a beat, or halfway through one.
+        // Notes start on 32nd notes: on a beat, or a number of 32nds through one.
         const auto beats = score.getBeatsPerMeasure();
         const auto slots = beats * Score::slotsPerBeat;
         const auto beatOf = [] (int slot) { return (double) slot / Score::slotsPerBeat; };
@@ -97,7 +97,8 @@ namespace
             return content;
         }
 
-        auto eighths = false;
+        // The shortest note or rest, which says how much room the beats need
+        auto shortest = 1.0;
 
         for (int slot = 0; slot < slots;)
         {
@@ -119,39 +120,55 @@ namespace
                         content.tiedNotes.push_back ({ onset, pitch });
                 }
 
-                eighths = eighths || length == 1;
+                shortest = juce::jmin (shortest, getBeats (event.duration));
                 content.events.push_back (event);
                 slot += length;
                 continue;
             }
 
             // A whole beat that's empty gets a quarter rest, and two that make up the first half
-            // of 4/4 or 3/4, or the second half of 4/4, share a half rest. Half a beat gets an
-            // eighth rest.
-            const auto beat = slot / Score::slotsPerBeat;
-            const auto beatEmpty = slot % Score::slotsPerBeat == 0 && isEmpty (slot + 1);
+            // of 4/4 or 3/4, or the second half of 4/4, share a half rest. Part of a beat gets the
+            // longest of an eighth, 16th or 32nd rest that starts where it does, in step with the
+            // beat, and fits before the next note or the end of the beat.
+            const auto emptyFor = [&] (int count)
+            {
+                for (int s = slot; s < slot + count; ++s)
+                    if (s >= slots || ! isEmpty (s))
+                        return false;
 
-            if (beatEmpty && beat % 2 == 0 && beat + 1 < beats && isEmpty (slot + 2) && isEmpty (slot + 3))
+                return true;
+            };
+
+            const auto beat = slot / Score::slotsPerBeat;
+            const auto beatEmpty = slot % Score::slotsPerBeat == 0 && emptyFor (Score::slotsPerBeat);
+
+            if (beatEmpty && beat % 2 == 0 && beat + 1 < beats && emptyFor (2 * Score::slotsPerBeat))
             {
                 content.events.push_back ({ onset, Duration::half, {}, false, false });
                 slot += 2 * Score::slotsPerBeat;
+                continue;
             }
-            else if (beatEmpty)
+
+            if (beatEmpty)
             {
                 content.events.push_back ({ onset, Duration::quarter, {}, false, false });
                 slot += Score::slotsPerBeat;
+                continue;
             }
-            else
-            {
-                content.events.push_back ({ onset, Duration::eighth, {}, false, false });
-                eighths = true;
-                ++slot;
-            }
+
+            auto restLength = Score::slotsPerBeat / 2;
+
+            while (restLength > 1 && (slot % restLength != 0 || ! emptyFor (restLength)))
+                restLength /= 2;
+
+            const auto rest = getDurationForBeats ((double) restLength / Score::slotsPerBeat);
+            content.events.push_back ({ onset, rest, {}, false, false });
+            shortest = juce::jmin (shortest, getBeats (rest));
+            slot += restLength;
         }
 
-        // Eighths need room, and are beamed a beat at a time.
-        if (eighths)
-            content.notesPerBeat = 2;
+        // Eighths and shorter notes need room, and are beamed a beat at a time.
+        content.notesPerBeat = juce::jlimit (1, Score::slotsPerBeat, juce::roundToInt (1.0 / shortest));
 
         return content;
     }
@@ -163,7 +180,9 @@ Duration getDurationForBeats (double beats)
          : beats >= 3.0 ? Duration::dottedHalf
          : beats >= 2.0 ? Duration::half
          : beats >= 1.0 ? Duration::quarter
-                        : Duration::eighth;
+         : beats >= 0.5 ? Duration::eighth
+         : beats >= 0.25 ? Duration::sixteenth
+                         : Duration::thirtySecond;
 }
 
 double getBeats (Duration duration)
@@ -176,6 +195,7 @@ double getBeats (Duration duration)
         case Duration::quarter:     return 1.0;
         case Duration::eighth:      return 0.5;
         case Duration::sixteenth:   return 0.25;
+        case Duration::thirtySecond: return 0.125;
     }
 
     return 1.0;

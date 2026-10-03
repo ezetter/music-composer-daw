@@ -20,6 +20,8 @@ namespace Smufl
     constexpr juce::juce_wchar flag8thDown           = 0xE241;
     constexpr juce::juce_wchar flag16thUp            = 0xE242;
     constexpr juce::juce_wchar flag16thDown          = 0xE243;
+    constexpr juce::juce_wchar flag32ndUp            = 0xE244;
+    constexpr juce::juce_wchar flag32ndDown          = 0xE245;
     constexpr juce::juce_wchar accidentalFlat        = 0xE260;
     constexpr juce::juce_wchar accidentalNatural     = 0xE261;
     constexpr juce::juce_wchar accidentalSharp       = 0xE262;
@@ -30,6 +32,7 @@ namespace Smufl
     constexpr juce::juce_wchar restQuarter           = 0xE4E5;
     constexpr juce::juce_wchar rest8th               = 0xE4E6;
     constexpr juce::juce_wchar rest16th              = 0xE4E7;
+    constexpr juce::juce_wchar rest32nd              = 0xE4E8;
     constexpr juce::juce_wchar wiggleArpeggiatoUp    = 0xEAA9;
 
     /** The dynamics, from ppp to fff, in the order of music::Dynamic */

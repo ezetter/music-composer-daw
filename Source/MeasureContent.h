@@ -2,7 +2,7 @@
 
 #include "Score.h"
 
-enum class Duration { whole, dottedHalf, half, quarter, eighth, sixteenth };
+enum class Duration { whole, dottedHalf, half, quarter, eighth, sixteenth, thirtySecond };
 
 /** A note, chord or rest on one staff. */
 struct StaffEvent
@@ -24,7 +24,7 @@ struct StaffContent
 
     Source source = Source::notes;
     std::vector<StaffEvent> events;     // in time order
-    int notesPerBeat = 1;               // 2 for eighths and 4 for sixteenths
+    int notesPerBeat = 1;               // 2 for eighths, 4 for 16ths and 8 for 32nds
 
     /** The notes tied to the next note of the same pitch, by when they start, in beats. */
     std::vector<std::pair<double, music::Pitch>> tiedNotes;
@@ -46,7 +46,9 @@ MeasureContent getMeasureContent (const Score&, int part, int measure);
 */
 Duration getFullMeasureDuration (int beatsPerMeasure);
 
-/** A note lasting half a beat, or 1, 2, 3 or 4 beats: an eighth, quarter, half, dotted half or whole note. */
+/** A note lasting an eighth, a quarter or half a beat, or 1, 2, 3 or 4 beats: a 32nd, 16th, eighth, quarter, half,
+    dotted half or whole note.
+*/
 Duration getDurationForBeats (double beats);
 
 /** How many quarter-note beats a note or rest lasts. */

@@ -229,8 +229,8 @@ bool Score::addNote (const Note& note)
 
 int Score::fitNoteLength (int slots, int room)
 {
-    // Whole, dotted half, half, quarter and eighth notes, in eighths
-    for (auto length : { 8, 6, 4, 2, 1 })
+    // Whole, dotted half, half, quarter, eighth, 16th and 32nd notes, in 32nds
+    for (auto length : { 32, 24, 16, 8, 4, 2, 1 })
         if (length <= slots && length <= room)
             return length;
 
@@ -409,9 +409,10 @@ void Score::setHairpin (int part, const HairpinMark& hairpin)
     if (! juce::isPositiveAndBelow (hairpin.measure, getNumMeasures()) || ! juce::isPositiveAndBelow (slot, slotsPerMeasure))
         return;
 
-    // In eighths from the start of the score
+    // In 32nds from the start of the score, at least an eighth note long if there's room
     const auto start = hairpin.measure * slotsPerMeasure + slot;
-    const auto end = start + juce::jlimit (1, getNumMeasures() * slotsPerMeasure - start, toSlot (hairpin.length));
+    const auto room = getNumMeasures() * slotsPerMeasure - start;
+    const auto end = start + juce::jlimit (juce::jmin (slotsPerBeat / 2, room), room, toSlot (hairpin.length));
 
     // The hairpins it overlaps make way for it.
     for (const auto& other : getHairpins (part))
@@ -439,7 +440,7 @@ void Score::removeHairpin (int part, int measure, double beat)
 
 int Score::getVelocity (int part, int measure, double beat) const
 {
-    // Everything's counted in eighths from the start of the score, up to the point asked about.
+    // Everything's counted in 32nds from the start of the score, up to the point asked about.
     const auto slotsPerMeasure = getSlotsPerMeasure();
     const auto point = measure * slotsPerMeasure + juce::jmin (toSlot (beat), slotsPerMeasure);
     auto velocity = (double) music::unmarkedVelocity;
@@ -703,7 +704,8 @@ namespace
     // 5: dynamics
     // 6: crescendos and decrescendos
     // 7: any number of parts
-    constexpr int formatVersion = 7;
+    // 8: notes, dynamics and hairpins by 32nd note, rather than by eighth
+    constexpr int formatVersion = 8;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -776,7 +778,7 @@ juce::var Score::toJSON (bool withPartIds) const
     {
         auto* measureObject = new juce::DynamicObject();
 
-        // By eighth note, every one kept, including ones hidden by a shorter time signature
+        // By 32nd note, every one kept, including ones hidden by a shorter time signature
         for (auto staff : { Staff::treble, Staff::bass })
         {
             juce::Array<juce::var> beats;
@@ -793,7 +795,7 @@ juce::var Score::toJSON (bool withPartIds) const
 
             measureObject->setProperty (staff == Staff::treble ? "treble" : "bass", beats);
 
-            // How many eighths the notes starting at each eighth last
+            // How many 32nds the notes starting at each 32nd last
             juce::Array<juce::var> lengths;
 
             for (auto length : measure.lengths[(size_t) staff])
@@ -801,7 +803,7 @@ juce::var Score::toJSON (bool withPartIds) const
 
             measureObject->setProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", lengths);
 
-            // The notes starting at each eighth that are tied to the next
+            // The notes starting at each 32nd that are tied to the next
             juce::Array<juce::var> ties;
 
             for (const auto& tied : measure.ties[(size_t) staff])
@@ -817,7 +819,7 @@ juce::var Score::toJSON (bool withPartIds) const
             measureObject->setProperty (staff == Staff::treble ? "trebleTies" : "bassTies", ties);
         }
 
-        // The dynamic marked at each eighth, or "" for none, if there are any
+        // The dynamic marked at each 32nd, or "" for none, if there are any
         if (std::any_of (measure.dynamics.begin(), measure.dynamics.end(), [] (const auto& d) { return d.has_value(); }))
         {
             juce::Array<juce::var> dynamics;
@@ -828,7 +830,7 @@ juce::var Score::toJSON (bool withPartIds) const
             measureObject->setProperty ("dynamics", dynamics);
         }
 
-        // The hairpins starting in the measure: at which eighth, which, and how many eighths long
+        // The hairpins starting in the measure: at which 32nd, which, and how many 32nds long
         juce::Array<juce::var> hairpins;
 
         for (int slot = 0; slot < maxSlotsPerMeasure; ++slot)
@@ -836,9 +838,9 @@ juce::var Score::toJSON (bool withPartIds) const
             if (const auto& hairpin = measure.hairpins[(size_t) slot])
             {
                 auto* hairpinObject = new juce::DynamicObject();
-                hairpinObject->setProperty ("eighth", slot);
+                hairpinObject->setProperty ("at", slot);
                 hairpinObject->setProperty ("type", hairpin->type == music::Hairpin::crescendo ? "crescendo" : "decrescendo");
-                hairpinObject->setProperty ("eighths", hairpin->length);
+                hairpinObject->setProperty ("length", hairpin->length);
                 hairpins.add (hairpinObject);
             }
         }
@@ -929,8 +931,10 @@ juce::Result Score::loadJSON (const juce::var& json)
         std::vector<Measure> loaded;
         std::vector<music::AlternateStaff> chordAlternates;     // each chord's own, in scores from before version 2
 
-        // Scores from before version 4 have their notes by beat, and their lengths in beats.
-        const auto eighthsPerEntry = readInt (json.getProperty ("version", {}), 1, 1000, 1) >= 4 ? 1 : slotsPerBeat;
+        // Scores from before version 8 have their notes, dynamics and hairpins by eighth note, and
+        // before version 4, by beat, with their lengths the same way.
+        const auto version = readInt (json.getProperty ("version", {}), 1, 1000, 1);
+        const auto slotsPerEntry = version >= 8 ? 1 : version >= 4 ? slotsPerBeat / 2 : slotsPerBeat;
 
         for (const auto& item : *measureList)
         {
@@ -942,9 +946,9 @@ juce::Result Score::loadJSON (const juce::var& json)
                 const auto* lengths = item.getProperty (staff == Staff::treble ? "trebleLengths" : "bassLengths", {}).getArray();
                 const auto* ties = item.getProperty (staff == Staff::treble ? "trebleTies" : "bassTies", {}).getArray();
 
-                for (int entry = 0; entry < maxSlotsPerMeasure / eighthsPerEntry; ++entry)
+                for (int entry = 0; entry < maxSlotsPerMeasure / slotsPerEntry; ++entry)
                 {
-                    const auto slot = (size_t) (entry * eighthsPerEntry);
+                    const auto slot = (size_t) (entry * slotsPerEntry);
                     auto& notes = measure.notes[(size_t) staff][slot];
 
                     if (const auto* pitches = entries[entry].getArray())
@@ -957,7 +961,7 @@ juce::Result Score::loadJSON (const juce::var& json)
 
                     // Scores from before notes had lengths have quarter notes.
                     const auto hasLength = lengths != nullptr && entry < lengths->size();
-                    const auto length = hasLength ? readInt (lengths->getReference (entry), 1, maxSlotsPerMeasure / eighthsPerEntry, 0) * eighthsPerEntry : 0;
+                    const auto length = hasLength ? readInt (lengths->getReference (entry), 1, maxSlotsPerMeasure / slotsPerEntry, 0) * slotsPerEntry : 0;
                     measure.lengths[(size_t) staff][slot] = notes.empty() || length == 0 ? slotsPerBeat : fitNoteLength (length, maxSlotsPerMeasure - (int) slot);
 
                     // Ties, from notes that are there. Ones that don't lead anywhere are let go
@@ -972,15 +976,17 @@ juce::Result Score::loadJSON (const juce::var& json)
             }
 
             if (const auto* dynamics = item.getProperty ("dynamics", {}).getArray())
-                for (int slot = 0; slot < maxSlotsPerMeasure && slot < dynamics->size(); ++slot)
-                    measure.dynamics[(size_t) slot] = music::findDynamic (dynamics->getReference (slot).toString());
+                for (int entry = 0; entry < maxSlotsPerMeasure / slotsPerEntry && entry < dynamics->size(); ++entry)
+                    measure.dynamics[(size_t) (entry * slotsPerEntry)] = music::findDynamic (dynamics->getReference (entry).toString());
 
             if (const auto* hairpins = item.getProperty ("hairpins", {}).getArray())
             {
                 for (const auto& hairpin : *hairpins)
                 {
-                    const auto slot = readInt (hairpin.getProperty ("eighth", {}), 0, maxSlotsPerMeasure - 1, -1);
-                    const auto length = readInt (hairpin.getProperty ("eighths", {}), 1, std::numeric_limits<int>::max(), 0);
+                    // By eighth note, under other names, before version 8
+                    const auto entry = readInt (hairpin.getProperty (version >= 8 ? "at" : "eighth", {}), 0, maxSlotsPerMeasure / slotsPerEntry - 1, -1);
+                    const auto slot = entry * slotsPerEntry;
+                    const auto length = readInt (hairpin.getProperty (version >= 8 ? "length" : "eighths", {}), 1, std::numeric_limits<int>::max() / slotsPerEntry, 0) * slotsPerEntry;
                     const auto type = hairpin.getProperty ("type", {}).toString();
 
                     if (slot >= 0 && length > 0 && (type == "crescendo" || type == "decrescendo"))
