@@ -50,9 +50,8 @@ public:
     static constexpr int minimumHeight = 640;
 
 private:
-    /** The parts' staff systems, one above the other, their measures lined up, with + and −
-        buttons after the last measure for adding and removing measures, Clone for repeating them
-        all, and a + below the last part for adding another.
+    /** The parts' staff systems, one above the other, their measures lined up, with a + below the
+        last part for adding another.
     */
     struct StaffSystems final : public juce::Component
     {
@@ -72,8 +71,8 @@ private:
         /** Called when the systems move or change size. */
         std::function<void()> onLayoutChanged;
 
-        /** Called when +, − or Clone is clicked, or the + below the last part. */
-        std::function<void()> onAddMeasure, onRemoveMeasure, onCloneMeasures, onAddPart;
+        /** Called when the + below the last part is clicked. */
+        std::function<void()> onAddPart;
 
         void layOut();
 
@@ -85,8 +84,6 @@ private:
         bool layingOut = false;
 
         controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
-        juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
-        juce::TextButton cloneButton { "Clone" };
         juce::TextButton addPartButton { "+" };
         juce::Label addPartLabel;
     };
@@ -252,6 +249,13 @@ private:
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
     DynamicPicker dynamicPicker;        // beside it: a dynamic or hairpin to mark instead
     EraserButton eraserButton;          // at the top right of the score: the eraser
+
+    // Beside it, over the staves wherever they scroll to: + and − for adding a measure at the end
+    // and taking the last away, and Clone for repeating them all, in every part
+    controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
+    juce::Label measuresLabel;
+    juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
+    juce::TextButton cloneButton { "Clone" };
     juce::Component volumeColumn;       // to the left of the staves, holding each part's volume dial and delete button
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };

@@ -19,8 +19,9 @@ namespace
     constexpr int addPartBottom = 8;            // up from the bottom of the last part
     constexpr int measureButtonSize = 28;
     constexpr int stavesTopPadding = 26;        // above the first system, for the note length buttons
+    constexpr int measuresLabelWidth = 64;
     constexpr int cloneButtonWidth = 56, cloneButtonHeight = 26;
-    constexpr int measureButtonsWidth = 110;    // after the final barline, for + and −, and Clone beside them
+    constexpr int rightMargin = 24;             // after the final barline
 
     // A full 88-key piano, A0 to C8
     constexpr int lowestKey = 21;
@@ -66,20 +67,6 @@ namespace
 MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
     : score (scoreToShow)
 {
-    // + adds a measure at the end and − takes the last one away, in every part.
-    addMeasureButton.setTooltip ("Add a measure at the end");
-    removeMeasureButton.setTooltip ("Remove the last measure");
-    addMeasureButton.onClick = [this] { if (onAddMeasure != nullptr) onAddMeasure(); };
-    removeMeasureButton.onClick = [this] { if (onRemoveMeasure != nullptr) onRemoveMeasure(); };
-
-    // Clone repeats every measure after the last, in every part.
-    cloneButton.setTooltip ("Repeat all the measures after the last one, with everything in them");
-    cloneButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
-    cloneButton.setColour (juce::TextButton::textColourOffId, controls::accent);
-    cloneButton.setWantsKeyboardFocus (false);
-    cloneButton.onClick = [this] { if (onCloneMeasures != nullptr) onCloneMeasures(); };
-    addAndMakeVisible (cloneButton);
-
     // The + below the last part adds another part after it.
     addPartButton.setTooltip ("Add an instrument, with its own staves, below the last");
     addPartButton.onClick = [this] { if (onAddPart != nullptr) onAddPart(); };
@@ -89,21 +76,17 @@ MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
     addPartLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (addPartLabel);
 
-    for (auto* button : { &addMeasureButton, &removeMeasureButton, &addPartButton })
-    {
-        button->setLookAndFeel (&roundButtonLookAndFeel);
-        button->setColour (juce::TextButton::textColourOffId, controls::accent);
-        button->setWantsKeyboardFocus (false);
-        addAndMakeVisible (button);
-    }
+    addPartButton.setLookAndFeel (&roundButtonLookAndFeel);
+    addPartButton.setColour (juce::TextButton::textColourOffId, controls::accent);
+    addPartButton.setWantsKeyboardFocus (false);
+    addAndMakeVisible (addPartButton);
 
     layOut();
 }
 
 MainComponent::StaffSystems::~StaffSystems()
 {
-    for (auto* button : { &addMeasureButton, &removeMeasureButton, &addPartButton })
-        button->setLookAndFeel (nullptr);
+    addPartButton.setLookAndFeel (nullptr);
 }
 
 StaffView& MainComponent::StaffSystems::insertView (int index, int part)
@@ -163,21 +146,7 @@ void MainComponent::StaffSystems::layOut()
     addPartLabel.toFront (false);
     y += 4;
 
-    setSize (width + measureButtonsWidth, juce::jmax (y, minimumHeight));
-
-    // + over −, just past the final barline, halfway between the first part's staves and the
-    // second's, or below the only part's, and Clone to their right
-    const auto& first = *views[0];
-    const auto gapTop = first.getBounds().getY() + first.getStavesRange().getEnd();
-    const auto gapBottom = views.size() > 1 ? views[1]->getBounds().getY() + views[1]->getStavesRange().getStart()
-                                            : first.getBottom();
-    const auto centre = juce::Point<int> (width + 14, (gapTop + gapBottom) / 2);
-
-    addMeasureButton.setBounds (juce::Rectangle<int> (measureButtonSize, measureButtonSize).withCentre (centre.translated (0, -measureButtonSize / 2 - 3)));
-    removeMeasureButton.setBounds (juce::Rectangle<int> (measureButtonSize, measureButtonSize).withCentre (centre.translated (0, measureButtonSize / 2 + 3)));
-    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
-    cloneButton.setBounds (juce::Rectangle<int> (cloneButtonWidth, cloneButtonHeight)
-                               .withCentre (centre.translated (measureButtonSize / 2 + 10 + cloneButtonWidth / 2, 0)));
+    setSize (width + rightMargin, juce::jmax (y, minimumHeight));
 
     if (onLayoutChanged != nullptr)
         onLayoutChanged();
@@ -236,10 +205,30 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     for (auto* component : std::initializer_list<juce::Component*> { &playButton, &loopButton, &tempoLabel, &tempoEditor, &partBox })
         addAndMakeVisible (component);
 
-    staffSystems.onAddMeasure = [this] { addMeasure(); };
-    staffSystems.onRemoveMeasure = [this] { removeMeasure(); };
-    staffSystems.onCloneMeasures = [this] { cloneMeasures(); };
     staffSystems.onAddPart = [this] { addPart(); };
+
+    // + adds a measure at the end and − takes the last one away, and Clone repeats every measure
+    // after the last, in every part.
+    measuresLabel.setText ("Measures", juce::dontSendNotification);
+    measuresLabel.setFont (juce::FontOptions (12.5f));
+    measuresLabel.setColour (juce::Label::textColourId, controls::secondaryText);
+    measuresLabel.setJustificationType (juce::Justification::centredRight);
+    addMeasureButton.setTooltip ("Add a measure at the end");
+    removeMeasureButton.setTooltip ("Remove the last measure");
+    cloneButton.setTooltip ("Repeat all the measures after the last one, with everything in them");
+    addMeasureButton.onClick = [this] { addMeasure(); };
+    removeMeasureButton.onClick = [this] { removeMeasure(); };
+    cloneButton.onClick = [this] { cloneMeasures(); };
+    cloneButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
+    cloneButton.setColour (juce::TextButton::textColourOffId, controls::accent);
+    cloneButton.setWantsKeyboardFocus (false);
+
+    for (auto* button : { &addMeasureButton, &removeMeasureButton })
+    {
+        button->setLookAndFeel (&roundButtonLookAndFeel);
+        button->setColour (juce::TextButton::textColourOffId, controls::accent);
+        button->setWantsKeyboardFocus (false);
+    }
     // Note lengths for clicking into the staff, quarter notes to start with, or dynamics and hairpins to mark
     noteLengthPicker.onChange = [this] (double beats) { setNoteLength (beats); };
     dynamicPicker.onChange = [this] (std::optional<music::Marking> marking) { setMarking (marking); };
@@ -260,6 +249,11 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (noteLengthPicker);
     addAndMakeVisible (dynamicPicker);
     addAndMakeVisible (eraserButton);
+
+    for (auto* component : std::initializer_list<juce::Component*> { &measuresLabel, &addMeasureButton, &removeMeasureButton, &cloneButton })
+        addAndMakeVisible (component);
+
+    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
     staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
     staffViewport.onScroll = [this] { positionVolumeDials(); };
 
@@ -320,9 +314,12 @@ MainComponent::~MainComponent()
     setApplicationCommandManagerToWatch (nullptr);
     commandManager.setFirstCommandTarget (nullptr);
 
-    // The dials' look goes before they do.
+    // The dials' and buttons' look goes before they do.
     for (auto& track : tracks)
         track.dial->setLookAndFeel (nullptr);
+
+    for (auto* button : { &addMeasureButton, &removeMeasureButton })
+        button->setLookAndFeel (nullptr);
 
     audioDeviceManager.removeAudioCallback (&instrumentHost);
     score.removeChangeListener (this);
@@ -392,6 +389,22 @@ void MainComponent::resized()
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
     eraserButton.setBounds (staffViewport.getRight() - staffViewport.getScrollBarThickness() - 10 - EraserButton::buttonWidth,
                             noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
+
+    // The measure buttons, to the left of the eraser, in the same row, unless it's too narrow
+    // for them there, when they go under it.
+    const auto rowWidth = measuresLabelWidth + 6 + measureButtonSize * 2 + 6 + 10 + cloneButtonWidth;
+    auto row = juce::Rectangle<int> (eraserButton.getX() - 24 - rowWidth, eraserButton.getY(), rowWidth, EraserButton::buttonHeight);
+
+    if (row.getX() < dynamicPicker.getRight() + 16)
+        row = row.withX (eraserButton.getRight() - rowWidth).withY (eraserButton.getBottom() + 6);
+
+    measuresLabel.setBounds (row.removeFromLeft (measuresLabelWidth));
+    row.removeFromLeft (6);
+    addMeasureButton.setBounds (row.removeFromLeft (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
+    row.removeFromLeft (6);
+    removeMeasureButton.setBounds (row.removeFromLeft (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
+    row.removeFromLeft (10);
+    cloneButton.setBounds (row.removeFromLeft (cloneButtonWidth).withSizeKeepingCentre (cloneButtonWidth, cloneButtonHeight));
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
 }
@@ -439,6 +452,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     // Parts may have been added or taken out, or a whole new score loaded.
     updateTracks();
+    removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
 
     // The tempo can change by loading a score, so show it unless it's being typed.
     if (! tempoEditor.hasKeyboardFocus (false))
@@ -1012,7 +1026,7 @@ void MainComponent::cloneMeasures()
 {
     score.cloneMeasures();
 
-    // Scroll to the end, so the buttons stay in view.
+    // Scroll to the end, so the new measures are in view.
     staffViewport.setViewPosition (staffSystems.getWidth(), staffViewport.getViewPositionY());
 }
 
