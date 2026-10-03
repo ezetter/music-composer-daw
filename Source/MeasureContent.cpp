@@ -98,27 +98,38 @@ namespace
         return tone;
     }
 
-    /** One time round an arpeggio that goes up and back down, or down and back up: through the
-        chord's notes, on to the first note's octave, if the chord doesn't reach that far, and back
-        through the notes to the second. Played over and over, it fills a measure, e.g. C E G C' G E.
+    /** One time round an arpeggio, which goes back and forth between the chord's lowest note and
+        its octave, if the chord doesn't reach that far, or else its highest note. Going up, it
+        starts on the lowest note and goes up first: C E G C' G E. Going down, it starts on the
+        chord's highest note and goes down first, so it carries on from an arpeggio going up in
+        the measure before: G E C E G C'. Played over and over, it fills a measure.
     */
     std::vector<music::Tone> getArpeggioCycle (std::vector<music::Tone> tones, bool upwards)
     {
-        std::sort (tones.begin(), tones.end(), [upwards] (const music::Tone& a, const music::Tone& b) { return upwards ? a.midi < b.midi : a.midi > b.midi; });
+        std::sort (tones.begin(), tones.end(), [] (const music::Tone& a, const music::Tone& b) { return a.midi < b.midi; });
 
         if (tones.empty())
             return tones;
 
+        // Up through the notes to the turn at the top, and back down to the second note
+        const auto numTones = (int) tones.size();
+        const auto turn = shiftedByOctave (tones.front(), 1);
+        const auto reachesTurn = tones.back().midi >= turn.midi;
         auto cycle = tones;
-        const auto turn = shiftedByOctave (tones.front(), upwards ? 1 : -1);
-        const auto reachesTurn = upwards ? tones.back().midi >= turn.midi : tones.back().midi <= turn.midi;
 
         if (! reachesTurn)
             cycle.push_back (turn);
 
-        for (auto i = (int) tones.size() - (reachesTurn ? 2 : 1); i >= 1; --i)
+        for (auto i = numTones - (reachesTurn ? 2 : 1); i >= 1; --i)
             cycle.push_back (tones[(size_t) i]);
 
+        if (upwards)
+            return cycle;
+
+        // Going down, from the highest of the chord's own notes: on its way down, after the
+        // octave, or at the top if there isn't one
+        const auto start = (size_t) ((reachesTurn ? numTones - 1 : numTones + 1) % (int) cycle.size());
+        std::rotate (cycle.begin(), cycle.begin() + (std::ptrdiff_t) start, cycle.end());
         return cycle;
     }
 
