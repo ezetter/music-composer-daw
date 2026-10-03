@@ -101,12 +101,14 @@ public:
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
 
 private:
+    /** A note starting or stopping, or the sustain pedal going down or coming up. */
     struct NoteEvent
     {
         int64_t sample;
-        int noteNumber;
-        bool isNoteOn;
+        int noteNumber;                 // -1 for the pedal
+        bool isNoteOn;                  // for the pedal, whether it goes down
         juce::uint8 velocity = 0;       // a note-on's, from 1 to 127
+        bool isPedal = false;
     };
 
     /** Some measures of the score, ready to play. */
@@ -129,6 +131,7 @@ private:
         juce::AudioBuffer<float> buffer;
         juce::MidiBuffer midi;
         std::bitset<128> scoreNotesOn;      // notes from the score that are sounding
+        bool scorePedalDown = false;        // whether the score has the sustain pedal down
         std::atomic<float> volume { 0.0f };                 // in decibels
         std::atomic<bool> muted { false };
         juce::SmoothedValue<float> gain { 1.0f };           // following the volume, so changes don't click

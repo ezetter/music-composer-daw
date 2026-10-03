@@ -379,13 +379,33 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
         events.push_back ({ endSample, sounding.noteNumber, false });
     }
 
-    // When a note ends just as the same note starts again, it has to stop before it restarts.
-    std::stable_sort (events.begin(), events.end(), [] (const NoteEvent& a, const NoteEvent& b)
+    // The instrument hears the sustain pedal too, as well as the notes being held for it: down
+    // from where it goes down, or the start if it's down already, until it comes up, or the end.
+    const auto passageSeconds = (double) (lastMeasure - firstMeasure + 1) * measureSeconds;
+
+    for (const auto& pedal : score.getPedals (part))
+    {
+        const auto down = (pedal.start - firstBeat) * beatSeconds;
+        const auto up = (pedal.end - firstBeat) * beatSeconds;
+
+        if (up <= 0.0 || down >= passageSeconds)
+            continue;
+
+        events.push_back ({ (int64_t) std::llround (juce::jmax (0.0, down) * sampleRate), -1, true, 127, true });
+        events.push_back ({ (int64_t) std::llround (juce::jmin (up, passageSeconds) * sampleRate), -1, false, 0, true });
+    }
+
+    // At the same moment, notes stop first, then the pedal comes up and goes down again, then
+    // notes start: so a note that ends just as the same note starts again stops before it
+    // restarts, and the pedal catches the notes starting with it, not the ones ending.
+    const auto order = [] (const NoteEvent& e) { return e.isPedal ? (e.isNoteOn ? 2 : 1) : (e.isNoteOn ? 3 : 0); };
+
+    std::stable_sort (events.begin(), events.end(), [&order] (const NoteEvent& a, const NoteEvent& b)
     {
         if (a.sample != b.sample)
             return a.sample < b.sample;
 
-        return ! a.isNoteOn && b.isNoteOn;
+        return order (a) < order (b);
     });
 
     return events;
@@ -571,6 +591,11 @@ void InstrumentHost::addScoreEvents (int numSamples)
                     slot->midi.addEvent (juce::MidiMessage::noteOff (midiChannel, noteNumber), 0);
 
             slot->scoreNotesOn.reset();
+
+            if (slot->scorePedalDown)
+                slot->midi.addEvent (juce::MidiMessage::controllerEvent (midiChannel, 64, 0), 0);
+
+            slot->scorePedalDown = false;
         }
 
         releaseScoreNotes = false;
@@ -601,9 +626,19 @@ void InstrumentHost::addScoreEvents (int numSamples)
                 if (samplePosition >= numSamples)
                     break;
 
+                const auto at = (int) juce::jmax ((int64_t) 0, samplePosition);
+
+                // The sustain pedal is controller 64: all the way down, or up.
+                if (event.isPedal)
+                {
+                    slot.midi.addEvent (juce::MidiMessage::controllerEvent (midiChannel, 64, event.isNoteOn ? 127 : 0), at);
+                    slot.scorePedalDown = event.isNoteOn;
+                    continue;
+                }
+
                 slot.midi.addEvent (event.isNoteOn ? juce::MidiMessage::noteOn (midiChannel, event.noteNumber, event.velocity)
                                                    : juce::MidiMessage::noteOff (midiChannel, event.noteNumber),
-                                    (int) juce::jmax ((int64_t) 0, samplePosition));
+                                    at);
 
                 slot.scoreNotesOn[(size_t) event.noteNumber] = event.isNoteOn;
             }
