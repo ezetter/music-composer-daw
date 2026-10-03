@@ -19,7 +19,7 @@ namespace
     constexpr int addPartBottom = 8;            // up from the bottom of the last part
     constexpr int measureButtonSize = 28;
     constexpr int stavesTopPadding = 26;        // above the first system, for the note length buttons
-    constexpr int measuresLabelWidth = 64;
+    constexpr int measureColumnWidth = 84;      // to the right of the staves, for the measure buttons
     constexpr int cloneButtonWidth = 56, cloneButtonHeight = 26;
     constexpr int rightMargin = 24;             // after the final barline
 
@@ -212,7 +212,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     measuresLabel.setText ("Measures", juce::dontSendNotification);
     measuresLabel.setFont (juce::FontOptions (12.5f));
     measuresLabel.setColour (juce::Label::textColourId, controls::secondaryText);
-    measuresLabel.setJustificationType (juce::Justification::centredRight);
+    measuresLabel.setJustificationType (juce::Justification::centred);
     addMeasureButton.setTooltip ("Add a measure at the end");
     removeMeasureButton.setTooltip ("Remove the last measure");
     cloneButton.setTooltip ("Repeat all the measures after the last one, with everything in them");
@@ -251,7 +251,9 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (eraserButton);
 
     for (auto* component : std::initializer_list<juce::Component*> { &measuresLabel, &addMeasureButton, &removeMeasureButton, &cloneButton })
-        addAndMakeVisible (component);
+        measureColumn.addAndMakeVisible (component);
+
+    addAndMakeVisible (measureColumn);
 
     removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
     staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
@@ -344,6 +346,7 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (StaffView::paperColour);
     g.fillRect (staffViewport.getBounds());
     g.fillRect (volumeColumn.getBounds());
+    g.fillRect (measureColumn.getBounds());
 
     g.setColour (juce::Colours::black.withAlpha (0.15f));
     g.fillRect (0, toolbarHeight - 1, getWidth(), 1);
@@ -380,31 +383,28 @@ void MainComponent::resized()
     keyboard.setKeyWidth ((float) keyboard.getWidth() / (float) numWhiteKeys);
 
     volumeColumn.setBounds (bounds.removeFromLeft (volumeColumnWidth));
+    measureColumn.setBounds (bounds.removeFromRight (measureColumnWidth));
     staffViewport.setBounds (bounds);
 
     // The note length and dynamic buttons stay in the top left corner of the score, over the
-    // staves as they scroll, and the eraser in the top right corner, well away from them, clear
-    // of the scroll bar.
+    // staves as they scroll, and the eraser at the far right, at the top of the measure buttons'
+    // column, well away from them.
     noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + 8);
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
-    eraserButton.setBounds (staffViewport.getRight() - staffViewport.getScrollBarThickness() - 10 - EraserButton::buttonWidth,
-                            noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
+    eraserButton.setBounds (juce::Rectangle<int> (EraserButton::buttonWidth, EraserButton::buttonHeight)
+                                .withCentre ({ measureColumn.getBounds().getCentreX(), noteLengthPicker.getY() + EraserButton::buttonHeight / 2 }));
 
-    // The measure buttons, to the left of the eraser, in the same row, unless it's too narrow
-    // for them there, when they go under it.
-    const auto rowWidth = measuresLabelWidth + 6 + measureButtonSize * 2 + 6 + 10 + cloneButtonWidth;
-    auto row = juce::Rectangle<int> (eraserButton.getX() - 24 - rowWidth, eraserButton.getY(), rowWidth, EraserButton::buttonHeight);
-
-    if (row.getX() < dynamicPicker.getRight() + 16)
-        row = row.withX (eraserButton.getRight() - rowWidth).withY (eraserButton.getBottom() + 6);
-
-    measuresLabel.setBounds (row.removeFromLeft (measuresLabelWidth));
-    row.removeFromLeft (6);
-    addMeasureButton.setBounds (row.removeFromLeft (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
-    row.removeFromLeft (6);
-    removeMeasureButton.setBounds (row.removeFromLeft (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
-    row.removeFromLeft (10);
-    cloneButton.setBounds (row.removeFromLeft (cloneButtonWidth).withSizeKeepingCentre (cloneButtonWidth, cloneButtonHeight));
+    // The measure buttons, one above the other, halfway down the column to the right of the staves
+    constexpr int labelHeight = 16, gap = 6;
+    const auto stackHeight = labelHeight + gap + measureButtonSize * 2 + gap + 2 * gap + cloneButtonHeight;
+    auto stack = juce::Rectangle<int> (measureColumnWidth, stackHeight).withCentre (measureColumn.getLocalBounds().getCentre());
+    measuresLabel.setBounds (stack.removeFromTop (labelHeight));
+    stack.removeFromTop (gap);
+    addMeasureButton.setBounds (stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
+    stack.removeFromTop (gap);
+    removeMeasureButton.setBounds (stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize, measureButtonSize));
+    stack.removeFromTop (2 * gap);
+    cloneButton.setBounds (stack.removeFromTop (cloneButtonHeight).withSizeKeepingCentre (cloneButtonWidth, cloneButtonHeight));
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
 }
