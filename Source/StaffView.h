@@ -257,6 +257,22 @@ private:
     /** What a click without dragging does: adds or takes out a note. */
     void clickNote (const Note&);
 
+    /** The note a click at this point would add or take out. In a measure with a Random chord,
+        each of whose notes goes on its own, it's the very note under the point, if there is one.
+    */
+    std::optional<Note> getNoteToClickAt (juce::Point<float>) const;
+
+    /** Whether a measure has a Random chord with notes. */
+    bool hasRandomChord (int measure) const;
+
+    /** When the note written on a line or space nearest to x starts, if there's one near enough. */
+    std::optional<double> findWrittenNoteOnset (const Note& spot, float x) const;
+
+    /** Takes one note out of a measure's Random chord, by writing out the rest of what the
+        measure shows as notes of their own, on both staves, in place of the chord.
+    */
+    void writeOutRandomChordWithout (int measure, Staff, double beat, int midi);
+
     /** What a click does with a dynamic chosen: marks it, or takes it out if it's there already. */
     void clickDynamic (std::pair<int, double> point);
     void setHoverMarkPoint (std::optional<std::pair<int, double>>);

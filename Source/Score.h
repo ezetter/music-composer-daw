@@ -256,6 +256,11 @@ public:
     */
     void setChord (int part, int measure, std::optional<MeasureChord>);
 
+    /** Takes out a measure's chord, and puts these notes on its staves instead of anything they
+        had, e.g. to write the chord's notes out one by one, so they can be changed on their own.
+    */
+    void replaceChordWithNotes (int part, int measure, const std::vector<Note>&);
+
     /** The notes and names of a measure's chord in the current key, if it has any notes. */
     std::optional<music::Chord> getChordNotes (int part, int measure) const;
 

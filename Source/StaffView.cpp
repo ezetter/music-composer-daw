@@ -1147,8 +1147,10 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
 
     for (size_t i = 0; i < notes.size(); ++i)
     {
+        // A Random chord's notes are taken out one at a time, so only the one under the pointer is red.
+        const auto onItsOwn = content.source == StaffContent::Source::notes || hasRandomChord (measure);
         const auto isHovered = highlightedPosition.has_value()
-                            && (content.source != StaffContent::Source::notes || juce::exactlyEqual (notes[i].onset, (double) hoverNote->beat));
+                            && (! onItsOwn || juce::exactlyEqual (notes[i].onset, (double) hoverNote->beat));
         drawNote (g, staff, notes[i], rolled[i], isHovered ? highlightedPosition : std::nullopt);
     }
 
@@ -1629,7 +1631,7 @@ void StaffView::mouseMove (const juce::MouseEvent& e)
 
     if (! marking.has_value())
     {
-        setHoverNote (getNoteAt (e.position));
+        setHoverNote (getNoteToClickAt (e.position));
         return;
     }
 
@@ -1726,7 +1728,7 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
     // Nothing changes until the mouse is let go: a click adds or takes out a note, and a drag
     // from a note can tie it to the next one of the same pitch.
-    pressedNote = getNoteAt (e.position);
+    pressedNote = getNoteToClickAt (e.position);
     tieFrom = getTieableNoteAt (e.position);
 }
 
@@ -1842,8 +1844,71 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
         score.toggleTie (part, from->staff, from->measure, from->beat, to->measure, to->beat, from->pitch);
 }
 
+bool StaffView::hasRandomChord (int measure) const
+{
+    const auto* chord = score.getChord (part, measure);
+    return chord != nullptr && chord->hasNotes() && chord->style.type == music::ChordType::random;
+}
+
+std::optional<double> StaffView::findWrittenNoteOnset (const Note& spot, float x) const
+{
+    std::optional<double> nearest;
+    auto nearestDistance = 1.4f * staffSpace;
+
+    for (const auto& event : measureLayouts[(size_t) spot.measure].content.staves[(size_t) spot.staff].events)
+        for (const auto& tone : event.tones)
+            if (const auto distance = std::abs (x - getEventX (spot.measure, event)); tone.pitch.step == spot.pitch.step && distance <= nearestDistance)
+            {
+                nearest = event.onset;
+                nearestDistance = distance;
+            }
+
+    return nearest;
+}
+
+std::optional<Note> StaffView::getNoteToClickAt (juce::Point<float> point) const
+{
+    auto note = getNoteAt (point);
+
+    // A Random chord's notes are each taken out on their own, so it's the one under the point.
+    if (note.has_value() && hasRandomChord (note->measure) && score.chordUsesStaff (part, note->measure, note->staff))
+        if (const auto onset = findWrittenNoteOnset (*note, point.x))
+            note->beat = *onset;
+
+    return note;
+}
+
+void StaffView::writeOutRandomChordWithout (int measure, Staff staff, double beat, int midi)
+{
+    // Everything the measure shows, as it's written, but the one note
+    const auto content = getMeasureContent (score, part, measure);
+    std::vector<Note> notes;
+
+    for (auto writtenStaff : { Staff::treble, Staff::bass })
+        for (const auto& event : content.staves[(size_t) writtenStaff].events)
+            for (const auto& tone : event.tones)
+                if (! (writtenStaff == staff && juce::exactlyEqual (event.onset, beat) && tone.midi == midi))
+                    notes.push_back ({ writtenStaff, measure, event.onset, tone.pitch, part, getBeats (event.duration) });
+
+    score.replaceChordWithNotes (part, measure, notes);
+}
+
 void StaffView::clickNote (const Note& note)
 {
+    // In a measure with a Random chord, clicking one of its notes takes out just that note: the
+    // chord goes, and its other notes stay as they are, as notes of their own.
+    if (hasRandomChord (note.measure) && score.chordUsesStaff (part, note.measure, note.staff))
+    {
+        for (const auto& event : measureLayouts[(size_t) note.measure].content.staves[(size_t) note.staff].events)
+            for (const auto& tone : event.tones)
+                if (tone.pitch.step == note.pitch.step && juce::exactlyEqual (event.onset, note.beat))
+                {
+                    writeOutRandomChordWithout (note.measure, note.staff, event.onset, tone.midi);
+                    hoverHintHidden = true;
+                    return;
+                }
+    }
+
     // On a staff with a chord's notes, clicking one of them takes it out of the chord, and
     // clicking anywhere else adds a note to them.
     if (score.chordUsesStaff (part, note.measure, note.staff))
@@ -1939,12 +2004,15 @@ void StaffView::eraseAt (juce::Point<float> point)
     if (found.dynamic.has_value())
         score.setDynamic (part, found.dynamic->first, found.dynamic->second, std::nullopt);
 
-    // A note is taken out as a click takes it out: from the chord, if it's a chord's.
+    // A note is taken out as a click takes it out: from the chord, if it's a chord's, or for a
+    // Random chord, by writing the chord's other notes out on their own.
     if (found.note.has_value() && found.tone.has_value())
     {
         const auto& note = *found.note;
 
-        if (! score.chordUsesStaff (part, note.measure, note.staff))
+        if (hasRandomChord (note.measure) && score.chordUsesStaff (part, note.measure, note.staff))
+            writeOutRandomChordWithout (note.measure, note.staff, note.beat, found.tone->midi);
+        else if (! score.chordUsesStaff (part, note.measure, note.staff))
             score.removeNotesAt (part, note.staff, note.measure, note.beat, note.pitch.step);
         else if (const auto* chord = score.getChord (part, note.measure); chord != nullptr && chord->style.staff == note.staff)
             score.toggleChordNote (part, note.measure, found.tone->midi, chord->style);

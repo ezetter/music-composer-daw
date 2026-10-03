@@ -498,6 +498,32 @@ void Score::setChord (int part, int measure, std::optional<MeasureChord> chord)
     sendSynchronousChangeMessage();
 }
 
+void Score::replaceChordWithNotes (int part, int measure, const std::vector<Note>& notes)
+{
+    auto& target = getMeasure (part, measure);
+    target.chord.reset();
+    target.clearNotes (Staff::treble);
+    target.clearNotes (Staff::bass);
+
+    for (const auto& note : notes)
+    {
+        const auto slot = toSlot (note.beat);
+
+        if (! juce::isPositiveAndBelow (slot, getSlotsPerMeasure()))
+            continue;
+
+        auto& pitches = target.notes[(size_t) note.staff][(size_t) slot];
+
+        if (std::find (pitches.begin(), pitches.end(), note.pitch) == pitches.end())
+            pitches.insert (std::lower_bound (pitches.begin(), pitches.end(), note.pitch, comesBefore), note.pitch);
+
+        target.lengths[(size_t) note.staff][(size_t) slot] = fitNoteLength (toSlot (note.length), getSlotsPerMeasure() - slot);
+    }
+
+    pruneTies();
+    sendSynchronousChangeMessage();
+}
+
 std::optional<music::Chord> Score::getChordNotes (int part, int measure) const
 {
     if (const auto* chord = getChord (part, measure))

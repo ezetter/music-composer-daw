@@ -91,6 +91,7 @@ Clicking a note takes it out again, whatever its sharp or flat. The note under t
 
 On a staff with a chord's notes, clicking works the same way on the chord:
 - **Removing:** clicking one of the chord's notes takes it out of the chord.
+- **Random chords:** a Random chord's notes are taken out one at a time instead, and only the note under the pointer turns red. Clicking it, or erasing it, takes the chord out of the measure: its other notes, on both staves, stay exactly where and as long as they were, as notes of their own, as if they'd been clicked in one by one, and the measure's button says **Add Chord** again. Undo puts the chord back. Block, rolled and arpeggio chords keep their chords, with the note taken out of them.
 - **Adding:** clicking anywhere else on the staff adds that note to the chord, and the chord's other notes stay.
 - **Both staves:** this works on the chord's own staff and on its alternate staff.
 - **Renaming:** a chord changed this way is renamed for its new notes, as with notes set on the piano.
