@@ -76,11 +76,12 @@ public:
         std::optional<Note> tie;                        // the note a tie there is from
         std::optional<std::pair<int, double>> dynamic;  // the measure and beat of a dynamic there
         std::optional<HairpinMark> hairpin;
+        std::optional<PedalSpan> pedal;
 
-        bool isEmpty() const { return ! note.has_value() && ! tie.has_value() && ! dynamic.has_value() && ! hairpin.has_value(); }
+        bool isEmpty() const { return ! note.has_value() && ! tie.has_value() && ! dynamic.has_value() && ! hairpin.has_value() && ! pedal.has_value(); }
         bool operator== (const Erasable& other) const
         {
-            return note == other.note && tie == other.tie && dynamic == other.dynamic && hairpin == other.hairpin;
+            return note == other.note && tie == other.tie && dynamic == other.dynamic && hairpin == other.hairpin && pedal == other.pedal;
         }
     };
 
@@ -279,6 +280,22 @@ private:
 
     std::optional<music::Dynamic> getChosenDynamic() const;
     std::optional<music::Hairpin> getChosenHairpin() const;
+    bool isPedalChosen() const;
+
+    /** Where clicking at this point would put a pedal mark, as a measure and beat: on or under
+        the lower staff, at the nearest beat, or 32nd note where a note starts.
+    */
+    std::optional<std::pair<int, double>> getPedalPointAt (juce::Point<float>) const;
+
+    /** What a click with the pedal chosen does: puts it down, or lifts the one that's down, or
+        between where one goes down and comes up, lifts it and puts it straight down again.
+    */
+    void clickPedal (std::pair<int, double> point);
+
+    float getPedalLineY() const;                // the line under the lower staff, below the numerals
+    float getScoreBeatsX (double beats) const;  // across the view, for a point in beats from the start of the score
+    juce::Range<float> getPedalSpan (const PedalSpan&) const;
+    void drawPedals (juce::Graphics&) const;
 
     /** A hairpin being dragged out, or stretched: where it starts and which it is, where the
         drag's got to, and the hairpin it's stretching, if it is.
@@ -308,7 +325,7 @@ private:
     bool active = false;
     double noteLength = 1.0;
     std::optional<music::Marking> marking;          // marked by clicks and drags, instead of adding notes
-    std::optional<std::pair<int, double>> hoverMarkPoint, pressedDynamic;
+    std::optional<std::pair<int, double>> hoverMarkPoint, pressedDynamic, pressedPedal;
     std::optional<HairpinMark> hoverHairpin, pressedHairpin;     // the hairpin under the mouse, and one a click would take out
     std::optional<HairpinDrag> hairpinDrag;
     bool erasing = false, erasingStroke = false;    // the eraser's chosen, and its button's down

@@ -45,6 +45,21 @@ struct HairpinMark
     }
 };
 
+/** A time the sustain pedal is held down in one of a score's parts, from when it goes down to when
+    it comes up, in beats from the start of the score.
+*/
+struct PedalSpan
+{
+    double start;
+    double end;
+    bool lifted = true;     // whether it's marked as coming up, rather than held to the next pedal mark or the end of the score
+
+    bool operator== (const PedalSpan& other) const
+    {
+        return juce::exactlyEqual (start, other.start) && juce::exactlyEqual (end, other.end) && lifted == other.lifted;
+    }
+};
+
 /** How a measure's chord is written: which staff it's on, as what type of chord, and in notes
     how long. What the other staff shows is up to the score, for every chord alike.
 */
@@ -245,6 +260,18 @@ public:
     /** Takes out the hairpin starting at a point, if there is one. */
     void removeHairpin (int part, int measure, double beat);
 
+    /** When a part's sustain pedal is down, in order. One put down and not lifted is held until
+        it's put down again, or to the end of the score. Marks on beats a shorter time signature
+        leaves out aren't included, but are kept.
+    */
+    std::vector<PedalSpan> getPedals (int part) const;
+
+    /** Replaces a part's pedal marks, where the time signature shows them, with these. They're
+        put down on a beat or a 32nd note, and those lifted come up on one, or at the end of the
+        score. One lifted where the next goes down is lifted and put straight down again.
+    */
+    void setPedals (int part, const std::vector<PedalSpan>&);
+
     /** How hard a part's notes are played at a point, as MIDI velocity. A dynamic sets it, until
         the next one, and a hairpin moves it each beat it lasts, from wherever it was towards
         the loudest or softest; after the hairpin it stays where the hairpin left it. Before any
@@ -314,7 +341,7 @@ public:
     */
     bool isMeasureEmpty (int measure) const;
 
-    /** Whether a part has nothing in it at all: no notes, chords, dynamics or hairpins. */
+    /** Whether a part has nothing in it at all: no notes, chords, dynamics, hairpins or pedal marks. */
     bool isPartEmpty (int part) const;
 
     /** Whether a part has any chords with notes. */
@@ -347,6 +374,9 @@ public:
     juce::Result loadJSON (const juce::var&);
 
 private:
+    /** What happens to the sustain pedal at a 32nd note: it comes up, then goes down, or both. */
+    static constexpr juce::uint8 pedalUp = 1, pedalDown = 2;
+
     /** A hairpin, where it starts: which it is and how many 32nd notes it lasts. */
     struct HairpinStart
     {
@@ -370,6 +400,7 @@ private:
         std::array<std::array<std::vector<music::Pitch>, maxSlotsPerMeasure>, 2> ties;
         std::array<std::optional<music::Dynamic>, maxSlotsPerMeasure> dynamics;      // by 32nd note, for both staves
         std::array<std::optional<HairpinStart>, maxSlotsPerMeasure> hairpins;      // starting at each 32nd
+        std::array<juce::uint8, maxSlotsPerMeasure> pedalMarks {};                 // at each 32nd: pedalUp, then pedalDown, or neither
         std::optional<MeasureChord> chord;
 
         /** Takes out all of a staff's notes. */

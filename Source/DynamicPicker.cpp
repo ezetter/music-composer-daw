@@ -13,6 +13,11 @@ namespace
             return music::getDynamicMark (*dynamic) + " (" + music::getDynamicName (*dynamic) + "): click the score to mark it, "
                    "and the notes from there on play at velocity " + juce::String (music::getDynamicVelocity (*dynamic));
 
+        if (std::holds_alternative<music::Pedal> (marking))
+            return "Pedal: click under an instrument's lower staff to put the sustain pedal down, and again to lift it. "
+                   "Clicking between where it goes down and comes up lifts it and puts it straight down again there. "
+                   "Notes are held while it's down.";
+
         const auto hairpin = std::get<music::Hairpin> (marking);
         return music::getHairpinName (hairpin) + ": drag along the score to mark one, or drag the end of one to stretch it. "
                "Each beat, the notes get " + juce::String (juce::roundToInt (music::hairpinChangePerBeat * 100.0)) + "% of the way "
@@ -25,9 +30,11 @@ DynamicPicker::DynamicPicker()
 {
     for (size_t i = 0; i < buttons.size(); ++i)
     {
-        const auto shown = i < music::allDynamics.size() ? music::Marking (music::allDynamics[i])
-                                                         : music::Marking (i == music::allDynamics.size() ? music::Hairpin::crescendo
-                                                                                                          : music::Hairpin::decrescendo);
+        const auto numDynamics = music::allDynamics.size();
+        const auto shown = i < numDynamics ? music::Marking (music::allDynamics[i])
+                         : i == numDynamics ? music::Marking (music::Hairpin::crescendo)
+                         : i == numDynamics + 1 ? music::Marking (music::Hairpin::decrescendo)
+                                                : music::Marking (music::Pedal::sustain);
         auto& button = buttons[i];
         button = std::make_unique<MarkingButton> (glyphs, shown);
         button->setTooltip (describe (shown));
@@ -55,13 +62,15 @@ void DynamicPicker::setChoice (std::optional<music::Marking> newChoice)
 
 juce::Rectangle<int> DynamicPicker::getIdealBounds() const
 {
-    return { (int) buttons.size() * buttonWidth + ((int) buttons.size() - 1) * gap + hairpinGap, buttonHeight };
+    return { (int) buttons.size() * buttonWidth + ((int) buttons.size() - 1) * gap + 2 * groupGap, buttonHeight };
 }
 
 void DynamicPicker::resized()
 {
     for (size_t i = 0; i < buttons.size(); ++i)
-        buttons[i]->setBounds ((int) i * (buttonWidth + gap) + (i >= music::allDynamics.size() ? hairpinGap : 0), 0, buttonWidth, buttonHeight);
+        buttons[i]->setBounds ((int) i * (buttonWidth + gap) + (i >= music::allDynamics.size() ? groupGap : 0)
+                                   + (i >= music::allDynamics.size() + 2 ? groupGap : 0),
+                               0, buttonWidth, buttonHeight);
 }
 
 //==============================================================================
@@ -84,6 +93,19 @@ void DynamicPicker::MarkingButton::paintButton (juce::Graphics& g, bool highligh
         const auto glyph = Smufl::dynamics[(size_t) *dynamic];
         const auto glyphBounds = glyphs.getPath (glyph).getBounds();
         glyphs.draw (g, glyph, { centre.x - glyphBounds.getCentreX(), centre.y + 0.45f * glyphStaffSpace });
+        return;
+    }
+
+    // The pedal: a line with ticks up at each end, where it goes down and comes up
+    if (std::holds_alternative<music::Pedal> (marking))
+    {
+        const auto area = getLocalBounds().toFloat().withSizeKeepingCentre (0.64f * (float) getWidth(), 0.36f * (float) getHeight());
+        juce::Path bracket;
+        bracket.startNewSubPath (area.getTopLeft());
+        bracket.lineTo (area.getBottomLeft());
+        bracket.lineTo (area.getBottomRight());
+        bracket.lineTo (area.getTopRight());
+        g.strokePath (bracket, juce::PathStrokeType (1.4f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
         return;
     }
 

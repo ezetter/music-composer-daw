@@ -231,6 +231,9 @@ namespace music
     /** The velocity after a hairpin has gone on for some beats from a starting velocity. */
     double applyHairpin (Hairpin, double startVelocity, double beats);
 
-    /** Something marked on the score to set how loudly it plays: a dynamic or a hairpin. */
-    using Marking = std::variant<Dynamic, Hairpin>;
+    /** The sustain pedal, whose marks say when it goes down and comes up. */
+    enum class Pedal { sustain };
+
+    /** Something marked on the score to say how it's played: a dynamic, a hairpin, or the pedal. */
+    using Marking = std::variant<Dynamic, Hairpin, Pedal>;
 }

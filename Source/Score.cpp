@@ -438,6 +438,75 @@ void Score::removeHairpin (int part, int measure, double beat)
     sendSynchronousChangeMessage();
 }
 
+std::vector<PedalSpan> Score::getPedals (int part) const
+{
+    // Walking through the marks in order: down starts one, up ends it, and another down without
+    // an up in between ends it too.
+    const auto slotsPerMeasure = getSlotsPerMeasure();
+    std::vector<PedalSpan> spans;
+    auto down = false;
+
+    for (int measure = 0; measure < getNumMeasures(); ++measure)
+    {
+        for (int slot = 0; slot < slotsPerMeasure; ++slot)
+        {
+            const auto marks = getMeasure (part, measure).pedalMarks[(size_t) slot];
+            const auto at = toBeats (measure * slotsPerMeasure + slot);
+
+            if ((marks & pedalUp) != 0 && down)
+            {
+                spans.back().end = at;
+                down = false;
+            }
+
+            if ((marks & pedalDown) != 0)
+            {
+                if (down)
+                {
+                    spans.back().end = at;
+                    spans.back().lifted = false;
+                }
+
+                spans.push_back ({ at, at, true });
+                down = true;
+            }
+        }
+    }
+
+    if (down)
+    {
+        spans.back().end = toBeats (getNumMeasures() * slotsPerMeasure);
+        spans.back().lifted = false;
+    }
+
+    return spans;
+}
+
+void Score::setPedals (int part, const std::vector<PedalSpan>& spans)
+{
+    const auto slotsPerMeasure = getSlotsPerMeasure();
+    const auto scoreEnd = getNumMeasures() * slotsPerMeasure;
+
+    for (auto& measure : parts[(size_t) part].measures)
+        std::fill (measure.pedalMarks.begin(), measure.pedalMarks.begin() + slotsPerMeasure, (juce::uint8) 0);
+
+    const auto mark = [&] (double beats, juce::uint8 what)
+    {
+        if (const auto at = toSlot (beats); juce::isPositiveAndBelow (at, scoreEnd))
+            getMeasure (part, at / slotsPerMeasure).pedalMarks[(size_t) (at % slotsPerMeasure)] |= what;
+    };
+
+    for (const auto& span : spans)
+    {
+        mark (span.start, pedalDown);
+
+        if (span.lifted)
+            mark (span.end, pedalUp);
+    }
+
+    sendSynchronousChangeMessage();
+}
+
 int Score::getVelocity (int part, int measure, double beat) const
 {
     // Everything's counted in 32nds from the start of the score, up to the point asked about.
@@ -679,7 +748,7 @@ bool Score::isMeasureEmpty (int measure) const
 
 bool Score::isPartEmpty (int part) const
 {
-    if (hasNotes (part) || ! getHairpins (part).empty())
+    if (hasNotes (part) || ! getHairpins (part).empty() || ! getPedals (part).empty())
         return false;
 
     for (const auto& measure : parts[(size_t) part].measures)
@@ -766,7 +835,8 @@ namespace
     // 7: any number of parts
     // 8: notes, dynamics and hairpins by 32nd note, rather than by eighth
     // 9: a chord's note length
-    constexpr int formatVersion = 9;
+    // 10: the sustain pedal
+    constexpr int formatVersion = 10;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -909,6 +979,24 @@ juce::var Score::toJSON (bool withPartIds) const
         if (! hairpins.isEmpty())
             measureObject->setProperty ("hairpins", hairpins);
 
+        // The pedal marks: at which 32nd, and whether the pedal comes up, goes down, or both
+        juce::Array<juce::var> pedals;
+
+        for (int slot = 0; slot < maxSlotsPerMeasure; ++slot)
+        {
+            if (const auto marks = measure.pedalMarks[(size_t) slot]; marks != 0)
+            {
+                auto* pedalObject = new juce::DynamicObject();
+                pedalObject->setProperty ("at", slot);
+                pedalObject->setProperty ("up", (marks & pedalUp) != 0);
+                pedalObject->setProperty ("down", (marks & pedalDown) != 0);
+                pedals.add (pedalObject);
+            }
+        }
+
+        if (! pedals.isEmpty())
+            measureObject->setProperty ("pedals", pedals);
+
         if (measure.chord.has_value())
         {
             const auto& chord = *measure.chord;
@@ -1042,6 +1130,12 @@ juce::Result Score::loadJSON (const juce::var& json)
             if (const auto* dynamics = item.getProperty ("dynamics", {}).getArray())
                 for (int entry = 0; entry < maxSlotsPerMeasure / slotsPerEntry && entry < dynamics->size(); ++entry)
                     measure.dynamics[(size_t) (entry * slotsPerEntry)] = music::findDynamic (dynamics->getReference (entry).toString());
+
+            if (const auto* pedals = item.getProperty ("pedals", {}).getArray())
+                for (const auto& pedal : *pedals)
+                    if (const auto slot = readInt (pedal.getProperty ("at", {}), 0, maxSlotsPerMeasure - 1, -1); slot >= 0)
+                        measure.pedalMarks[(size_t) slot] = (juce::uint8) (((bool) pedal.getProperty ("up", false) ? pedalUp : 0)
+                                                                           | ((bool) pedal.getProperty ("down", false) ? pedalDown : 0));
 
             if (const auto* hairpins = item.getProperty ("hairpins", {}).getArray())
             {

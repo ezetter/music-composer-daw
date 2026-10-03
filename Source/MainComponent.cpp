@@ -72,11 +72,6 @@ MainComponent::StaffSystems::StaffSystems (Score& scoreToShow)
     // The + below the last part adds another part after it.
     addPartButton.setTooltip ("Add an instrument, with its own staves, below the last");
     addPartButton.onClick = [this] { if (onAddPart != nullptr) onAddPart(); };
-    addPartLabel.setText ("Add instrument", juce::dontSendNotification);
-    addPartLabel.setFont (juce::FontOptions (12.5f));
-    addPartLabel.setColour (juce::Label::textColourId, controls::accent);
-    addPartLabel.setInterceptsMouseClicks (false, false);
-    addAndMakeVisible (addPartLabel);
 
     addPartButton.setLookAndFeel (&roundButtonLookAndFeel);
     addPartButton.setColour (juce::TextButton::textColourOffId, controls::accent);
@@ -143,9 +138,7 @@ void MainComponent::StaffSystems::layOut()
     // The + for adding a part, below the last one's staves, at the left, in the room left under
     // them for low notes, so it takes no more height
     addPartButton.setBounds (12, y - addPartBottom - addPartButtonSize, addPartButtonSize, addPartButtonSize);
-    addPartLabel.setBounds (addPartButton.getRight() + 6, addPartButton.getY(), 120, addPartButtonSize);
     addPartButton.toFront (false);
-    addPartLabel.toFront (false);
     y += 4;
 
     setSize (width + rightMargin, juce::jmax (y, minimumHeight));

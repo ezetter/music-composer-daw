@@ -356,7 +356,8 @@ float StaffView::getMarginAbove() const
 
 float StaffView::getMarginBelow() const
 {
-    return juce::jmax (minMarginBelow, getNumeralOffset() + 1.4f);
+    // Room for the numerals, and the pedal marks below them
+    return juce::jmax (minMarginBelow, getNumeralOffset() + 2.4f);
 }
 
 void StaffView::setNoteLength (double beats)
@@ -393,6 +394,11 @@ std::optional<music::Dynamic> StaffView::getChosenDynamic() const
             return *dynamic;
 
     return {};
+}
+
+bool StaffView::isPedalChosen() const
+{
+    return marking.has_value() && std::holds_alternative<music::Pedal> (*marking);
 }
 
 std::optional<music::Hairpin> StaffView::getChosenHairpin() const
@@ -868,6 +874,7 @@ void StaffView::paint (juce::Graphics& g)
     drawTieDrag (g);
     drawHoverNote (g);
     drawHairpins (g);
+    drawPedals (g);
     drawHoverDynamic (g);
 }
 
@@ -1476,6 +1483,128 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
         glyphs.draw (g, Smufl::augmentationDot, { left + width + 0.35f * staffSpace, getY (hoverNote->staff, isLine (position) ? position + 1 : position) });
 }
 
+float StaffView::getPedalLineY() const
+{
+    return getY (Staff::bass, 0) + (getNumeralOffset() + 1.6f) * staffSpace;
+}
+
+float StaffView::getScoreBeatsX (double beats) const
+{
+    // The end of the score is just before the final barline.
+    const auto [measure, beat] = fromScoreBeats (beats);
+
+    if (measure >= score.getNumMeasures())
+        return measureLayouts.back().x + measureLayouts.back().width - 1.0f * staffSpace;
+
+    return getOnsetX (measure, beat);
+}
+
+juce::Range<float> StaffView::getPedalSpan (const PedalSpan& pedal) const
+{
+    const auto start = getScoreBeatsX (pedal.start);
+    return { start, juce::jmax (start + 0.5f * staffSpace, getScoreBeatsX (pedal.end)) };
+}
+
+void StaffView::drawPedals (juce::Graphics& g) const
+{
+    // A line under the lower staff, with a tick up where the pedal goes down, and another where
+    // it comes up. One that's still down at the next mark, or the end, has no tick at its end.
+    const auto y = getPedalLineY();
+    const auto tick = 1.0f * staffSpace;
+    const auto thickness = 0.16f * staffSpace;
+
+    const auto draw = [&] (juce::Range<float> span, bool lifted, bool downTick)
+    {
+        juce::Path bracket;
+        bracket.startNewSubPath (span.getStart(), downTick ? y - tick : y);
+        bracket.lineTo (span.getStart(), y);
+        bracket.lineTo (span.getEnd(), y);
+
+        if (lifted)
+            bracket.lineTo (span.getEnd(), y - tick);
+
+        g.strokePath (bracket, juce::PathStrokeType (thickness, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+    };
+
+    const auto pedals = score.getPedals (part);
+
+    for (const auto& pedal : pedals)
+    {
+        g.setColour (erasing && hoverErasable.pedal == pedal ? removalColour : inkColour);
+        draw (getPedalSpan (pedal), pedal.lifted, true);
+    }
+
+    // Where a click would put the pedal down, or lift the one that's down
+    if (isPedalChosen() && hoverMarkPoint.has_value() && ! hoverHintHidden)
+    {
+        const auto at = toScoreBeats (hoverMarkPoint->first, hoverMarkPoint->second);
+        const auto x = getScoreBeatsX (at);
+        g.setColour (hoverColour);
+
+        if (const auto open = std::find_if (pedals.begin(), pedals.end(), [] (const PedalSpan& p) { return ! p.lifted; });
+            open != pedals.end() && ! juce::exactlyEqual (open->start, at))
+            draw ({ juce::jmin (x, getScoreBeatsX (open->start)), juce::jmax (x, getScoreBeatsX (open->start)) }, true, true);
+        else
+            draw ({ x, x + 1.5f * staffSpace }, false, true);
+    }
+
+    g.setColour (inkColour);
+}
+
+std::optional<std::pair<int, double>> StaffView::getPedalPointAt (juce::Point<float> point) const
+{
+    // On or under the lower staff
+    const auto staffDivide = getStaffTop (Staff::treble) + (staffHeight + staffGap / 2.0f) * staffSpace;
+
+    if (point.y < staffDivide)
+        return {};
+
+    const auto measure = findMeasure (point.x);
+
+    if (measure < 0)
+        return {};
+
+    const auto slot = getSlotAt (measure, point.x, Score::slotsPerBeat, [&] (double beat) { return hasNoteStartingAt (measure, beat); });
+    return std::pair { measure, (double) slot / Score::slotsPerBeat };
+}
+
+void StaffView::clickPedal (std::pair<int, double> point)
+{
+    const auto at = toScoreBeats (point.first, point.second);
+    auto pedals = score.getPedals (part);
+    const auto open = std::find_if (pedals.begin(), pedals.end(), [] (const PedalSpan& p) { return ! p.lifted; });
+    const auto within = std::find_if (pedals.begin(), pedals.end(), [at] (const PedalSpan& p) { return p.lifted && p.start < at && at < p.end; });
+
+    if (open != pedals.end())
+    {
+        // Lifting the one that's down: from where it went down to here, either way round. Any
+        // others in between make way.
+        if (juce::exactlyEqual (open->start, at))
+            return;
+
+        const PedalSpan lifted { juce::jmin (open->start, at), juce::jmax (open->start, at), true };
+        pedals.erase (open);
+        pedals.erase (std::remove_if (pedals.begin(), pedals.end(), [&] (const PedalSpan& p) { return p.start < lifted.end && p.end > lifted.start; }),
+                      pedals.end());
+        pedals.push_back (lifted);
+    }
+    else if (within != pedals.end())
+    {
+        // Between where one goes down and comes up: lifted and put straight down again here
+        const auto end = within->end;
+        within->end = at;
+        pedals.push_back ({ at, end, true });
+    }
+    else
+    {
+        pedals.push_back ({ at, at, false });
+    }
+
+    std::sort (pedals.begin(), pedals.end(), [] (const PedalSpan& a, const PedalSpan& b) { return a.start < b.start; });
+    score.setPedals (part, pedals);
+    hoverHintHidden = true;
+}
+
 float StaffView::getMarkingCentreY() const
 {
     return (getY (Staff::treble, 0) + getY (Staff::bass, topLine)) / 2.0f;
@@ -1635,6 +1764,21 @@ void StaffView::mouseMove (const juce::MouseEvent& e)
         return;
     }
 
+    // With the pedal chosen, a pedal mark shows where a click would put it.
+    if (isPedalChosen())
+    {
+        const auto point = getPedalPointAt (e.position);
+
+        if (point != hoverMarkPoint)
+        {
+            hoverMarkPoint = point;
+            hoverHintHidden = false;
+            repaint();
+        }
+
+        return;
+    }
+
     // With a hairpin chosen, one under the mouse is highlighted, and its end can be dragged.
     const auto overHairpin = getChosenHairpin().has_value() ? findHairpinAt (e.position) : std::nullopt;
     const auto newHoverHairpin = overHairpin.has_value() ? std::optional (overHairpin->first) : std::nullopt;
@@ -1672,6 +1816,7 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
     pressedNote.reset();
     pressedDynamic.reset();
+    pressedPedal.reset();
     pressedHairpin.reset();
     hairpinDrag.reset();
     tieFrom.reset();
@@ -1693,6 +1838,13 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
         eraseAt (e.position);
         setHoverErasable (findErasableAt (e.position));
+        return;
+    }
+
+    // With the pedal chosen, a click marks it, when the mouse is let go.
+    if (isPedalChosen())
+    {
+        pressedPedal = getPedalPointAt (e.position);
         return;
     }
 
@@ -1786,10 +1938,12 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
     const auto pressed = pressedNote;
     const auto from = tieFrom;
     const auto pressedPoint = pressedDynamic;
+    const auto pedalPoint = pressedPedal;
     const auto clickedHairpin = pressedHairpin;
     const auto drag = hairpinDrag;
     pressedNote.reset();
     pressedDynamic.reset();
+    pressedPedal.reset();
     pressedHairpin.reset();
     hairpinDrag.reset();
     tieFrom.reset();
@@ -1797,6 +1951,12 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
 
     if (e.mods.isPopupMenu())
         return;
+
+    if (pedalPoint.has_value() && isPedalChosen() && ! e.mouseWasDraggedSinceMouseDown())
+    {
+        clickPedal (*pedalPoint);
+        return;
+    }
 
     if (pressedPoint.has_value() && getChosenDynamic().has_value() && ! e.mouseWasDraggedSinceMouseDown())
     {
@@ -1986,6 +2146,12 @@ StaffView::Erasable StaffView::findErasableAt (juce::Point<float> point) const
     if (const auto hairpin = findHairpinAt (point))
         found.hairpin = hairpin->first;
 
+    // A pedal mark, anywhere along its line or ticks
+    if (const auto lineY = getPedalLineY(); point.y >= lineY - 1.4f * staffSpace && point.y <= lineY + 0.6f * staffSpace)
+        for (const auto& pedal : score.getPedals (part))
+            if (const auto span = getPedalSpan (pedal); point.x >= span.getStart() - 0.5f * staffSpace && point.x <= span.getEnd() + 0.5f * staffSpace)
+                found.pedal = pedal;
+
     return found;
 }
 
@@ -2000,6 +2166,13 @@ void StaffView::eraseAt (juce::Point<float> point)
 
     if (found.hairpin.has_value())
         score.removeHairpin (part, found.hairpin->measure, found.hairpin->beat);
+
+    if (found.pedal.has_value())
+    {
+        auto pedals = score.getPedals (part);
+        pedals.erase (std::remove (pedals.begin(), pedals.end(), *found.pedal), pedals.end());
+        score.setPedals (part, pedals);
+    }
 
     if (found.dynamic.has_value())
         score.setDynamic (part, found.dynamic->first, found.dynamic->second, std::nullopt);

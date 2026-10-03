@@ -335,6 +335,20 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
         }
     }
 
+    // While the sustain pedal is down, a note that's still sounding as it goes down, or that ends
+    // before it comes up, is held until it comes up.
+    const auto firstBeat = (double) (firstMeasure * score.getBeatsPerMeasure());
+
+    for (const auto& pedal : score.getPedals (part))
+    {
+        const auto down = (pedal.start - firstBeat) * beatSeconds;
+        const auto up = (pedal.end - firstBeat) * beatSeconds;
+
+        for (auto& sounding : soundings)
+            if (sounding.end > down + 1.0e-9 && sounding.end < up - 1.0e-9)
+                sounding.end = up;
+    }
+
     // A note that starts again while it's still sounding is cut off first, as one key can't be
     // down twice.
     std::sort (soundings.begin(), soundings.end(), [] (const Sounding& a, const Sounding& b)

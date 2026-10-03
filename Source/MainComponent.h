@@ -46,7 +46,7 @@ public:
     void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
     bool perform (const InvocationInfo&) override;
 
-    static constexpr int minimumWidth = 1120;     // room for the note length and dynamic buttons, and the eraser
+    static constexpr int minimumWidth = 1170;     // room for the note length and dynamic buttons, and the eraser
     static constexpr int minimumHeight = 640;
 
 private:
@@ -85,7 +85,6 @@ private:
 
         controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
         juce::TextButton addPartButton { "+" };
-        juce::Label addPartLabel;
     };
 
     /** What each part has besides its staves: its instrument, the volume dial beside its staves,
