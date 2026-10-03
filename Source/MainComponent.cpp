@@ -18,7 +18,12 @@ namespace
     constexpr int addPartButtonSize = 28;       // in the space under the last part's staves, at the left
     constexpr int addPartBottom = 8;            // up from the bottom of the last part
     constexpr int measureButtonSize = 28;
-    constexpr int stavesTopPadding = 26;        // above the first system, for the note length buttons
+    // The note length, dynamic and eraser buttons, over the top of the staves
+    constexpr int toolButtonsTop = 8, toolButtonsHeight = 28;
+
+    // Above the first system, so even when its chord buttons are as near its top as they go,
+    // half a staff space below it, there's a gap between them and the buttons above
+    constexpr int stavesTopPadding = toolButtonsTop + toolButtonsHeight + 10 - 6;
     constexpr int measureButtonsWidth = 84;     // the measure buttons, after the final barline
     constexpr int measureButtonsGap = 14;       // between the final barline and them
     constexpr int eraserMargin = 10;            // from the eraser to the scroll bar
@@ -374,7 +379,7 @@ void MainComponent::resized()
 
     // The note length and dynamic buttons stay in the top left corner of the score, over the
     // staves as they scroll, and the eraser in the top right corner, clear of the scroll bar.
-    noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + 8);
+    noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + toolButtonsTop);
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
     eraserButton.setBounds (staffViewport.getRight() - staffViewport.getScrollBarThickness() - eraserMargin - EraserButton::buttonWidth,
                             noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
