@@ -9,6 +9,7 @@ namespace
 {
     constexpr std::array<int, 7> naturalPitchClasses { 0, 2, 4, 5, 7, 9, 11 };
     constexpr std::array<int, 7> majorScaleSteps { 0, 2, 4, 5, 7, 9, 11 };
+    constexpr std::array<int, 7> minorScaleSteps { 0, 2, 3, 5, 7, 8, 10 };      // the natural minor
     constexpr std::array<const char*, 7> letterNames { "C", "D", "E", "F", "G", "A", "B" };
     constexpr std::array<const char*, 7> degreeNumerals { "I", "II", "III", "IV", "V", "VI", "VII" };
 
@@ -290,31 +291,37 @@ Spelling getRelativeMinor (Spelling majorTonic)
     return spell (majorTonic.letter + 5, majorTonic.getPitchClass() + 9);
 }
 
-std::array<Spelling, 7> getScale (Spelling tonic)
+Spelling Key::getSignatureTonic() const
+{
+    return minor ? spell (tonic.letter + 2, tonic.getPitchClass() + 3) : tonic;
+}
+
+std::array<Spelling, 7> getScale (Key key)
 {
     std::array<Spelling, 7> scale;
+    const auto& steps = key.minor ? minorScaleSteps : majorScaleSteps;
 
     for (size_t degree = 0; degree < scale.size(); ++degree)
-        scale[degree] = spell (tonic.letter + (int) degree, tonic.getPitchClass() + majorScaleSteps[degree]);
+        scale[degree] = spell (key.tonic.letter + (int) degree, key.tonic.getPitchClass() + steps[degree]);
 
     return scale;
 }
 
-std::array<int, 7> getKeyAlterations (Spelling tonic)
+std::array<int, 7> getKeyAlterations (Key key)
 {
     std::array<int, 7> alterations {};
 
-    for (const auto& note : getScale (tonic))
+    for (const auto& note : getScale (key))
         alterations[(size_t) note.letter] = note.alter;
 
     return alterations;
 }
 
-juce::String getKeySignatureText (Spelling tonic)
+juce::String getKeySignatureText (Key key)
 {
     std::vector<Spelling> altered;
 
-    for (const auto& note : getScale (tonic))
+    for (const auto& note : getScale (key))
         if (note.alter != 0)
             altered.push_back (note);
 
@@ -338,11 +345,14 @@ juce::String getKeySignatureText (Spelling tonic)
          + ": " + names.joinIntoString (" ");
 }
 
-Spelling spellPitchClass (Spelling tonic, int pitchClass)
+Spelling spellPitchClass (Key key, int pitchClass)
 {
-    for (const auto& note : getScale (tonic))
+    for (const auto& note : getScale (key))
         if (note.getPitchClass() == pitchClass)
             return note;
+
+    // Outside the scale, flats in keys with flats, and F major's, sharps in the others
+    const auto tonic = key.getSignatureTonic();
 
     if (const auto natural = std::find (naturalPitchClasses.begin(), naturalPitchClasses.end(), pitchClass);
         natural != naturalPitchClasses.end())
@@ -394,7 +404,7 @@ juce::String Tone::getNameWithOctave() const
     return pitch.getName();
 }
 
-Chord createChord (Spelling tonic, const ChordSpec& spec, Staff staff)
+Chord createChord (Key key, const ChordSpec& spec, Staff staff)
 {
     jassert (! spec.isEmpty());
 
@@ -406,10 +416,10 @@ Chord createChord (Spelling tonic, const ChordSpec& spec, Staff staff)
     // Only 7th chords have a 3rd inversion.
     const auto inversion = hasSeventh ? spec.inversion : juce::jmin (spec.inversion, 2);
 
-    const auto scaleRoot = getScale (tonic)[(size_t) spec.degree];
+    const auto scaleRoot = getScale (key)[(size_t) spec.degree];
     const auto root = spec.flat ? spell (scaleRoot.letter, naturalPitchClasses[(size_t) scaleRoot.letter] + scaleRoot.alter - 1)
                                 : scaleRoot;
-    const auto keyAlterations = getKeyAlterations (tonic);
+    const auto keyAlterations = getKeyAlterations (key);
 
     std::vector<Member> members { { 0, 0 }, { 2, spec.minor ? 3 : 4 }, { 4, augmented ? 8 : diminished ? 6 : 7 } };
 
@@ -471,9 +481,9 @@ Chord createChord (Spelling tonic, const ChordSpec& spec, Staff staff)
 }
 
 //==============================================================================
-std::vector<Tone> createTones (Spelling tonic, const std::vector<KeyboardNote>& notes)
+std::vector<Tone> createTones (Key key, const std::vector<KeyboardNote>& notes)
 {
-    const auto keyAlterations = getKeyAlterations (tonic);
+    const auto keyAlterations = getKeyAlterations (key);
     std::vector<Tone> tones;
 
     for (const auto& note : notes)
@@ -483,9 +493,9 @@ std::vector<Tone> createTones (Spelling tonic, const std::vector<KeyboardNote>& 
     return tones;
 }
 
-Chord createChord (Spelling tonic, const std::vector<KeyboardNote>& notes, const ChordSpec& spec, Staff staff)
+Chord createChord (Key key, const std::vector<KeyboardNote>& notes, const ChordSpec& spec, Staff staff)
 {
-    const auto keyAlterations = getKeyAlterations (tonic);
+    const auto keyAlterations = getKeyAlterations (key);
 
     std::vector<Tone> tones;
 
@@ -497,13 +507,13 @@ Chord createChord (Spelling tonic, const std::vector<KeyboardNote>& notes, const
     if (! spec.isEmpty())
     {
         // A 7th chord played without its 5th keeps its name, and its description says so.
-        auto chord = createChord (tonic, spec, staff);
+        auto chord = createChord (key, spec, staff);
 
         ChordSpec rootPosition = spec;
         rootPosition.inversion = 0;
         rootPosition.octave = 0;
 
-        const auto fifth = mod (createChord (tonic, rootPosition).tones[2].midi, 12);
+        const auto fifth = mod (createChord (key, rootPosition).tones[2].midi, 12);
         const auto lacksFifth = chord.tones.size() >= 4
                              && std::none_of (tones.begin(), tones.end(), [fifth] (const Tone& t) { return mod (t.midi, 12) == fifth; });
 
@@ -579,7 +589,7 @@ Chord createChord (Spelling tonic, const std::vector<KeyboardNote>& notes, const
     return chord;
 }
 
-NotesDescription describeNotes (Spelling tonic, Staff staff, std::vector<int> midiNotes)
+NotesDescription describeNotes (Key key, Staff staff, std::vector<int> midiNotes)
 {
     std::sort (midiNotes.begin(), midiNotes.end());
     midiNotes.erase (std::unique (midiNotes.begin(), midiNotes.end()), midiNotes.end());
@@ -590,12 +600,12 @@ NotesDescription describeNotes (Spelling tonic, Staff staff, std::vector<int> mi
         return description;
 
     const auto found = identifyNotes (midiNotes);
-    std::function<Spelling (int)> spellingFor = [tonic] (int pitchClass) { return spellPitchClass (tonic, pitchClass); };
+    std::function<Spelling (int)> spellingFor = [key] (int pitchClass) { return spellPitchClass (key, pitchClass); };
 
     if (found.kind == Identification::Kind::chord && found.shape->spec.has_value() && found.inversion <= 3)
     {
         // The panel can describe the chord: find its numeral, flattened if it isn't in the scale.
-        const auto scale = getScale (tonic);
+        const auto scale = getScale (key);
         const auto findDegree = [&] (int lowering)
         {
             const auto note = std::find_if (scale.begin(), scale.end(), [&] (const Spelling& s)
@@ -621,7 +631,7 @@ NotesDescription describeNotes (Spelling tonic, Staff staff, std::vector<int> mi
         {
             spec.octave = octave;
 
-            if (getMidiNotes (createChord (tonic, spec, staff).tones) == midiNotes)
+            if (getMidiNotes (createChord (key, spec, staff).tones) == midiNotes)
                 return description;
         }
 
@@ -629,7 +639,7 @@ NotesDescription describeNotes (Spelling tonic, Staff staff, std::vector<int> mi
 
         ChordSpec rootPosition = spec;
         rootPosition.inversion = 0;
-        const auto named = createChord (tonic, rootPosition);
+        const auto named = createChord (key, rootPosition);
 
         spellingFor = [named] (int pitchClass)
         {
@@ -642,7 +652,7 @@ NotesDescription describeNotes (Spelling tonic, Staff staff, std::vector<int> mi
     else if (found.kind == Identification::Kind::chord)
     {
         // Spell the notes as the chord's members, counting letters up from its root.
-        const auto root = spellPitchClass (tonic, found.rootPitchClass);
+        const auto root = spellPitchClass (key, found.rootPitchClass);
         const auto* shape = found.shape;
         const auto rootPitchClass = found.rootPitchClass;
 
@@ -667,14 +677,14 @@ NotesDescription describeNotes (Spelling tonic, Staff staff, std::vector<int> mi
 }
 
 //==============================================================================
-std::vector<Tone> getAlternateTones (Spelling tonic, const Chord& chord, Staff chordStaff, AlternateStaff alternate)
+std::vector<Tone> getAlternateTones (Key key, const Chord& chord, Staff chordStaff, AlternateStaff alternate)
 {
     if (alternate == AlternateStaff::none || chord.tones.empty())
         return {};
 
     const auto staff = getOtherStaff (chordStaff);
     const auto lowest = getLowestChordLetter (staff);
-    const auto keyAlterations = getKeyAlterations (tonic);
+    const auto keyAlterations = getKeyAlterations (key);
     std::vector<Tone> tones;
 
     if (alternate == AlternateStaff::blockChord || alternate == AlternateStaff::rolledChord)

@@ -66,14 +66,15 @@ const Score::Measure& Score::getMeasure (int part, int measure) const
     return parts[(size_t) part].measures[(size_t) measure];
 }
 
-music::Spelling Score::getKey() const
+music::Key Score::getKey() const
 {
-    return music::getMajorKeys()[(size_t) keyIndex];
+    const auto signature = music::getMajorKeys()[(size_t) keyIndex];
+    return { minor ? music::getRelativeMinor (signature) : signature, minor };
 }
 
 music::Spelling Score::getTonic() const
 {
-    return minor ? music::getRelativeMinor (getKey()) : getKey();
+    return getKey().tonic;
 }
 
 void Score::setMinor (bool shouldBeMinor)
@@ -96,11 +97,8 @@ void Score::setMinor (bool shouldBeMinor)
             newIndex = (int) i;
 
     minor = shouldBeMinor;
-
-    if (newIndex != keyIndex)
-        setKeyIndex (newIndex);
-    else
-        sendSynchronousChangeMessage();
+    keyIndex = juce::jmax (0, newIndex);
+    followKeyChange();
 }
 
 void Score::setKeyIndex (int newKeyIndex)
@@ -111,7 +109,11 @@ void Score::setKeyIndex (int newKeyIndex)
         return;
 
     keyIndex = newKeyIndex;
+    followKeyChange();
+}
 
+void Score::followKeyChange()
+{
     // Notes set on the piano keep their pitches, so describe them again in the new key.
     for (auto& part : parts)
     {
@@ -869,7 +871,8 @@ namespace
     // 9: a chord's note length
     // 10: the sustain pedal
     // 11: minor keys
-    constexpr int formatVersion = 11;
+    // 12: a minor key's chords numbered up its own scale, rather than its relative major's
+    constexpr int formatVersion = 12;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -1284,6 +1287,14 @@ juce::Result Score::loadJSON (const juce::var& json)
     parts = std::move (loadedParts);
     keyIndex = readInt (json.getProperty ("key", {}), 0, (int) music::getMajorKeys().size() - 1, 0);
     minor = (bool) json.getProperty ("minor", false);
+
+    // In version 11, a minor key's chords were numbered up its relative major's scale, from a
+    // third above its tonic; now they count from its tonic.
+    if (minor && readInt (json.getProperty ("version", {}), 1, 1000, 1) == 11)
+        for (auto& part : parts)
+            for (auto& measure : part.measures)
+                if (measure.chord.has_value() && ! measure.chord->spec.isEmpty())
+                    measure.chord->spec.degree = (measure.chord->spec.degree + 2) % 7;
     beatsPerMeasure = readInt (json.getProperty ("beatsPerMeasure", {}), 2, maxBeatsPerMeasure, 4);
 
     const auto tempo = (double) json.getProperty ("beatsPerMinute", 120.0);

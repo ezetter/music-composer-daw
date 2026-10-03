@@ -123,10 +123,13 @@ public:
     */
     int getKeyIndex() const noexcept { return keyIndex; }
 
-    /** The major key the key signature is for, which chords and their numerals are in too. */
-    music::Spelling getKey() const;
+    /** The key: its tonic, major or minor. Chords and their numerals are in it, counting from its
+        tonic up its scale, the natural minor in a minor key; the key signature is its relative
+        major's in a minor key.
+    */
+    music::Key getKey() const;
 
-    /** Whether the key is minor: the relative minor of getKey(), with the same signature. */
+    /** Whether the key is minor: the relative minor of the major key the signature's for. */
     bool isMinor() const noexcept { return minor; }
 
     /** The key's tonic: the major key's, or the relative minor's. */
@@ -442,6 +445,11 @@ private:
     Measure& getMeasure (int part, int measure);
     const Measure& getMeasure (int part, int measure) const;
     void tidyChord (Measure&, bool reshuffleRandomOrder = false);
+
+    /** After the key changes: chords follow their numerals, and notes set on the piano keep
+        their pitches, described again in the new key.
+    */
+    void followKeyChange();
 
     /** Lets go of ties whose notes aren't there any more, or don't follow one another now. */
     void pruneTies();

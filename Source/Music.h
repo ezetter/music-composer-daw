@@ -63,18 +63,36 @@ namespace music
 
     /** The minor key with the same key signature as a major key: its tonic a minor third below. */
     Spelling getRelativeMinor (Spelling majorTonic);
-    std::array<Spelling, 7> getScale (Spelling tonic);
+
+    /** A key: its tonic, and whether it's major or minor. A minor key's scale is the natural
+        minor, with the notes of its relative major, so its key signature too.
+    */
+    struct Key
+    {
+        Spelling tonic;
+        bool minor = false;
+
+        Key (Spelling keyTonic, bool isMinor = false) : tonic (keyTonic), minor (isMinor) {}
+
+        /** The major key with the same key signature: itself, or a minor key's relative major. */
+        Spelling getSignatureTonic() const;
+
+        bool operator== (const Key&) const = default;
+    };
+
+    /** The key's scale, from its tonic: major, or natural minor. A chord's degree counts from it. */
+    std::array<Spelling, 7> getScale (Key);
 
     /** The key signature's alteration for each letter. */
-    std::array<int, 7> getKeyAlterations (Spelling tonic);
+    std::array<int, 7> getKeyAlterations (Key);
 
     /** e.g. "No sharps or flats" or "2 flats: B♭ E♭". */
-    juce::String getKeySignatureText (Spelling tonic);
+    juce::String getKeySignatureText (Key);
 
     /** How a key spells a pitch class: as its own scale note if it has one, else as a natural,
         else as a sharp (or a flat in keys with flats).
     */
-    Spelling spellPitchClass (Spelling tonic, int pitchClass);
+    Spelling spellPitchClass (Key, int pitchClass);
 
     //==============================================================================
     enum class AddedNote { none, dominant7th, major7th, minor7th, dominant9th, major9th, minor9th };
@@ -142,7 +160,7 @@ namespace music
     /** The chord a spec describes, which mustn't be empty. Its bass note falls in C4-B4 on the
         treble staff and E2-D3 on the bass staff, before the spec's octave moves it.
     */
-    Chord createChord (Spelling tonic, const ChordSpec&, Staff = Staff::treble);
+    Chord createChord (Key, const ChordSpec&, Staff = Staff::treble);
 
     //==============================================================================
     /** A note set on the piano, with how it's spelled. */
@@ -155,10 +173,10 @@ namespace music
     };
 
     /** The tones of notes set by hand, low to high. */
-    std::vector<Tone> createTones (Spelling tonic, const std::vector<KeyboardNote>&);
+    std::vector<Tone> createTones (Key, const std::vector<KeyboardNote>&);
 
     /** A chord made of notes set on the piano. If the spec isn't empty, the chord keeps its names. */
-    Chord createChord (Spelling tonic, const std::vector<KeyboardNote>&, const ChordSpec&, Staff);
+    Chord createChord (Key, const std::vector<KeyboardNote>&, const ChordSpec&, Staff);
 
     /** How the panel describes notes set on the piano. */
     struct NotesDescription
@@ -171,13 +189,13 @@ namespace music
         std::optional<std::vector<KeyboardNote>> keyboardNotes;
     };
 
-    NotesDescription describeNotes (Spelling tonic, Staff, std::vector<int> midiNotes);
+    NotesDescription describeNotes (Key, Staff, std::vector<int> midiNotes);
 
     //==============================================================================
     /** What the other staff of the grand staff shows under or over a chord. */
     enum class AlternateStaff { none, root, octave, blockChord, rolledChord };
 
-    std::vector<Tone> getAlternateTones (Spelling tonic, const Chord&, Staff chordStaff, AlternateStaff);
+    std::vector<Tone> getAlternateTones (Key, const Chord&, Staff chordStaff, AlternateStaff);
 
     /** How a chord is written and played. */
     enum class ChordType { block, arpeggioUp, arpeggioDown, random, rolled };
