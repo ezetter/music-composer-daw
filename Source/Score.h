@@ -45,13 +45,18 @@ struct HairpinMark
     }
 };
 
-/** How a measure's chord is written: which staff it's on, and as what type of chord. What the
-    other staff shows is up to the score, for every chord alike.
+/** How a measure's chord is written: which staff it's on, as what type of chord, and in notes
+    how long. What the other staff shows is up to the score, for every chord alike.
 */
 struct ChordStyle
 {
     Staff staff = Staff::treble;
     music::ChordType type = music::ChordType::block;
+
+    /** How long the chord's notes are written, in 32nds, as chosen in the chord window. Without
+        one chosen, they're as long as the chord type makes them: see Score::getChordNoteLength().
+    */
+    std::optional<int> noteLength;
 
     bool operator== (const ChordStyle&) const = default;
 };
@@ -263,6 +268,13 @@ public:
 
     /** The notes and names of a measure's chord in the current key, if it has any notes. */
     std::optional<music::Chord> getChordNotes (int part, int measure) const;
+
+    /** How long a chord's notes are written, in 32nds, in this time signature: the length chosen
+        for it, if it fits in a measure, or the longest that does. Without one chosen, a block or
+        rolled chord lasts the measure, and the others' notes are quarters, or eighths or 16ths if
+        there are too many notes for quarters to fit.
+    */
+    int getChordNoteLength (const MeasureChord&) const;
 
     /** The notes and names a chord would have in this score's key, if it has any notes. */
     std::optional<music::Chord> getChordNotes (const MeasureChord&) const;

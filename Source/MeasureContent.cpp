@@ -41,38 +41,164 @@ namespace
         return tones;
     }
 
-    StaffContent getChordContent (const music::Chord& chord, const MeasureChord& measureChord, int beatsPerMeasure)
+    /** Rests filling an empty stretch of a measure, from one 32nd note to another. A whole beat
+        gets a quarter rest, and two that make up the first half of 4/4 or 3/4, or the second half
+        of 4/4, share a half rest. Part of a beat gets the longest of an eighth, 16th or 32nd rest
+        that starts where it does, in step with the beat, and fits.
+    */
+    void addRests (std::vector<StaffEvent>& events, int from, int to, int beatsPerMeasure)
+    {
+        constexpr auto perBeat = Score::slotsPerBeat;
+
+        for (auto slot = from; slot < to;)
+        {
+            const auto onset = (double) slot / perBeat;
+            const auto beat = slot / perBeat;
+            const auto beatEmpty = slot % perBeat == 0 && slot + perBeat <= to;
+
+            if (beatEmpty && beat % 2 == 0 && beat + 1 < beatsPerMeasure && slot + 2 * perBeat <= to)
+            {
+                events.push_back ({ onset, Duration::half, {}, false, false });
+                slot += 2 * perBeat;
+                continue;
+            }
+
+            if (beatEmpty)
+            {
+                events.push_back ({ onset, Duration::quarter, {}, false, false });
+                slot += perBeat;
+                continue;
+            }
+
+            auto restLength = perBeat / 2;
+
+            while (restLength > 1 && (slot % restLength != 0 || slot + restLength > to))
+                restLength /= 2;
+
+            events.push_back ({ onset, getDurationForBeats ((double) restLength / perBeat), {}, false, false });
+            slot += restLength;
+        }
+    }
+
+    /** How many notes a beat has room for: as many as the shortest note or rest needs. */
+    void setNotesPerBeat (StaffContent& content)
+    {
+        auto shortest = 1.0;
+
+        for (const auto& event : content.events)
+            shortest = juce::jmin (shortest, getBeats (event.duration));
+
+        content.notesPerBeat = juce::jlimit (1, Score::slotsPerBeat, juce::roundToInt (1.0 / shortest));
+    }
+
+    music::Tone shiftedByOctave (music::Tone tone, int octaves)
+    {
+        tone.pitch.step += 7 * octaves;
+        tone.midi += 12 * octaves;
+        return tone;
+    }
+
+    /** One time round an arpeggio that goes up and back down, or down and back up: through the
+        chord's notes, on to the first note's octave, if the chord doesn't reach that far, and back
+        through the notes to the second. Played over and over, it fills a measure, e.g. C E G C' G E.
+    */
+    std::vector<music::Tone> getArpeggioCycle (std::vector<music::Tone> tones, bool upwards)
+    {
+        std::sort (tones.begin(), tones.end(), [upwards] (const music::Tone& a, const music::Tone& b) { return upwards ? a.midi < b.midi : a.midi > b.midi; });
+
+        if (tones.empty())
+            return tones;
+
+        auto cycle = tones;
+        const auto turn = shiftedByOctave (tones.front(), upwards ? 1 : -1);
+        const auto reachesTurn = upwards ? tones.back().midi >= turn.midi : tones.back().midi <= turn.midi;
+
+        if (! reachesTurn)
+            cycle.push_back (turn);
+
+        for (auto i = (int) tones.size() - (reachesTurn ? 2 : 1); i >= 1; --i)
+            cycle.push_back (tones[(size_t) i]);
+
+        return cycle;
+    }
+
+    StaffContent getChordContent (const Score& score, const music::Chord& chord, const MeasureChord& measureChord)
     {
         StaffContent content;
         content.source = StaffContent::Source::chord;
 
-        if (! music::isMelodic (measureChord.style.type))
+        const auto beats = score.getBeatsPerMeasure();
+        const auto measureLength = beats * Score::slotsPerBeat;
+        const auto length = score.getChordNoteLength (measureChord);
+        const auto type = measureChord.style.type;
+        const auto add = [&] (int slot, std::vector<music::Tone> tones, int slots, bool rolled)
         {
-            // Held for the whole measure, written at its start so it lines up with the first
-            // beat of anything on the other staff.
-            content.events.push_back ({ 0.0, getFullMeasureDuration (beatsPerMeasure), chord.tones,
-                                        measureChord.style.type == music::ChordType::rolled, false });
+            content.events.push_back ({ (double) slot / Score::slotsPerBeat, getDurationForBeats ((double) slots / Score::slotsPerBeat),
+                                        std::move (tones), rolled, false });
+        };
+
+        if (! music::isMelodic (type))
+        {
+            // As long as its note length, from the start of the measure, so it lines up with the
+            // first beat of anything on the other staff, and again until the measure's full: the
+            // whole measure, unless a shorter length's been chosen.
+            auto slot = 0;
+
+            for (; slot + length <= measureLength; slot += length)
+                add (slot, chord.tones, length, type == music::ChordType::rolled);
+
+            addRests (content.events, slot, measureLength, beats);
+            setNotesPerBeat (content);
             return content;
         }
 
-        // Single notes, padded with rests of the same value to fill the measure.
-        content.notesPerBeat = music::getArpeggioNotesPerBeat ((int) chord.tones.size(), beatsPerMeasure);
-        const auto duration = content.notesPerBeat == 1 ? Duration::quarter
-                            : content.notesPerBeat == 2 ? Duration::eighth
-                                                        : Duration::sixteenth;
-        const auto sequence = getSequence (chord, measureChord);
-        const auto numSlots = juce::jmax ((int) sequence.size(), beatsPerMeasure * content.notesPerBeat);
+        // Single notes of the note length, one after another until the measure's full
+        const auto room = measureLength / length;
+        std::vector<music::Tone> sequence;
+        auto holdLast = false;      // whether the last note lasts to the end of the measure
 
-        for (int slot = 0; slot < numSlots; ++slot)
+        if (type == music::ChordType::random)
         {
-            StaffEvent event { (double) slot / content.notesPerBeat, duration, {}, false, false };
+            sequence = getSequence (chord, measureChord);
+            sequence.resize ((size_t) juce::jmin ((int) sequence.size(), room));
+        }
+        else
+        {
+            // An arpeggio goes up and down, or down and up, again and again. When there's room
+            // for it to come round to its first note again, with no more than part of the next
+            // time round left, it stops there, and holds that note to the end of the measure.
+            const auto cycle = getArpeggioCycle (chord.tones, type == music::ChordType::arpeggioUp);
+            const auto period = (int) cycle.size();
 
-            if (slot < (int) sequence.size())
-                event.tones.push_back (sequence[(size_t) slot]);
+            for (int i = 0; i < room && period > 0; ++i)
+                sequence.push_back (cycle[(size_t) (i % period)]);
 
-            content.events.push_back (event);
+            // It's held only if there's a note as long as what's left of the measure.
+            if (period > 1 && room > period)
+            {
+                const auto notes = (room - 1) / period * period + 1;
+                const auto left = measureLength - (notes - 1) * length;
+
+                if (Score::fitNoteLength (left, left) == left)
+                {
+                    sequence.resize ((size_t) notes);
+                    holdLast = true;
+                }
+            }
         }
 
+        auto slot = 0;
+
+        for (size_t i = 0; i < sequence.size(); ++i)
+        {
+            const auto last = i + 1 == sequence.size();
+            const auto slots = last && holdLast ? measureLength - slot : length;
+            add (slot, { sequence[i] }, slots, false);
+            slot += slots;
+        }
+
+        addRests (content.events, slot, measureLength, beats);
+        setNotesPerBeat (content);
         return content;
     }
 
@@ -97,9 +223,6 @@ namespace
             return content;
         }
 
-        // The shortest note or rest, which says how much room the beats need
-        auto shortest = 1.0;
-
         for (int slot = 0; slot < slots;)
         {
             const auto onset = beatOf (slot);
@@ -120,56 +243,23 @@ namespace
                         content.tiedNotes.push_back ({ onset, pitch });
                 }
 
-                shortest = juce::jmin (shortest, getBeats (event.duration));
                 content.events.push_back (event);
                 slot += length;
                 continue;
             }
 
-            // A whole beat that's empty gets a quarter rest, and two that make up the first half
-            // of 4/4 or 3/4, or the second half of 4/4, share a half rest. Part of a beat gets the
-            // longest of an eighth, 16th or 32nd rest that starts where it does, in step with the
-            // beat, and fits before the next note or the end of the beat.
-            const auto emptyFor = [&] (int count)
-            {
-                for (int s = slot; s < slot + count; ++s)
-                    if (s >= slots || ! isEmpty (s))
-                        return false;
+            // Rests up to the next notes, or the end of the measure
+            auto end = slot + 1;
 
-                return true;
-            };
+            while (end < slots && isEmpty (end))
+                ++end;
 
-            const auto beat = slot / Score::slotsPerBeat;
-            const auto beatEmpty = slot % Score::slotsPerBeat == 0 && emptyFor (Score::slotsPerBeat);
-
-            if (beatEmpty && beat % 2 == 0 && beat + 1 < beats && emptyFor (2 * Score::slotsPerBeat))
-            {
-                content.events.push_back ({ onset, Duration::half, {}, false, false });
-                slot += 2 * Score::slotsPerBeat;
-                continue;
-            }
-
-            if (beatEmpty)
-            {
-                content.events.push_back ({ onset, Duration::quarter, {}, false, false });
-                slot += Score::slotsPerBeat;
-                continue;
-            }
-
-            auto restLength = Score::slotsPerBeat / 2;
-
-            while (restLength > 1 && (slot % restLength != 0 || ! emptyFor (restLength)))
-                restLength /= 2;
-
-            const auto rest = getDurationForBeats ((double) restLength / Score::slotsPerBeat);
-            content.events.push_back ({ onset, rest, {}, false, false });
-            shortest = juce::jmin (shortest, getBeats (rest));
-            slot += restLength;
+            addRests (content.events, slot, end, beats);
+            slot = end;
         }
 
         // Eighths and shorter notes need room, and are beamed a beat at a time.
-        content.notesPerBeat = juce::jlimit (1, Score::slotsPerBeat, juce::roundToInt (1.0 / shortest));
-
+        setNotesPerBeat (content);
         return content;
     }
 }
@@ -230,7 +320,7 @@ MeasureContent getMeasureContent (const Score& score, int part, int measure)
             content.chord = chord;
             content.chordStyle = style;
 
-            content.staves[(size_t) style.staff] = getChordContent (*chord, *measureChord, score.getBeatsPerMeasure());
+            content.staves[(size_t) style.staff] = getChordContent (score, *chord, *measureChord);
             filled[(size_t) style.staff] = true;
 
             const auto otherStaff = music::getOtherStaff (style.staff);

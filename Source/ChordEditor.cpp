@@ -13,6 +13,11 @@ namespace
     constexpr int padding = 16;
     constexpr int buttonHeight = 28;
 
+    /** The note lengths a chord's notes can have, in 32nds, longest first, and their names */
+    const std::array<std::pair<int, const char*>, 9> noteLengths { { { 32, "Whole notes" }, { 24, "Dotted half notes" }, { 16, "Half notes" },
+                                                                     { 12, "Dotted quarter notes" }, { 8, "Quarter notes" }, { 6, "Dotted eighth notes" },
+                                                                     { 4, "Eighth notes" }, { 2, "16th notes" }, { 1, "32nd notes" } } };
+
     /** Drops a chord's 7th or 9th, and its 3rd inversion, which only 7th chords have. */
     void clearAddedNote (music::ChordSpec& spec)
     {
@@ -122,6 +127,23 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
     {
         edit ([this] (MeasureChord& c) { c.style.type = (music::ChordType) (chordTypeBox.getSelectedId() - 1); });
     };
+    // How long the notes are: a block or rolled chord is repeated in notes this long until the
+    // measure's full, and the others have a note this long for each note they play.
+    noteLengthLabel.setText ("Note length", juce::dontSendNotification);
+    noteLengthLabel.setFont (juce::FontOptions (13.0f));
+    noteLengthLabel.setBorderSize ({});
+
+    for (size_t i = 0; i < noteLengths.size(); ++i)
+        noteLengthBox.addItem (noteLengths[i].second, (int) i + 1);
+
+    noteLengthBox.setTooltip ("How long the chord's notes are: a block or rolled chord is played again in notes this long until the measure's full, "
+                              "and an arpeggio or Random chord plays a note this long at a time");
+    noteLengthBox.onChange = [this]
+    {
+        if (const auto index = noteLengthBox.getSelectedId() - 1; juce::isPositiveAndBelow (index, (int) noteLengths.size()))
+            edit ([index] (MeasureChord& c) { c.style.noteLength = noteLengths[(size_t) index].first; });
+    };
+
     reshuffleButton.setWantsKeyboardFocus (false);
     reshuffleButton.setTooltip ("Picks a new random order");
     reshuffleButton.onClick = [this] { score.reshuffle (part, measure); };
@@ -152,7 +174,7 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
              &title, &flatButton, &majorButton, &minorButton, &alterButton, &numeralBox, &addedNoteBox,
              &positionButtons[0], &positionButtons[1], &positionButtons[2], &positionButtons[3],
              &octaveButtons[0], &octaveButtons[1], &octaveButtons[2], &trebleButton, &bassButton,
-             &chordTypeHeading, &chordTypeBox, &reshuffleButton,
+             &chordTypeHeading, &chordTypeBox, &noteLengthLabel, &noteLengthBox, &reshuffleButton,
              &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel, &removeButton, &doneButton })
         addAndMakeVisible (component);
 
@@ -285,6 +307,18 @@ void ChordEditor::update()
     trebleButton.setToggleState (style.staff == Staff::treble, juce::dontSendNotification);
     bassButton.setToggleState (style.staff == Staff::bass, juce::dontSendNotification);
     chordTypeBox.setSelectedId ((int) style.type + 1, juce::dontSendNotification);
+
+    // The length the notes are, chosen or the chord type's own, and only lengths that fit in a measure
+    const auto length = score.getChordNoteLength (chord);
+
+    for (size_t i = 0; i < noteLengths.size(); ++i)
+    {
+        noteLengthBox.setItemEnabled ((int) i + 1, noteLengths[i].first <= score.getBeatsPerMeasure() * Score::slotsPerBeat);
+
+        if (noteLengths[i].first == length)
+            noteLengthBox.setSelectedId ((int) i + 1, juce::dontSendNotification);
+    }
+
     reshuffleButton.setVisible (style.type == music::ChordType::random);
     reshuffleButton.setEnabled (chord.hasNotes());
 
@@ -344,7 +378,7 @@ int ChordEditor::getIdealHeight() const
     // Enough for the keyboard notes too, which only show some of the time.
     return padding + 24 + gap
          + 3 * (rowHeight + gap) + 3 * (segmentHeight + gap)
-         + sectionGap - gap + headingHeight + 2 + rowHeight
+         + sectionGap - gap + headingHeight + 2 + rowHeight + gap + rowHeight
          + sectionGap + 3 * infoLineHeight + 34
          + sectionGap + buttonHeight + padding;
 }
@@ -406,6 +440,11 @@ void ChordEditor::resized()
     }
 
     chordTypeBox.setBounds (typeRow);
+    bounds.removeFromTop (gap);
+
+    auto lengthRow = bounds.removeFromTop (rowHeight);
+    noteLengthLabel.setBounds (lengthRow.removeFromLeft (86));
+    noteLengthBox.setBounds (lengthRow);
     bounds.removeFromTop (sectionGap);
 
     nameLabel.setBounds (bounds.removeFromTop (infoLineHeight));

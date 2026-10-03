@@ -67,6 +67,8 @@ private:
     juce::TextButton trebleButton { "Treble clef" }, bassButton { "Bass clef" };
     juce::Label chordTypeHeading;
     juce::ComboBox chordTypeBox;
+    juce::Label noteLengthLabel;
+    juce::ComboBox noteLengthBox;           // how long the chord's notes are
     juce::TextButton reshuffleButton { "Reshuffle" };
     juce::Label nameLabel, notesLabel, fitLabel, keyboardNotesLabel;
     juce::TextButton removeButton { "Remove Chord" }, doneButton { "Done" };

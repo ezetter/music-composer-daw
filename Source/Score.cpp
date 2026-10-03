@@ -524,6 +524,21 @@ void Score::replaceChordWithNotes (int part, int measure, const std::vector<Note
     sendSynchronousChangeMessage();
 }
 
+int Score::getChordNoteLength (const MeasureChord& chord) const
+{
+    const auto measureLength = getSlotsPerMeasure();
+
+    if (chord.style.noteLength.has_value())
+        return fitNoteLength (*chord.style.noteLength, measureLength);
+
+    if (! music::isMelodic (chord.style.type))
+        return measureLength;
+
+    const auto notes = getChordNotes (chord);
+    const auto numNotes = notes.has_value() ? (int) notes->tones.size() : 1;
+    return slotsPerBeat / music::getArpeggioNotesPerBeat (numNotes, beatsPerMeasure);
+}
+
 std::optional<music::Chord> Score::getChordNotes (int part, int measure) const
 {
     if (const auto* chord = getChord (part, measure))
@@ -705,16 +720,17 @@ void Score::tidyChord (Measure& measure, bool reshuffleRandomOrder)
     if (chord.style.type != music::ChordType::random)
         return;
 
-    // A Random chord keeps its order until its notes or the number of slots change.
+    // A Random chord has a note for each of its note lengths that fits in the measure, and keeps
+    // its order until its notes or their number change. Every note is in it, if there's room.
     const auto midiNotes = getMidiNotes (*getChordNotes (chord));
-    const auto numSlots = juce::jmax (beatsPerMeasure * music::getArpeggioNotesPerBeat ((int) midiNotes.size(), beatsPerMeasure),
-                                      (int) midiNotes.size());
+    const auto numSlots = juce::jmax (1, getSlotsPerMeasure() / getChordNoteLength (chord));
 
     const auto orderStillFits = (int) chord.randomOrder.size() == numSlots
         && std::all_of (chord.randomOrder.begin(), chord.randomOrder.end(), [&] (int midi)
                         { return std::find (midiNotes.begin(), midiNotes.end(), midi) != midiNotes.end(); })
-        && std::all_of (midiNotes.begin(), midiNotes.end(), [&] (int midi)
-                        { return std::find (chord.randomOrder.begin(), chord.randomOrder.end(), midi) != chord.randomOrder.end(); });
+        && (numSlots < (int) midiNotes.size()
+            || std::all_of (midiNotes.begin(), midiNotes.end(), [&] (int midi)
+                            { return std::find (chord.randomOrder.begin(), chord.randomOrder.end(), midi) != chord.randomOrder.end(); }));
 
     if (reshuffleRandomOrder || ! orderStillFits)
         chord.randomOrder = music::createRandomOrder (midiNotes, numSlots, random);
@@ -731,7 +747,8 @@ namespace
     // 6: crescendos and decrescendos
     // 7: any number of parts
     // 8: notes, dynamics and hairpins by 32nd note, rather than by eighth
-    constexpr int formatVersion = 8;
+    // 9: a chord's note length
+    constexpr int formatVersion = 9;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -894,6 +911,9 @@ juce::var Score::toJSON (bool withPartIds) const
             if (chord.alternateNotes.has_value())
                 chordObject->setProperty ("alternateNotes", notesToJSON (*chord.alternateNotes));
 
+            if (chord.style.noteLength.has_value())
+                chordObject->setProperty ("noteLength", *chord.style.noteLength);
+
             juce::Array<juce::var> order;
 
             for (auto midi : chord.randomOrder)
@@ -1053,6 +1073,10 @@ juce::Result Score::loadJSON (const juce::var& json)
                 if (const auto* order = c.getProperty ("randomOrder", {}).getArray())
                     for (const auto& midi : *order)
                         chord.randomOrder.push_back (readInt (midi, 0, 127, 0));
+
+                // One of the note lengths there are, in 32nds
+                if (const auto length = readInt (c.getProperty ("noteLength", {}), 1, maxSlotsPerMeasure, 0); length > 0)
+                    chord.style.noteLength = fitNoteLength (length, length);
 
                 measure.chord = chord;
             }

@@ -130,12 +130,14 @@ The chord window has the Chord Progression Builder's settings for one chord:
 6. **Octave** moves the chord down or up an octave.
 7. **Treble clef / Bass clef** is the staff the chord is written on. Its lowest note falls in C4–B4 on the treble staff and E2–D3 on the bass.
 8. **Chord type**:
-   - **Block**: a chord held for the whole measure, written at its start so it lines up with a quarter note on the first beat of the other staff.
-   - **Arpeggio (asc)** and **Arpeggio (desc)**: single notes, low to high or high to low, padded with rests. Quarter notes are used if they fit, otherwise eighths or sixteenths, beamed like eighths clicked in (four eighths in a row together), with sixteenths a beat at a time.
-   - **Random**: the notes in a random order, filling every beat without playing any note twice in a row. **Reshuffle** picks a new order.
+   - **Block**: a chord held for its note length, the whole measure to start with, written at its start so it lines up with a quarter note on the first beat of the other staff. With a shorter note length it's played again until the measure's full, e.g. on every beat in quarter notes, with a rest for anything left over.
+   - **Arpeggio (asc)**: single notes going up through the chord to the first note an octave higher, unless the chord already reaches that far, and back down, over and over until the measure's full: C E G C' G E C… When there's room for it to come round to its first note again with no more than part of the next time round left, it ends there, holding that note to the end of the measure, as long as that's a single note: in eighths in 4/4, C E G C' G E and a quarter-note C. Notes are beamed like notes clicked in (four eighths in a row together).
+   - **Arpeggio (desc)**: the same the other way: down through the chord to the top note an octave lower, and back up: G E C G, C E G…
+   - **Random**: the notes in a random order, a note of the note length after another, without playing any note twice in a row, and every note at least once if there's room. **Reshuffle** picks a new order.
    - **Rolled chord**: a block chord with the wavy roll sign.
+9. **Note length**, under the chord type, is how long the chord's notes are, from whole notes down to 32nds, dotted ones included; lengths longer than the measure can't be chosen. A block or rolled chord starts out lasting the measure; arpeggios and Random chords start out in quarter notes, or eighths or 16ths if there are too many notes for quarters to fit, and follow the chord's notes as they change until a length is chosen.
 
-Each chord keeps its own clef and chord type. A new chord starts with the ones chosen last. A chord replaces any quarter notes on its staff.
+Each chord keeps its own clef, chord type and note length. A new chord starts with the ones chosen last. A chord replaces any quarter notes on its staff.
 
 Under the settings, the window lists the chord's name and position, its notes from low to high, and whether they're in the key.
 
