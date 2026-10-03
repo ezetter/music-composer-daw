@@ -179,7 +179,9 @@ Duration getDurationForBeats (double beats)
     return beats >= 4.0 ? Duration::whole
          : beats >= 3.0 ? Duration::dottedHalf
          : beats >= 2.0 ? Duration::half
+         : beats >= 1.5 ? Duration::dottedQuarter
          : beats >= 1.0 ? Duration::quarter
+         : beats >= 0.75 ? Duration::dottedEighth
          : beats >= 0.5 ? Duration::eighth
          : beats >= 0.25 ? Duration::sixteenth
                          : Duration::thirtySecond;
@@ -192,13 +194,20 @@ double getBeats (Duration duration)
         case Duration::whole:       return 4.0;
         case Duration::dottedHalf:  return 3.0;
         case Duration::half:        return 2.0;
+        case Duration::dottedQuarter: return 1.5;
         case Duration::quarter:     return 1.0;
+        case Duration::dottedEighth: return 0.75;
         case Duration::eighth:      return 0.5;
         case Duration::sixteenth:   return 0.25;
         case Duration::thirtySecond: return 0.125;
     }
 
     return 1.0;
+}
+
+bool isDotted (Duration duration)
+{
+    return duration == Duration::dottedHalf || duration == Duration::dottedQuarter || duration == Duration::dottedEighth;
 }
 
 Duration getFullMeasureDuration (int beatsPerMeasure)

@@ -2,7 +2,10 @@
 
 #include "Score.h"
 
-enum class Duration { whole, dottedHalf, half, quarter, eighth, sixteenth, thirtySecond };
+enum class Duration { whole, dottedHalf, half, quarter, eighth, sixteenth, thirtySecond, dottedQuarter, dottedEighth };
+
+/** Whether a note or rest is written with a dot after it, making it half as long again. */
+bool isDotted (Duration);
 
 /** A note, chord or rest on one staff. */
 struct StaffEvent
@@ -46,8 +49,8 @@ MeasureContent getMeasureContent (const Score&, int part, int measure);
 */
 Duration getFullMeasureDuration (int beatsPerMeasure);
 
-/** A note lasting an eighth, a quarter or half a beat, or 1, 2, 3 or 4 beats: a 32nd, 16th, eighth, quarter, half,
-    dotted half or whole note.
+/** The longest note that lasts no longer than this many beats: a 32nd, 16th, eighth, dotted
+    eighth, quarter, dotted quarter, half, dotted half or whole note.
 */
 Duration getDurationForBeats (double beats);
 

@@ -19,7 +19,8 @@ struct Note
     double beat;        // from the start of the measure, in steps of a 32nd note: 0, 0.125, 0.25...
     music::Pitch pitch;
     int part = 0;
-    double length = 1;  // in beats: 0.125 for a 32nd note, 0.25 for a 16th, 0.5 for an eighth, 1 for a quarter, 2 for a half, 3 for a dotted half, 4 for a whole
+    double length = 1;  // in beats: 0.125 for a 32nd note, 0.25 for a 16th, 0.5 for an eighth, 0.75 for a dotted eighth, 1 for a quarter,
+                        // 1.5 for a dotted quarter, 2 for a half, 3 for a dotted half, 4 for a whole
 
     bool operator== (const Note& other) const
     {
@@ -161,7 +162,8 @@ public:
 
     //==============================================================================
     /** Adds a note, as long as it asks, or as long as fits in what's left of the measure: the
-        longest of a whole, dotted half, half, quarter, eighth, 16th or 32nd note that does. It takes the place
+        longest of a whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, 16th
+        or 32nd note that does. It takes the place
         of any notes it covers, and cuts short a longer note it starts during. The notes starting
         together all have the same length, so they take the new one's. Returns false if the score
         already has it, or its staff is taken by the measure's chord.
@@ -181,7 +183,8 @@ public:
     static constexpr double maxNoteLength = 4.0;
 
     /** The longest note that's no longer than asked, and fits in the room there is, both in
-        32nd notes: a whole, dotted half, half, quarter, eighth, 16th or 32nd note.
+        32nd notes: a whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, 16th
+        or 32nd note.
     */
     static int fitNoteLength (int slots, int room);
 

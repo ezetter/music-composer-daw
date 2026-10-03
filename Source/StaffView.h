@@ -43,9 +43,10 @@ public:
     void followPart();
 
     /** How long the notes that clicks add are, in beats: 0.125 for 32nd notes, 0.25 for 16ths,
-        0.5 for eighths, 1 for quarter notes, 2 for half notes, 3 for dotted half notes and 4 for
-        whole notes. Clicks add notes shorter than a beat at the nearest step of their length,
-        e.g. every 16th for 16ths; the others go on beats.
+        0.5 for eighths, 0.75 for dotted eighths, 1 for quarter notes, 1.5 for dotted quarters,
+        2 for half notes, 3 for dotted half notes and 4 for whole notes. Clicks add notes shorter
+        than a beat at the nearest step of their length without its dot, e.g. every 16th for 16ths
+        and every eighth for dotted eighths; the others go on beats.
     */
     void setNoteLength (double beats);
 

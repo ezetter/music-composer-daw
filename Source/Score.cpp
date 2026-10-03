@@ -229,8 +229,8 @@ bool Score::addNote (const Note& note)
 
 int Score::fitNoteLength (int slots, int room)
 {
-    // Whole, dotted half, half, quarter, eighth, 16th and 32nd notes, in 32nds
-    for (auto length : { 32, 24, 16, 8, 4, 2, 1 })
+    // Whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, 16th and 32nd notes, in 32nds
+    for (auto length : { 32, 24, 16, 12, 8, 6, 4, 2, 1 })
         if (length <= slots && length <= room)
             return length;
 

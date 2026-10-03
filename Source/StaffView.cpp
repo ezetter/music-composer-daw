@@ -92,7 +92,10 @@ namespace
     /** How many flags a note has on its own, or beams when it's beamed: 1 for an eighth, 2 for a 16th and 3 for a 32nd. */
     int getFlagCount (Duration duration)
     {
-        return duration == Duration::eighth ? 1 : duration == Duration::sixteenth ? 2 : duration == Duration::thirtySecond ? 3 : 0;
+        return duration == Duration::eighth || duration == Duration::dottedEighth ? 1
+             : duration == Duration::sixteenth ? 2
+             : duration == Duration::thirtySecond ? 3
+                                                  : 0;
     }
 
     juce::juce_wchar getNoteheadGlyph (Duration duration)
@@ -102,7 +105,9 @@ namespace
             case Duration::whole:        return Smufl::noteheadWhole;
             case Duration::dottedHalf:
             case Duration::half:         return Smufl::noteheadHalf;
+            case Duration::dottedQuarter:
             case Duration::quarter:
+            case Duration::dottedEighth:
             case Duration::eighth:
             case Duration::sixteenth:
             case Duration::thirtySecond: break;
@@ -123,7 +128,9 @@ namespace
             case Duration::whole:        return Smufl::restWhole;
             case Duration::dottedHalf:
             case Duration::half:         return Smufl::restHalf;
+            case Duration::dottedQuarter:
             case Duration::quarter:      return Smufl::restQuarter;
+            case Duration::dottedEighth:
             case Duration::eighth:       return Smufl::rest8th;
             case Duration::sixteenth:    return Smufl::rest16th;
             case Duration::thirtySecond: return Smufl::rest32nd;
@@ -666,9 +673,12 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
                                      ? juce::jlimit (lowestTreblePosition, highestTreblePosition, position)
                                      : juce::jlimit (lowestBassPosition, highestBassPosition, position);
 
-    // The nearest beat, or for a shorter note, the nearest step of its length: an eighth, 16th or
-    // 32nd. Notes already there can be clicked wherever they start.
-    const auto grid = (int) std::lround (juce::jmin (noteLength, 1.0) * Score::slotsPerBeat);
+    // The nearest beat, or for a shorter note, the nearest step of its length without its dot: an
+    // eighth, 16th or 32nd. Notes already there can be clicked wherever they start.
+    auto grid = Score::slotsPerBeat;
+
+    while (grid > 1 && grid > (int) std::lround (noteLength * Score::slotsPerBeat))
+        grid /= 2;
     const auto slot = getSlotAt (measure, point.x, grid, [&] (double beat)
     {
         return ! score.getNotes (part, staff, measure, beat).empty();
@@ -1171,16 +1181,21 @@ void StaffView::drawNote (juce::Graphics& g, Staff staff, const NoteLayout& note
     const auto headsRight = *std::max_element (note.headLefts.begin(), note.headLefts.end()) + note.headWidth;
 
     // A dotted note has its dot in a space: beside a note in a space, or in the space above a
-    // note on a line.
-    if (note.duration == Duration::dottedHalf)
+    // note on a line. A flag hanging from a stem going up would run into it, so it's past the flag.
+    if (isDotted (note.duration))
     {
         std::set<int> dotPositions;
 
         for (auto position : note.positions)
             dotPositions.insert (isLine (position) ? position + 1 : position);
 
+        auto dotX = headsRight + 0.35f * staffSpace;
+
+        if (note.stemUp && ! note.beamed && getFlagCount (note.duration) > 0)
+            dotX = juce::jmax (dotX, note.getStemLeft() + glyphs.getPath (Smufl::flag8thUp).getBounds().getRight() + 0.25f * staffSpace);
+
         for (auto position : dotPositions)
-            glyphs.draw (g, Smufl::augmentationDot, { headsRight + 0.35f * staffSpace, getY (staff, position) });
+            glyphs.draw (g, Smufl::augmentationDot, { dotX, getY (staff, position) });
     }
 
     auto leftmost = headsLeft;
@@ -1441,13 +1456,11 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
         return;
 
     // The notehead of the length a click adds, once it's fitted into what's left of the measure:
-    // filled for a quarter note or shorter, open for a half or whole note
+    // filled for a dotted quarter or shorter, open for a half or longer
     const auto room = (int) std::lround ((score.getBeatsPerMeasure() - hoverNote->beat) * Score::slotsPerBeat);
     const auto slots = Score::fitNoteLength ((int) std::lround (hoverNote->length * Score::slotsPerBeat), room);
     const auto duration = getDurationForBeats ((double) slots / Score::slotsPerBeat);
-    const auto notehead = duration == Duration::whole ? Smufl::noteheadWhole
-                        : getBeats (duration) <= 1.0 ? Smufl::noteheadBlack
-                                                     : Smufl::noteheadHalf;
+    const auto notehead = getNoteheadGlyph (duration);
     const auto width = getNoteheadWidth (duration) * staffSpace;
     const auto position = hoverNote->pitch.step - getBottomLineStep (hoverNote->staff);
     const auto left = getOnsetX (hoverNote->measure, hoverNote->beat) - width / 2.0f;
@@ -1456,8 +1469,8 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
     drawLedgerLines (g, hoverNote->staff, { position }, { left }, width);
     glyphs.draw (g, notehead, { left, getY (hoverNote->staff, position) });
 
-    // A dotted half has its dot in a space.
-    if (duration == Duration::dottedHalf)
+    // A dotted note has its dot in a space.
+    if (isDotted (duration))
         glyphs.draw (g, Smufl::augmentationDot, { left + width + 0.35f * staffSpace, getY (hoverNote->staff, isLine (position) ? position + 1 : position) });
 }
 
