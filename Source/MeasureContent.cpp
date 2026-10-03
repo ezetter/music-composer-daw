@@ -155,7 +155,6 @@ namespace
         // Single notes of the note length, one after another until the measure's full
         const auto room = measureLength / length;
         std::vector<music::Tone> sequence;
-        auto holdLast = false;      // whether the last note lasts to the end of the measure
 
         if (type == music::ChordType::random)
         {
@@ -164,37 +163,21 @@ namespace
         }
         else
         {
-            // An arpeggio goes up and down, or down and up, again and again. When there's room
-            // for it to come round to its first note again, with no more than part of the next
-            // time round left, it stops there, and holds that note to the end of the measure.
+            // An arpeggio goes up and down, or down and up, again and again, every note the note
+            // length, until the measure's full.
             const auto cycle = getArpeggioCycle (chord.tones, type == music::ChordType::arpeggioUp);
             const auto period = (int) cycle.size();
 
             for (int i = 0; i < room && period > 0; ++i)
                 sequence.push_back (cycle[(size_t) (i % period)]);
-
-            // It's held only if there's a note as long as what's left of the measure.
-            if (period > 1 && room > period)
-            {
-                const auto notes = (room - 1) / period * period + 1;
-                const auto left = measureLength - (notes - 1) * length;
-
-                if (Score::fitNoteLength (left, left) == left)
-                {
-                    sequence.resize ((size_t) notes);
-                    holdLast = true;
-                }
-            }
         }
 
         auto slot = 0;
 
-        for (size_t i = 0; i < sequence.size(); ++i)
+        for (const auto& tone : sequence)
         {
-            const auto last = i + 1 == sequence.size();
-            const auto slots = last && holdLast ? measureLength - slot : length;
-            add (slot, { sequence[i] }, slots, false);
-            slot += slots;
+            add (slot, { tone }, length, false);
+            slot += length;
         }
 
         addRests (content.events, slot, measureLength, beats);

@@ -13,9 +13,11 @@ namespace
     constexpr int padding = 16;
     constexpr int buttonHeight = 28;
 
-    /** The note lengths a chord's notes can have, in 32nds, longest first, and their names */
-    const std::array<std::pair<int, const char*>, 9> noteLengths { { { 32, "Whole notes" }, { 24, "Dotted half notes" }, { 16, "Half notes" },
-                                                                     { 12, "Dotted quarter notes" }, { 8, "Quarter notes" }, { 6, "Dotted eighth notes" },
+    /** The note lengths a chord's notes can be chosen to have, in 32nds, longest first, and their
+        names. A whole note is as long as the measure, whatever the time signature: a dotted half
+        in 3/4. Dotted notes aren't among them.
+    */
+    const std::array<std::pair<int, const char*>, 6> noteLengths { { { 32, "Whole measure" }, { 16, "Half notes" }, { 8, "Quarter notes" },
                                                                      { 4, "Eighth notes" }, { 2, "16th notes" }, { 1, "32nd notes" } } };
 
     /** Drops a chord's 7th or 9th, and its 3rd inversion, which only 7th chords have. */
@@ -308,16 +310,23 @@ void ChordEditor::update()
     bassButton.setToggleState (style.staff == Staff::bass, juce::dontSendNotification);
     chordTypeBox.setSelectedId ((int) style.type + 1, juce::dontSendNotification);
 
-    // The length the notes are, chosen or the chord type's own, and only lengths that fit in a measure
+    // The length chosen, or else the one the chord type gives it, with only lengths that fit in a
+    // measure to choose from
+    const auto measureLength = score.getBeatsPerMeasure() * Score::slotsPerBeat;
     const auto length = score.getChordNoteLength (chord);
+    auto selected = 0;
 
     for (size_t i = 0; i < noteLengths.size(); ++i)
     {
-        noteLengthBox.setItemEnabled ((int) i + 1, noteLengths[i].first <= score.getBeatsPerMeasure() * Score::slotsPerBeat);
+        const auto itemLength = noteLengths[i].first;
+        noteLengthBox.setItemEnabled ((int) i + 1, i == 0 || itemLength <= measureLength);
 
-        if (noteLengths[i].first == length)
-            noteLengthBox.setSelectedId ((int) i + 1, juce::dontSendNotification);
+        if (style.noteLength.has_value() ? itemLength == *style.noteLength
+                                         : (i == 0 ? length == measureLength : itemLength == length && length != measureLength))
+            selected = (int) i + 1;
     }
+
+    noteLengthBox.setSelectedId (selected, juce::dontSendNotification);
 
     reshuffleButton.setVisible (style.type == music::ChordType::random);
     reshuffleButton.setEnabled (chord.hasNotes());
