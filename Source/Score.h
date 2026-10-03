@@ -118,12 +118,28 @@ public:
     Score();
 
     //==============================================================================
-    /** The key, as an index into music::getMajorKeys(). */
+    /** The key's signature, as an index into music::getMajorKeys(): the major key, or for a minor
+        key, the relative major, with the same signature.
+    */
     int getKeyIndex() const noexcept { return keyIndex; }
+
+    /** The major key the key signature is for, which chords and their numerals are in too. */
     music::Spelling getKey() const;
 
-    /** Changes the key. Chords follow their numerals into the new key, but notes keep their pitches. */
+    /** Whether the key is minor: the relative minor of getKey(), with the same signature. */
+    bool isMinor() const noexcept { return minor; }
+
+    /** The key's tonic: the major key's, or the relative minor's. */
+    music::Spelling getTonic() const;
+
+    /** Changes the key signature. Chords follow their numerals into the new key, but notes keep their pitches. */
     void setKeyIndex (int);
+
+    /** Makes the key major or minor, keeping its tonic: C major becomes C minor, with three flats.
+        A tonic without a key in the other mode, such as G♭ minor, takes the one that sounds the
+        same, F♯ minor.
+    */
+    void setMinor (bool);
 
     /** The number of quarter-note beats in a measure: 2, 3 or 4. */
     int getBeatsPerMeasure() const noexcept { return beatsPerMeasure; }
@@ -438,6 +454,7 @@ private:
     std::vector<Part> parts;
     int nextPartId = 1;
     int keyIndex = 0;
+    bool minor = false;
     int beatsPerMeasure = 4;
     double beatsPerMinute = 120.0;
     juce::Random random;

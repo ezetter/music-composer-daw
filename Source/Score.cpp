@@ -71,6 +71,38 @@ music::Spelling Score::getKey() const
     return music::getMajorKeys()[(size_t) keyIndex];
 }
 
+music::Spelling Score::getTonic() const
+{
+    return minor ? music::getRelativeMinor (getKey()) : getKey();
+}
+
+void Score::setMinor (bool shouldBeMinor)
+{
+    if (shouldBeMinor == minor)
+        return;
+
+    // The key in the other mode with the same tonic, or else the same pitch
+    const auto tonic = getTonic();
+    const auto& keys = music::getMajorKeys();
+    const auto tonicIn = [shouldBeMinor] (music::Spelling key) { return shouldBeMinor ? music::getRelativeMinor (key) : key; };
+    auto newIndex = -1;
+
+    for (size_t i = 0; i < keys.size() && newIndex < 0; ++i)
+        if (tonicIn (keys[i]) == tonic)
+            newIndex = (int) i;
+
+    for (size_t i = 0; i < keys.size() && newIndex < 0; ++i)
+        if (tonicIn (keys[i]).getPitchClass() == tonic.getPitchClass())
+            newIndex = (int) i;
+
+    minor = shouldBeMinor;
+
+    if (newIndex != keyIndex)
+        setKeyIndex (newIndex);
+    else
+        sendSynchronousChangeMessage();
+}
+
 void Score::setKeyIndex (int newKeyIndex)
 {
     jassert (juce::isPositiveAndBelow (newKeyIndex, (int) music::getMajorKeys().size()));
@@ -836,7 +868,8 @@ namespace
     // 8: notes, dynamics and hairpins by 32nd note, rather than by eighth
     // 9: a chord's note length
     // 10: the sustain pedal
-    constexpr int formatVersion = 10;
+    // 11: minor keys
+    constexpr int formatVersion = 11;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -891,6 +924,7 @@ void Score::clear()
 
     parts = std::move (emptied);
     keyIndex = 0;
+    minor = false;
     beatsPerMeasure = 4;
     beatsPerMinute = 120.0;
     sendSynchronousChangeMessage();
@@ -902,6 +936,7 @@ juce::var Score::toJSON (bool withPartIds) const
     root->setProperty ("format", formatName);
     root->setProperty ("version", formatVersion);
     root->setProperty ("key", keyIndex);
+    root->setProperty ("minor", minor);
     root->setProperty ("beatsPerMeasure", beatsPerMeasure);
     root->setProperty ("beatsPerMinute", beatsPerMinute);
 
@@ -1248,6 +1283,7 @@ juce::Result Score::loadJSON (const juce::var& json)
 
     parts = std::move (loadedParts);
     keyIndex = readInt (json.getProperty ("key", {}), 0, (int) music::getMajorKeys().size() - 1, 0);
+    minor = (bool) json.getProperty ("minor", false);
     beatsPerMeasure = readInt (json.getProperty ("beatsPerMeasure", {}), 2, maxBeatsPerMeasure, 4);
 
     const auto tempo = (double) json.getProperty ("beatsPerMinute", 120.0);

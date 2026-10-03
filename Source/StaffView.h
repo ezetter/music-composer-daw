@@ -2,6 +2,7 @@
 
 #include "MeasureContent.h"
 #include "MusicGlyphs.h"
+#include "ScaleTool.h"
 #include "Score.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -67,6 +68,13 @@ public:
 
     /** Called when an eraser stroke starts and finishes, so everything it takes out can be undone together. */
     std::function<void()> onEraseStarted, onEraseFinished;
+
+    /** Turns on adding notes from the key's scale, or with none, turns it off. While it's on, a
+        faint note shows where each would go, and the next click on a staff adds them there, as
+        the settings say, and then calls onScalePlaced.
+    */
+    void setScalePlacement (std::optional<ScaleSettings>);
+    std::function<void()> onScalePlaced;
 
     /** What the eraser would take out at a point. */
     struct Erasable
@@ -258,6 +266,20 @@ private:
     /** What a click without dragging does: adds or takes out a note. */
     void clickNote (const Note&);
 
+    /** The notes adding from the scale at a note would add: one after another from it, each as
+        long as asked, or as fits in its measure, and on into the measures after. In order, they go
+        up or down the scale from the note; at random, they're picked from the scale, on and around
+        the staff, with the generator given, or put on the middle line without one, to show where
+        they'd go.
+    */
+    std::vector<Note> planScale (const Note& start, juce::Random*) const;
+
+    /** Adds notes from the scale from a note, in place of any starting where they go, adding
+        measures if they run past the end. Measures where a chord has the staff are left alone.
+    */
+    void placeScale (const Note& start);
+    void drawScaleHint (juce::Graphics&) const;
+
     /** The note a click at this point would add or take out. In a measure with a Random chord,
         each of whose notes goes on its own, it's the very note under the point, if there is one.
     */
@@ -324,6 +346,9 @@ private:
     MusicGlyphs glyphs;
     bool active = false;
     double noteLength = 1.0;
+    std::optional<ScaleSettings> scalePlacement;    // adding notes from the scale, at the next click
+    std::optional<Note> scaleHover;                 // where it would go
+    juce::Random random;
     std::optional<music::Marking> marking;          // marked by clicks and drags, instead of adding notes
     std::optional<std::pair<int, double>> hoverMarkPoint, pressedDynamic, pressedPedal;
     std::optional<HairpinMark> hoverHairpin, pressedHairpin;     // the hairpin under the mouse, and one a click would take out

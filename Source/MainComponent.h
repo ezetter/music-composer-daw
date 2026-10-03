@@ -174,6 +174,16 @@ private:
     */
     void setErasing (bool);
 
+    /** Shows the Scale button's settings, in a box beside it. */
+    void showScalePanel (juce::Component& button);
+
+    /** Makes the next click on a staff add notes from the key's scale, as the settings say. */
+    void startPlacingScale (const ScaleSettings&);
+
+    /** Goes back to clicks doing what they did before, without adding notes from the scale. */
+    void stopPlacingScale();
+    bool isPlacingScale() const noexcept { return placingScale; }
+
     /** Gives another part the active part's chords, asking first if it has notes of its own. */
     void copyProgression (int toPart);
 
@@ -265,6 +275,8 @@ private:
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 
     int activePart = 0;
+    ScaleSettings lastScale;            // what the Scale button's settings start with: the ones used last
+    bool placingScale = false;
     int activePartId = 0;               // so the active part can be found again when parts are added or taken out
     ChordStyle lastChordStyle;          // what a new chord starts with: whichever was chosen last
     juce::Component::SafePointer<juce::Component> keyListenerTarget;

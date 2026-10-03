@@ -17,10 +17,18 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
     controls::makeHeading (alternateHeading, "Alternate staff");
     controls::makeHeading (progressionHeading, "Progression");
 
-    for (const auto& key : music::getMajorKeys())
-        keyBox.addItem (music::getKeyName (key), keyBox.getNumItems() + 1);
-
+    // The key is its tonic's letter, with Major or Minor beside it.
+    keyBox.setTooltip ("The key's tonic");
     keyBox.onChange = [this] { score.setKeyIndex (keyBox.getSelectedId() - 1); };
+    controls::makeSegmented ({ &majorButton, &minorButton }, 2001);
+    majorButton.setTooltip ("A major key");
+    minorButton.setTooltip ("A minor key, with the key signature of the major key a minor third above, and the natural minor scale");
+    majorButton.onClick = [this] { score.setMinor (false); };
+    minorButton.onClick = [this] { score.setMinor (true); };
+
+    scaleButton.setWantsKeyboardFocus (false);
+    scaleButton.setTooltip ("Add notes from the key's scale, in order or at random, where you click on a staff");
+    scaleButton.onClick = [this] { if (onScale != nullptr) onScale (scaleButton); };
 
     signatureLabel.setFont (juce::FontOptions (12.0f));
     signatureLabel.setColour (juce::Label::textColourId, controls::secondaryText);
@@ -64,9 +72,9 @@ ScorePanel::ScorePanel (Score& scoreToEdit)
                                             });
     };
 
-    for (auto* component : std::initializer_list<juce::Component*> { &keyHeading, &keyBox, &signatureLabel, &timeSignatureHeading,
+    for (auto* component : std::initializer_list<juce::Component*> { &keyHeading, &keyBox, &majorButton, &minorButton, &signatureLabel, &timeSignatureHeading,
                                                                      &timeSignatureBox, &alternateHeading, &alternateBox, &alternateHint,
-                                                                     &progressionHeading, &copyProgressionButton, &progressionHint })
+                                                                     &progressionHeading, &copyProgressionButton, &progressionHint, &scaleButton })
         addAndMakeVisible (component);
 
     score.addChangeListener (this);
@@ -86,7 +94,7 @@ ScorePanel::~ScorePanel()
 
 int ScorePanel::getIdealHeight() const
 {
-    return 4 * (headingHeight + 2) + 4 * controlHeight + 2 * (16 + 2) + 2 + 32 + 3 * sectionGap;
+    return 4 * (headingHeight + 2) + 5 * controlHeight + 2 * (16 + 2) + 2 + 32 + 4 + 3 * sectionGap;
 }
 
 void ScorePanel::resized()
@@ -95,7 +103,11 @@ void ScorePanel::resized()
 
     keyHeading.setBounds (bounds.removeFromTop (headingHeight));
     bounds.removeFromTop (2);
-    keyBox.setBounds (bounds.removeFromTop (controlHeight));
+    auto keyRow = bounds.removeFromTop (controlHeight);
+    keyBox.setBounds (keyRow.removeFromLeft (90));
+    keyRow.removeFromLeft (8);
+    majorButton.setBounds (keyRow.removeFromLeft (keyRow.getWidth() / 2));
+    minorButton.setBounds (keyRow);
     bounds.removeFromTop (2);
     signatureLabel.setBounds (bounds.removeFromTop (16));
     bounds.removeFromTop (sectionGap);
@@ -117,6 +129,8 @@ void ScorePanel::resized()
     copyProgressionButton.setBounds (bounds.removeFromTop (controlHeight));
     bounds.removeFromTop (2);
     progressionHint.setBounds (bounds.removeFromTop (32));
+    bounds.removeFromTop (4);
+    scaleButton.setBounds (bounds.removeFromTop (controlHeight));
 }
 
 void ScorePanel::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -141,7 +155,15 @@ void ScorePanel::update()
     // The active part may have just been taken out, until another's chosen.
     part = juce::jlimit (0, score.getNumParts() - 1, part);
 
+    // The keys' tonics, for the mode the key's in
+    keyBox.clear (juce::dontSendNotification);
+
+    for (const auto& key : music::getMajorKeys())
+        keyBox.addItem ((score.isMinor() ? music::getRelativeMinor (key) : key).getName(), keyBox.getNumItems() + 1);
+
     keyBox.setSelectedId (score.getKeyIndex() + 1, juce::dontSendNotification);
+    majorButton.setToggleState (! score.isMinor(), juce::dontSendNotification);
+    minorButton.setToggleState (score.isMinor(), juce::dontSendNotification);
     signatureLabel.setText (music::getKeySignatureText (score.getKey()), juce::dontSendNotification);
     timeSignatureBox.setSelectedId (score.getBeatsPerMeasure(), juce::dontSendNotification);
     alternateBox.setSelectedId ((int) score.getAlternateStaff (part) + 1, juce::dontSendNotification);

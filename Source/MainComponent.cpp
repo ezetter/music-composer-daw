@@ -231,6 +231,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     setNoteLength (1.0);
 
     scorePanel.onCopyProgression = [this] (int toPart) { copyProgression (toPart); };
+    scorePanel.onScale = [this] (juce::Component& button) { showScalePanel (button); };
     sidebarContent.addAndMakeVisible (scorePanel);
     sidebar.setViewedComponent (&sidebarContent, false);
     sidebar.setScrollBarsShown (true, false);
@@ -411,6 +412,12 @@ void MainComponent::parentHierarchyChanged()
 
 bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
 {
+    if (key == juce::KeyPress::escapeKey && placingScale)
+    {
+        stopPlacingScale();
+        return true;
+    }
+
     if (key == juce::KeyPress::escapeKey && getChordEditor() != nullptr)
     {
         closeChordEditor();
@@ -557,6 +564,9 @@ void MainComponent::insertTrack (int index, bool reloadFromSettings)
     // An eraser stroke is undone in one go, however much it takes out.
     view.onEraseStarted = [this] { history.beginGesture(); };
     view.onEraseFinished = [this] { history.endGesture(); };
+
+    // Adding from the scale is done once the notes have gone in.
+    view.onScalePlaced = [this] { stopPlacingScale(); };
 
     // It does what clicks on the other parts do.
     view.setNoteLength (noteLengthPicker.getLength());
@@ -722,8 +732,48 @@ void MainComponent::copyProgression (int to)
                                   });
 }
 
+void MainComponent::showScalePanel (juce::Component& button)
+{
+    auto panel = std::make_unique<ScalePanel> (lastScale);
+    auto* panelPointer = panel.get();
+
+    // Sequence or Random closes the box, and the next click on a staff adds the notes.
+    panel->onPlace = [this, panelPointer] (ScaleSettings chosen)
+    {
+        lastScale = chosen;
+
+        if (auto* box = panelPointer->findParentComponentOfClass<juce::CallOutBox>())
+            box->dismiss();
+
+        startPlacingScale (chosen);
+    };
+
+    juce::CallOutBox::launchAsynchronously (std::move (panel), getLocalArea (&button, button.getLocalBounds()), this);
+}
+
+void MainComponent::startPlacingScale (const ScaleSettings& scale)
+{
+    // Whatever tool was chosen, it's back to notes afterwards.
+    setNoteLength (noteLengthPicker.getLength());
+    placingScale = true;
+
+    for (auto& view : staffSystems.views)
+        view->setScalePlacement (scale);
+}
+
+void MainComponent::stopPlacingScale()
+{
+    placingScale = false;
+
+    for (auto& view : staffSystems.views)
+        view->setScalePlacement ({});
+}
+
 void MainComponent::setNoteLength (double beats)
 {
+    if (placingScale)
+        stopPlacingScale();
+
     noteLengthPicker.setLength (beats);
     dynamicPicker.setChoice ({});
     eraserButton.setToggleState (false, juce::dontSendNotification);
@@ -737,6 +787,9 @@ void MainComponent::setNoteLength (double beats)
 
 void MainComponent::setMarking (std::optional<music::Marking> marking)
 {
+    if (placingScale)
+        stopPlacingScale();
+
     if (! marking.has_value())
     {
         setNoteLength (noteLengthPicker.getLength());
@@ -753,6 +806,9 @@ void MainComponent::setMarking (std::optional<music::Marking> marking)
 
 void MainComponent::setErasing (bool shouldErase)
 {
+    if (placingScale)
+        stopPlacingScale();
+
     if (! shouldErase)
     {
         setNoteLength (noteLengthPicker.getLength());

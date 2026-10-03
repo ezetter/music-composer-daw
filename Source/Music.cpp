@@ -285,6 +285,11 @@ juce::String getKeyName (Spelling tonic)
     return tonic.getName() + " major";
 }
 
+Spelling getRelativeMinor (Spelling majorTonic)
+{
+    return spell (majorTonic.letter + 5, majorTonic.getPitchClass() + 9);
+}
+
 std::array<Spelling, 7> getScale (Spelling tonic)
 {
     std::array<Spelling, 7> scale;

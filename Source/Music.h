@@ -60,6 +60,9 @@ namespace music
     const std::array<Spelling, 15>& getMajorKeys();
 
     juce::String getKeyName (Spelling tonic);
+
+    /** The minor key with the same key signature as a major key: its tonic a minor third below. */
+    Spelling getRelativeMinor (Spelling majorTonic);
     std::array<Spelling, 7> getScale (Spelling tonic);
 
     /** The key signature's alteration for each letter. */

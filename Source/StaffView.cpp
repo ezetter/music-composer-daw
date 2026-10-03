@@ -378,6 +378,121 @@ void StaffView::setMarking (std::optional<music::Marking> newMarking)
     repaint();
 }
 
+void StaffView::setScalePlacement (std::optional<ScaleSettings> settings)
+{
+    scalePlacement = settings;
+    scaleHover.reset();
+    setHoverNote ({});
+
+    if (scalePlacement.has_value())
+        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+    else
+        setMouseCursor (erasing ? EraserButton::createCursor() : juce::MouseCursor (juce::MouseCursor::NormalCursor));
+
+    repaint();
+}
+
+std::vector<Note> StaffView::planScale (const Note& start, juce::Random* randomToUse) const
+{
+    const auto& settings = *scalePlacement;
+    const auto keyAlterations = music::getKeyAlterations (score.getKey());
+    const auto slotsPerMeasure = score.getBeatsPerMeasure() * Score::slotsPerBeat;
+
+    // Random notes come from the staff and a little either side of it, never the same twice running.
+    const auto lowest = getBottomLineStep (start.staff) - 2;
+    const auto highest = getBottomLineStep (start.staff) + topLine + 2;
+
+    std::vector<Note> notes;
+    auto measure = start.measure;
+    auto slot = (int) std::lround (start.beat * Score::slotsPerBeat);
+    auto previousStep = std::numeric_limits<int>::min();
+
+    for (int i = 0; i < settings.numNotes; ++i)
+    {
+        auto step = start.pitch.step + (settings.ascending ? i : -i);
+
+        if (settings.random && randomToUse == nullptr)
+            step = getBottomLineStep (start.staff) + middleLine;
+        else if (settings.random)
+            do step = lowest + randomToUse->nextInt (highest - lowest + 1); while (step == previousStep);
+
+        previousStep = step;
+
+        // The scale's notes are the key signature's.
+        const auto length = Score::fitNoteLength (settings.length, slotsPerMeasure - slot);
+        notes.push_back ({ start.staff, measure, (double) slot / Score::slotsPerBeat, { step, keyAlterations[(size_t) music::mod (step, 7)] },
+                           part, (double) length / Score::slotsPerBeat });
+
+        if ((slot += length) >= slotsPerMeasure)
+        {
+            ++measure;
+            slot = 0;
+        }
+    }
+
+    return notes;
+}
+
+void StaffView::placeScale (const Note& start)
+{
+    const auto notes = planScale (start, &random);
+
+    while (notes.back().measure >= score.getNumMeasures())
+        score.addMeasure();
+
+    for (const auto& note : notes)
+    {
+        if (score.chordUsesStaff (part, note.measure, note.staff))
+            continue;
+
+        // In place of whatever starts where it goes
+        const auto from = (int) std::lround (note.beat * Score::slotsPerBeat);
+        const auto to = from + (int) std::lround (note.length * Score::slotsPerBeat);
+
+        for (auto slot = from; slot < to; ++slot)
+        {
+            const auto beat = (double) slot / Score::slotsPerBeat;
+            const auto existing = score.getNotes (part, note.staff, note.measure, beat);
+
+            for (const auto& pitch : existing)
+                score.removeNotesAt (part, note.staff, note.measure, beat, pitch.step);
+        }
+
+        score.addNote (note);
+    }
+
+    if (onScalePlaced != nullptr)
+        onScalePlaced();
+}
+
+void StaffView::drawScaleHint (juce::Graphics& g) const
+{
+    if (! scalePlacement.has_value() || ! scaleHover.has_value())
+        return;
+
+    g.setColour (hoverColour);
+
+    for (const auto& note : planScale (*scaleHover, nullptr))
+    {
+        if (note.measure >= score.getNumMeasures())
+            break;
+
+        // Measures a chord has the staff in are left alone.
+        if (score.chordUsesStaff (part, note.measure, note.staff))
+            continue;
+
+        const auto duration = getDurationForBeats (note.length);
+        const auto width = getNoteheadWidth (duration) * staffSpace;
+        const auto position = note.pitch.step - getBottomLineStep (note.staff);
+        const auto left = getOnsetX (note.measure, note.beat) - width / 2.0f;
+
+        drawLedgerLines (g, note.staff, { position }, { left }, width);
+        glyphs.draw (g, getNoteheadGlyph (duration), { left, getY (note.staff, position) });
+    }
+
+    g.setColour (inkColour);
+}
+
 void StaffView::setErasing (bool shouldErase)
 {
     setMarking ({});
@@ -681,9 +796,11 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
 
     // The nearest beat, or for a shorter note, the nearest step of its length without its dot: an
     // eighth, 16th or 32nd. Notes already there can be clicked wherever they start.
+    // Adding from the scale, the notes going on are the ones of its length.
+    const auto length = scalePlacement.has_value() ? (double) scalePlacement->length / Score::slotsPerBeat : noteLength;
     auto grid = Score::slotsPerBeat;
 
-    while (grid > 1 && grid > (int) std::lround (noteLength * Score::slotsPerBeat))
+    while (grid > 1 && grid > (int) std::lround (length * Score::slotsPerBeat))
         grid /= 2;
     const auto slot = getSlotAt (measure, point.x, grid, [&] (double beat)
     {
@@ -876,6 +993,7 @@ void StaffView::paint (juce::Graphics& g)
     drawHairpins (g);
     drawPedals (g);
     drawHoverDynamic (g);
+    drawScaleHint (g);
 }
 
 void StaffView::drawHeader (juce::Graphics& g) const
@@ -1752,6 +1870,17 @@ void StaffView::mouseMove (const juce::MouseEvent& e)
     if (part < 0)
         return;
 
+    if (scalePlacement.has_value())
+    {
+        if (const auto start = getNoteAt (e.position); start != scaleHover)
+        {
+            scaleHover = start;
+            repaint();
+        }
+
+        return;
+    }
+
     if (erasing)
     {
         setHoverErasable (findErasableAt (e.position));
@@ -1826,6 +1955,13 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
 
     if (onClicked != nullptr)
         onClicked();
+
+    // Adding from the scale, a click says where, when the mouse is let go.
+    if (scalePlacement.has_value())
+    {
+        pressedNote = getNoteAt (e.position);
+        return;
+    }
 
     // With the eraser, everything the mouse goes over until it's let go is taken out.
     if (erasing)
@@ -1934,6 +2070,17 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
 
     if (part < 0)
         return;
+
+    if (scalePlacement.has_value())
+    {
+        const auto start = pressedNote;
+        pressedNote.reset();
+
+        if (start.has_value() && ! e.mods.isPopupMenu() && ! e.mouseWasDraggedSinceMouseDown())
+            placeScale (*start);
+
+        return;
+    }
 
     const auto pressed = pressedNote;
     const auto from = tieFrom;

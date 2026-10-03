@@ -38,6 +38,7 @@ target_sources(AnthropoceneMusic
         Source/PianoKeyboard.cpp
         Source/PluginWindow.cpp
         Source/Score.cpp
+        Source/ScaleTool.cpp
         Source/ScoreDocument.cpp
         Source/ScoreHistory.cpp
         Source/ScorePanel.cpp
