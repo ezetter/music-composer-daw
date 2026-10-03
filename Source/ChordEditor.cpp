@@ -6,7 +6,6 @@ namespace
 {
     constexpr int rowHeight = 28;
     constexpr int segmentHeight = 26;
-    constexpr int headingHeight = 16;
     constexpr int gap = 6;
     constexpr int sectionGap = 12;
     constexpr int infoLineHeight = 18;
@@ -38,10 +37,9 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
     loadChord();
 
     controls::makeHeading (title, "Chord");
-    controls::makeHeading (chordTypeHeading, "Chord type");
 
     // Changing anything that defines the chord replaces notes set on the piano.
-    flatButton.setButtonText (controls::fromUTF8 ("\xe2\x99\xad Flat"));
+    flatButton.setButtonText (controls::fromUTF8 ("\xe2\x99\xad"));
     flatButton.setTooltip ("Lowers the chord's root a half step");
     flatButton.onClick = [this] { edit ([this] (MeasureChord& c) { c.spec.flat = flatButton.getToggleState(); c.keyboardNotes.reset(); }); };
 
@@ -124,7 +122,8 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
     trebleButton.onClick = [this] { edit ([] (MeasureChord& c) { c.style.staff = Staff::treble; }); };
     bassButton.onClick = [this] { edit ([] (MeasureChord& c) { c.style.staff = Staff::bass; }); };
 
-    chordTypeBox.addItemList ({ "Block", "Arpeggio (asc)", "Arpeggio (desc)", "Random", "Rolled chord" }, 1);
+    chordTypeBox.addItemList ({ "Block chord", "Arpeggio (asc)", "Arpeggio (desc)", "Random", "Rolled chord" }, 1);
+    chordTypeBox.setTooltip ("How the chord is written and played");
     chordTypeBox.onChange = [this]
     {
         edit ([this] (MeasureChord& c) { c.style.type = (music::ChordType) (chordTypeBox.getSelectedId() - 1); });
@@ -176,7 +175,7 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
              &title, &flatButton, &majorButton, &minorButton, &alterButton, &numeralBox, &addedNoteBox,
              &positionButtons[0], &positionButtons[1], &positionButtons[2], &positionButtons[3],
              &octaveButtons[0], &octaveButtons[1], &octaveButtons[2], &trebleButton, &bassButton,
-             &chordTypeHeading, &chordTypeBox, &noteLengthLabel, &noteLengthBox, &reshuffleButton,
+             &chordTypeBox, &noteLengthLabel, &noteLengthBox, &reshuffleButton,
              &nameLabel, &notesLabel, &fitLabel, &keyboardNotesLabel, &removeButton, &doneButton })
         addAndMakeVisible (component);
 
@@ -385,9 +384,9 @@ int ChordEditor::getIdealWidth() const
 int ChordEditor::getIdealHeight() const
 {
     // Enough for the keyboard notes too, which only show some of the time.
-    return padding + 24 + gap
+    return padding + rowHeight + gap
          + 3 * (rowHeight + gap) + 3 * (segmentHeight + gap)
-         + sectionGap - gap + headingHeight + 2 + rowHeight + gap + rowHeight
+         + sectionGap - gap + rowHeight
          + sectionGap + 3 * infoLineHeight + 34
          + sectionGap + buttonHeight + padding;
 }
@@ -401,8 +400,10 @@ void ChordEditor::resized()
     doneButton.setBounds (bottomRow.removeFromRight (90));
     removeButton.setBounds (bottomRow.removeFromLeft (116));
 
-    auto titleRow = bounds.removeFromTop (24);
-    flatButton.setBounds (titleRow.removeFromRight (74));
+    // The title, with the chord type to its right
+    auto titleRow = bounds.removeFromTop (rowHeight);
+    chordTypeBox.setBounds (titleRow.removeFromRight (148));
+    titleRow.removeFromRight (gap);
     title.setBounds (titleRow);
 
     bounds.removeFromTop (gap);
@@ -416,7 +417,11 @@ void ChordEditor::resized()
 
     numeralBox.setBounds (bounds.removeFromTop (rowHeight));
     bounds.removeFromTop (gap);
-    addedNoteBox.setBounds (bounds.removeFromTop (rowHeight));
+    // The added note, with the flat beside it
+    auto addedNoteRow = bounds.removeFromTop (rowHeight);
+    flatButton.setBounds (addedNoteRow.removeFromRight (44));
+    addedNoteRow.removeFromRight (gap);
+    addedNoteBox.setBounds (addedNoteRow);
     bounds.removeFromTop (gap);
 
     const auto layOutSegments = [&] (auto& buttons)
@@ -437,22 +442,17 @@ void ChordEditor::resized()
     layOutSegments (octaves);
     layOutSegments (clefs);
 
+    // The note length, and Reshuffle beside it for a Random chord
     bounds.removeFromTop (sectionGap - gap);
-    chordTypeHeading.setBounds (bounds.removeFromTop (headingHeight));
-    bounds.removeFromTop (2);
-    auto typeRow = bounds.removeFromTop (rowHeight);
+    auto lengthRow = bounds.removeFromTop (rowHeight);
+    noteLengthLabel.setBounds (lengthRow.removeFromLeft (86));
 
     if (reshuffleButton.isVisible())
     {
-        reshuffleButton.setBounds (typeRow.removeFromRight (86));
-        typeRow.removeFromRight (gap);
+        reshuffleButton.setBounds (lengthRow.removeFromRight (86));
+        lengthRow.removeFromRight (gap);
     }
 
-    chordTypeBox.setBounds (typeRow);
-    bounds.removeFromTop (gap);
-
-    auto lengthRow = bounds.removeFromTop (rowHeight);
-    noteLengthLabel.setBounds (lengthRow.removeFromLeft (86));
     noteLengthBox.setBounds (lengthRow);
     bounds.removeFromTop (sectionGap);
 

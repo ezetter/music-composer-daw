@@ -65,8 +65,7 @@ private:
     std::array<juce::TextButton, 4> positionButtons;
     std::array<juce::TextButton, 3> octaveButtons;
     juce::TextButton trebleButton { "Treble clef" }, bassButton { "Bass clef" };
-    juce::Label chordTypeHeading;
-    juce::ComboBox chordTypeBox;
+    juce::ComboBox chordTypeBox;            // beside the title
     juce::Label noteLengthLabel;
     juce::ComboBox noteLengthBox;           // how long the chord's notes are
     juce::TextButton reshuffleButton { "Reshuffle" };
