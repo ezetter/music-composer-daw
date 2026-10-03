@@ -269,7 +269,7 @@ private:
     /** The notes adding from the scale at a note would add: one after another from it, each as
         long as asked, or as fits in its measure, and on into the measures after. In order, they go
         up or down the scale from the note; at random, they're picked from the scale, on and around
-        the staff, with the generator given, or put on the middle line without one, to show where
+        the staff, repeats and all, with the generator given, or put on the middle line without one, to show where
         they'd go.
     */
     std::vector<Note> planScale (const Note& start, juce::Random*) const;

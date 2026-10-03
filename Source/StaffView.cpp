@@ -398,14 +398,13 @@ std::vector<Note> StaffView::planScale (const Note& start, juce::Random* randomT
     const auto keyAlterations = music::getKeyAlterations (score.getKey());
     const auto slotsPerMeasure = score.getBeatsPerMeasure() * Score::slotsPerBeat;
 
-    // Random notes come from the staff and a little either side of it, never the same twice running.
+    // Random notes come from the staff and a little either side of it, any of them any time.
     const auto lowest = getBottomLineStep (start.staff) - 2;
     const auto highest = getBottomLineStep (start.staff) + topLine + 2;
 
     std::vector<Note> notes;
     auto measure = start.measure;
     auto slot = (int) std::lround (start.beat * Score::slotsPerBeat);
-    auto previousStep = std::numeric_limits<int>::min();
 
     for (int i = 0; i < settings.numNotes; ++i)
     {
@@ -414,9 +413,7 @@ std::vector<Note> StaffView::planScale (const Note& start, juce::Random* randomT
         if (settings.random && randomToUse == nullptr)
             step = getBottomLineStep (start.staff) + middleLine;
         else if (settings.random)
-            do step = lowest + randomToUse->nextInt (highest - lowest + 1); while (step == previousStep);
-
-        previousStep = step;
+            step = lowest + randomToUse->nextInt (highest - lowest + 1);
 
         // The scale's notes are the key signature's.
         const auto length = Score::fitNoteLength (settings.length, slotsPerMeasure - slot);
