@@ -19,9 +19,10 @@ namespace
     constexpr int addPartBottom = 8;            // up from the bottom of the last part
     constexpr int measureButtonSize = 28;
     constexpr int stavesTopPadding = 26;        // above the first system, for the note length buttons
-    constexpr int measureColumnWidth = 84;      // to the right of the staves, for the measure buttons
+    constexpr int floatingButtonsWidth = 84;    // the measure buttons, over the right of the staves
+    constexpr int floatingButtonsMargin = 10;   // from them to the scroll bar
     constexpr int cloneButtonWidth = 56, cloneButtonHeight = 26;
-    constexpr int rightMargin = 24;             // after the final barline
+    constexpr int rightMargin = floatingButtonsWidth + floatingButtonsMargin + 16;   // after the final barline, so it can be scrolled out from under the measure buttons
 
     // A full 88-key piano, A0 to C8
     constexpr int lowestKey = 21;
@@ -247,9 +248,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (eraserButton);
 
     for (auto* component : std::initializer_list<juce::Component*> { &addMeasureButton, &removeMeasureButton, &cloneButton })
-        measureColumn.addAndMakeVisible (component);
-
-    addAndMakeVisible (measureColumn);
+        addAndMakeVisible (component);
 
     removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
     staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
@@ -342,7 +341,6 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (StaffView::paperColour);
     g.fillRect (staffViewport.getBounds());
     g.fillRect (volumeColumn.getBounds());
-    g.fillRect (measureColumn.getBounds());
 
     g.setColour (juce::Colours::black.withAlpha (0.15f));
     g.fillRect (0, toolbarHeight - 1, getWidth(), 1);
@@ -379,22 +377,22 @@ void MainComponent::resized()
     keyboard.setKeyWidth ((float) keyboard.getWidth() / (float) numWhiteKeys);
 
     volumeColumn.setBounds (bounds.removeFromLeft (volumeColumnWidth));
-    measureColumn.setBounds (bounds.removeFromRight (measureColumnWidth));
     staffViewport.setBounds (bounds);
 
     // The note length and dynamic buttons stay in the top left corner of the score, over the
-    // staves as they scroll, and the eraser at the far right, at the top of the measure buttons'
-    // column, well away from them.
+    // staves as they scroll, and at the right, clear of the scroll bar, the eraser at the top and
+    // the measure buttons halfway down: + and − side by side, over Clone.
     noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + 8);
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
-    eraserButton.setBounds (juce::Rectangle<int> (EraserButton::buttonWidth, EraserButton::buttonHeight)
-                                .withCentre ({ measureColumn.getBounds().getCentreX(), noteLengthPicker.getY() + EraserButton::buttonHeight / 2 }));
 
-    // The measure buttons halfway down the column to the right of the staves: + and − side by
-    // side, over Clone
+    const auto rightButtonsCentreX = staffViewport.getRight() - staffViewport.getScrollBarThickness() - floatingButtonsMargin - floatingButtonsWidth / 2;
+    eraserButton.setBounds (juce::Rectangle<int> (EraserButton::buttonWidth, EraserButton::buttonHeight)
+                                .withCentre ({ rightButtonsCentreX, noteLengthPicker.getY() + EraserButton::buttonHeight / 2 }));
+
     constexpr int gap = 6;
-    auto stack = juce::Rectangle<int> (measureColumnWidth, measureButtonSize + 2 * gap + cloneButtonHeight)
-                     .withCentre (measureColumn.getLocalBounds().getCentre());
+    const auto stavesArea = staffViewport.getBounds().withTrimmedBottom (staffViewport.getScrollBarThickness());
+    auto stack = juce::Rectangle<int> (floatingButtonsWidth, measureButtonSize + 2 * gap + cloneButtonHeight)
+                     .withCentre ({ rightButtonsCentreX, stavesArea.getCentreY() });
     auto pair = stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize * 2 + gap, measureButtonSize);
     addMeasureButton.setBounds (pair.removeFromLeft (measureButtonSize));
     removeMeasureButton.setBounds (pair.removeFromRight (measureButtonSize));

@@ -248,12 +248,10 @@ private:
     controls::DialLookAndFeel dialLookAndFeel;
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
     DynamicPicker dynamicPicker;        // beside it: a dynamic or hairpin to mark instead
-    EraserButton eraserButton;          // at the far right, over the measure buttons' column: the eraser
+    EraserButton eraserButton;          // at the top right of the score, over the staves: the eraser
 
-    // In a column to the right of the staves, halfway down, wherever they scroll to: + and − for
-    // adding a measure at the end and taking the last away, and Clone for repeating them all, in
-    // every part
-    juce::Component measureColumn;
+    // Over the staves at the right, halfway down, wherever they scroll to: + and − for adding a
+    // measure at the end and taking the last away, and Clone for repeating them all, in every part
     controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
     juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
     juce::TextButton cloneButton { "Clone" };
