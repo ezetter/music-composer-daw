@@ -643,6 +643,11 @@ juce::Rectangle<int> StaffView::getMeasureArea (int measure) const
     return juce::Rectangle<float> (layout.x, 0.0f, layout.width, (float) getHeight()).getSmallestIntegerContainer();
 }
 
+int StaffView::getFinalBarlineX() const
+{
+    return measureLayouts.empty() ? 0 : juce::roundToInt (measureLayouts.back().x + measureLayouts.back().width);
+}
+
 std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
 {
     const auto measure = findMeasure (point.x);

@@ -19,10 +19,11 @@ namespace
     constexpr int addPartBottom = 8;            // up from the bottom of the last part
     constexpr int measureButtonSize = 28;
     constexpr int stavesTopPadding = 26;        // above the first system, for the note length buttons
-    constexpr int floatingButtonsWidth = 84;    // the measure buttons, over the right of the staves
-    constexpr int floatingButtonsMargin = 10;   // from them to the scroll bar
+    constexpr int measureButtonsWidth = 84;     // the measure buttons, after the final barline
+    constexpr int measureButtonsGap = 14;       // between the final barline and them
+    constexpr int eraserMargin = 10;            // from the eraser to the scroll bar
     constexpr int cloneButtonWidth = 56, cloneButtonHeight = 26;
-    constexpr int rightMargin = floatingButtonsWidth + floatingButtonsMargin + 16;   // after the final barline, so it can be scrolled out from under the measure buttons
+    constexpr int rightMargin = measureButtonsGap + measureButtonsWidth + 12;      // after the final barline, for the measure buttons
 
     // A full 88-key piano, A0 to C8
     constexpr int lowestKey = 21;
@@ -248,11 +249,11 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (eraserButton);
 
     for (auto* component : std::initializer_list<juce::Component*> { &addMeasureButton, &removeMeasureButton, &cloneButton })
-        addAndMakeVisible (component);
+        staffSystems.addAndMakeVisible (component);
 
     removeMeasureButton.setEnabled (score.getNumMeasures() > 1);
-    staffSystems.onLayoutChanged = [this] { positionVolumeDials(); };
-    staffViewport.onScroll = [this] { positionVolumeDials(); };
+    staffSystems.onLayoutChanged = [this] { positionVolumeDials(); positionMeasureButtons(); };
+    staffViewport.onScroll = [this] { positionVolumeDials(); positionMeasureButtons(); };
 
     // A track for each part of the new score, with the instruments, volumes and muting it had last time
     for (int part = 0; part < score.getNumParts(); ++part)
@@ -380,26 +381,15 @@ void MainComponent::resized()
     staffViewport.setBounds (bounds);
 
     // The note length and dynamic buttons stay in the top left corner of the score, over the
-    // staves as they scroll, and at the right, clear of the scroll bar, the eraser at the top and
-    // the measure buttons halfway down: + and − side by side, over Clone.
+    // staves as they scroll, and the eraser in the top right corner, clear of the scroll bar.
     noteLengthPicker.setTopLeftPosition (volumeColumn.getX() + 10, staffViewport.getY() + 8);
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
+    eraserButton.setBounds (staffViewport.getRight() - staffViewport.getScrollBarThickness() - eraserMargin - EraserButton::buttonWidth,
+                            noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
 
-    const auto rightButtonsCentreX = staffViewport.getRight() - staffViewport.getScrollBarThickness() - floatingButtonsMargin - floatingButtonsWidth / 2;
-    eraserButton.setBounds (juce::Rectangle<int> (EraserButton::buttonWidth, EraserButton::buttonHeight)
-                                .withCentre ({ rightButtonsCentreX, noteLengthPicker.getY() + EraserButton::buttonHeight / 2 }));
-
-    constexpr int gap = 6;
-    const auto stavesArea = staffViewport.getBounds().withTrimmedBottom (staffViewport.getScrollBarThickness());
-    auto stack = juce::Rectangle<int> (floatingButtonsWidth, measureButtonSize + 2 * gap + cloneButtonHeight)
-                     .withCentre ({ rightButtonsCentreX, stavesArea.getCentreY() });
-    auto pair = stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize * 2 + gap, measureButtonSize);
-    addMeasureButton.setBounds (pair.removeFromLeft (measureButtonSize));
-    removeMeasureButton.setBounds (pair.removeFromRight (measureButtonSize));
-    stack.removeFromTop (2 * gap);
-    cloneButton.setBounds (stack.removeFromTop (cloneButtonHeight).withSizeKeepingCentre (cloneButtonWidth, cloneButtonHeight));
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
+    positionMeasureButtons();
 }
 
 void MainComponent::parentHierarchyChanged()
@@ -831,6 +821,25 @@ void MainComponent::positionVolumeDials()
         tracks[part].deleteButton->setBounds (juce::Rectangle<int> (deleteButtonSize, deleteButtonSize)
                                                   .withCentre ({ volumeColumnWidth / 2, top + dialHeight + deleteButtonSize / 2 }));
     }
+}
+
+void MainComponent::positionMeasureButtons()
+{
+    if (staffSystems.views.empty())
+        return;
+
+    // Just after the final barline, so they scroll sideways with the staves, but halfway down
+    // what's in view, however far the staves have scrolled up or down: + and − side by side,
+    // over Clone
+    constexpr int gap = 6;
+    const auto viewArea = staffViewport.getViewArea();
+    auto stack = juce::Rectangle<int> (measureButtonsWidth, measureButtonSize + 2 * gap + cloneButtonHeight)
+                     .withCentre ({ staffSystems.views[0]->getFinalBarlineX() + measureButtonsGap + measureButtonsWidth / 2, viewArea.getCentreY() });
+    auto pair = stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize * 2 + gap, measureButtonSize);
+    addMeasureButton.setBounds (pair.removeFromLeft (measureButtonSize));
+    removeMeasureButton.setBounds (pair.removeFromRight (measureButtonSize));
+    stack.removeFromTop (2 * gap);
+    cloneButton.setBounds (stack.removeFromTop (cloneButtonHeight).withSizeKeepingCentre (cloneButtonWidth, cloneButtonHeight));
 }
 
 void MainComponent::saveVolumes()

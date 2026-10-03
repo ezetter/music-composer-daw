@@ -216,6 +216,9 @@ private:
     */
     void positionVolumeDials();
 
+    /** Keeps the measure buttons just after the final barline, halfway down the staves in view. */
+    void positionMeasureButtons();
+
     /** Keeps each part's volume and muting in the settings, by its number. */
     void saveVolumes();
 
@@ -250,8 +253,8 @@ private:
     DynamicPicker dynamicPicker;        // beside it: a dynamic or hairpin to mark instead
     EraserButton eraserButton;          // at the top right of the score, over the staves: the eraser
 
-    // Over the staves at the right, halfway down, wherever they scroll to: + and − for adding a
-    // measure at the end and taking the last away, and Clone for repeating them all, in every part
+    // After the final barline, halfway down what's in view: + and − for adding a measure at the
+    // end and taking the last away, and Clone for repeating them all, in every part
     controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
     juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
     juce::TextButton cloneButton { "Clone" };

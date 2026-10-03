@@ -129,6 +129,9 @@ public:
     /** The area a measure takes up, the full height of the view. */
     juce::Rectangle<int> getMeasureArea (int measure) const;
 
+    /** Where the final barline is, across the view. */
+    int getFinalBarlineX() const;
+
     /** Highlights the beat that's playing, given in beats from the start of the score. */
     void setPlaybackPosition (std::optional<double> beats);
 
