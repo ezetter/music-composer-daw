@@ -59,8 +59,16 @@ private:
         explicit StaffSystems (Score&);
         ~StaffSystems() override;
 
-        /** At least this tall, to fill the view it's in. */
-        void setMinimumHeight (int);
+        /** At least this big, to fill the view it's in, so a click anywhere in it is beside a part's staves. */
+        void setMinimumSize (int width, int height);
+
+        /** The part whose staves are level with a point this far down, or the nearest, above
+            the first or below the last.
+        */
+        std::optional<int> getPartAt (int y) const;
+
+        /** Called when it's clicked beside a part's staves, past the end of the score. */
+        std::function<void (int part)> onPartClicked;
 
         /** Each part's view, from the top, in the order of the score's parts. */
         std::vector<std::unique_ptr<StaffView>> views;
@@ -79,9 +87,10 @@ private:
 
     private:
         void childBoundsChanged (juce::Component*) override;
+        void mouseDown (const juce::MouseEvent&) override;
 
         Score& score;
-        int minimumHeight = 0;
+        int minimumWidth = 0, minimumHeight = 0;
         bool layingOut = false;
 
         controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
@@ -97,6 +106,20 @@ private:
         std::unique_ptr<InstrumentPanel> panel;
         std::unique_ptr<controls::ClickableDial> dial;
         std::unique_ptr<controls::BinButton> deleteButton;
+    };
+
+    /** The column to the left of the staves, holding each part's volume dial and delete button,
+        which says when it's clicked beside them.
+    */
+    struct VolumeColumn final : public juce::Component
+    {
+        std::function<void (const juce::MouseEvent&)> onClicked;
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (onClicked != nullptr)
+                onClicked (e);
+        }
     };
 
     /** A viewport that says when it scrolls. */
@@ -293,7 +316,7 @@ private:
     controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
     juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
     juce::TextButton cloneButton { "Clone" };
-    juce::Component volumeColumn;       // to the left of the staves, holding each part's volume dial and delete button
+    VolumeColumn volumeColumn;          // to the left of the staves, holding each part's volume dial and delete button
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 

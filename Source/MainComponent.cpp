@@ -106,10 +106,32 @@ void MainComponent::StaffSystems::removeView (int index)
     layOut();
 }
 
-void MainComponent::StaffSystems::setMinimumHeight (int height)
+void MainComponent::StaffSystems::setMinimumSize (int width, int height)
 {
+    minimumWidth = width;
     minimumHeight = height;
     layOut();
+}
+
+std::optional<int> MainComponent::StaffSystems::getPartAt (int y) const
+{
+    if (views.empty())
+        return {};
+
+    for (const auto& view : views)
+        if (y < view->getBottom())
+            return view->getPart();
+
+    return views.back()->getPart();
+}
+
+void MainComponent::StaffSystems::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu() || onPartClicked == nullptr)
+        return;
+
+    if (const auto part = getPartAt (e.getPosition().y); part.has_value() && *part >= 0)
+        onPartClicked (*part);
 }
 
 void MainComponent::StaffSystems::childBoundsChanged (juce::Component*)
@@ -147,7 +169,7 @@ void MainComponent::StaffSystems::layOut()
     addPartButton.toFront (false);
     y += 4;
 
-    setSize (width + rightMargin, juce::jmax (y, minimumHeight));
+    setSize (juce::jmax (width + rightMargin, minimumWidth), juce::jmax (y, minimumHeight));
 
     if (onLayoutChanged != nullptr)
         onLayoutChanged();
@@ -217,6 +239,18 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
         addAndMakeVisible (component);
 
     staffSystems.onAddPart = [this] { addPart(); };
+
+    // Clicking beside an instrument's staves, past the end of the score or to the left of them,
+    // by its volume dial, makes it the active instrument, as clicking its staves does.
+    staffSystems.onPartClicked = [this] (int part) { setActivePart (part); };
+    volumeColumn.onClicked = [this] (const juce::MouseEvent& e)
+    {
+        if (e.mods.isPopupMenu())
+            return;
+
+        if (const auto part = staffSystems.getPartAt (staffSystems.getLocalPoint (&volumeColumn, e.getPosition()).y); part.has_value() && *part >= 0)
+            setActivePart (*part);
+    };
 
     // + adds a measure at the end and − takes the last one away, and Clone repeats every measure
     // after the last, in every part.
@@ -401,7 +435,8 @@ void MainComponent::resized()
                             noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
     editButton.setBounds (eraserButton.getBounds().withWidth (editButtonWidth).translated (-editButtonWidth - editButtonGap, 0));
 
-    staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
+    staffSystems.setMinimumSize (staffViewport.getWidth() - staffViewport.getScrollBarThickness(),
+                                 staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
     positionMeasureButtons();
 }
