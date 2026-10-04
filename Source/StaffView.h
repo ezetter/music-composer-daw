@@ -321,7 +321,10 @@ private:
 
     float getPedalLineY() const;                // the line under the lower staff, below the numerals
     float getScoreBeatsX (double beats) const;  // across the view, for a point in beats from the start of the score
-    juce::Range<float> getPedalSpan (const PedalSpan&) const;
+    /** Where one of a part's pedal marks is drawn, across the view. Where it's lifted and put
+        straight down again, the two ticks are a little apart, either side of the point.
+    */
+    juce::Range<float> getPedalSpan (const std::vector<PedalSpan>&, size_t index) const;
     void drawPedals (juce::Graphics&) const;
 
     /** A hairpin being dragged out, or stretched: where it starts and which it is, where the

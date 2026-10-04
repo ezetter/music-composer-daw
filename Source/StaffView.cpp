@@ -1614,10 +1614,16 @@ float StaffView::getScoreBeatsX (double beats) const
     return getOnsetX (measure, beat);
 }
 
-juce::Range<float> StaffView::getPedalSpan (const PedalSpan& pedal) const
+juce::Range<float> StaffView::getPedalSpan (const std::vector<PedalSpan>& pedals, size_t index) const
 {
-    const auto start = getScoreBeatsX (pedal.start);
-    return { start, juce::jmax (start + 0.5f * staffSpace, getScoreBeatsX (pedal.end)) };
+    const auto& pedal = pedals[index];
+    const auto halfGap = 0.35f * staffSpace;
+    const auto liftedJustBefore = index > 0 && pedals[index - 1].lifted && juce::exactlyEqual (pedals[index - 1].end, pedal.start);
+    const auto downJustAfter = pedal.lifted && index + 1 < pedals.size() && juce::exactlyEqual (pedals[index + 1].start, pedal.end);
+
+    const auto start = getScoreBeatsX (pedal.start) + (liftedJustBefore ? halfGap : 0.0f);
+    const auto end = getScoreBeatsX (pedal.end) - (downJustAfter ? halfGap : 0.0f);
+    return { start, juce::jmax (start + 0.5f * staffSpace, end) };
 }
 
 void StaffView::drawPedals (juce::Graphics& g) const
@@ -1643,10 +1649,10 @@ void StaffView::drawPedals (juce::Graphics& g) const
 
     const auto pedals = score.getPedals (part);
 
-    for (const auto& pedal : pedals)
+    for (size_t i = 0; i < pedals.size(); ++i)
     {
-        g.setColour (erasing && hoverErasable.pedal == pedal ? removalColour : inkColour);
-        draw (getPedalSpan (pedal), pedal.lifted, true);
+        g.setColour (erasing && hoverErasable.pedal == pedals[i] ? removalColour : inkColour);
+        draw (getPedalSpan (pedals, i), pedals[i].lifted, true);
     }
 
     // Over where one comes up, a click would take that out, so it's red.
@@ -1655,7 +1661,7 @@ void StaffView::drawPedals (juce::Graphics& g) const
 
     if (hoveredUp.has_value())
     {
-        const auto x = getPedalSpan (pedals[*hoveredUp]).getEnd();
+        const auto x = getPedalSpan (pedals, *hoveredUp).getEnd();
         g.setColour (removalColour);
         g.fillRect (juce::Rectangle<float>::leftTopRightBottom (x - thickness, y - tick, x + thickness, y + thickness / 2.0f));
     }
@@ -2338,9 +2344,10 @@ StaffView::Erasable StaffView::findErasableAt (juce::Point<float> point) const
 
     // A pedal mark, anywhere along its line or ticks
     if (const auto lineY = getPedalLineY(); point.y >= lineY - 1.4f * staffSpace && point.y <= lineY + 0.6f * staffSpace)
-        for (const auto& pedal : score.getPedals (part))
-            if (const auto span = getPedalSpan (pedal); point.x >= span.getStart() - 0.5f * staffSpace && point.x <= span.getEnd() + 0.5f * staffSpace)
-                found.pedal = pedal;
+        if (const auto pedals = score.getPedals (part); ! pedals.empty())
+            for (size_t i = 0; i < pedals.size(); ++i)
+                if (const auto span = getPedalSpan (pedals, i); point.x >= span.getStart() - 0.5f * staffSpace && point.x <= span.getEnd() + 0.5f * staffSpace)
+                    found.pedal = pedals[i];
 
     return found;
 }

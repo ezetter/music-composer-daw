@@ -381,14 +381,20 @@ std::vector<InstrumentHost::NoteEvent> InstrumentHost::createNoteEvents (const S
 
     // The instrument hears the sustain pedal too, as well as the notes being held for it: down
     // from where it goes down, or the start if it's down already, until it comes up, or the end.
+    // Lifted and put straight down again, it goes down a moment after it comes up, so the
+    // instrument hears it lift.
+    constexpr double relift = 0.05;
     const auto passageSeconds = (double) (lastMeasure - firstMeasure + 1) * measureSeconds;
+    const auto pedals = score.getPedals (part);
 
-    for (const auto& pedal : score.getPedals (part))
+    for (size_t i = 0; i < pedals.size(); ++i)
     {
-        const auto down = (pedal.start - firstBeat) * beatSeconds;
+        const auto& pedal = pedals[i];
+        const auto liftedJustBefore = i > 0 && pedals[i - 1].lifted && juce::exactlyEqual (pedals[i - 1].end, pedal.start);
+        const auto down = (pedal.start - firstBeat) * beatSeconds + (liftedJustBefore ? relift : 0.0);
         const auto up = (pedal.end - firstBeat) * beatSeconds;
 
-        if (up <= 0.0 || down >= passageSeconds)
+        if (up <= 0.0 || down >= passageSeconds || down >= up)
             continue;
 
         events.push_back ({ (int64_t) std::llround (juce::jmax (0.0, down) * sampleRate), -1, true, 127, true });
