@@ -309,10 +309,15 @@ private:
     */
     std::optional<std::pair<int, double>> getPedalPointAt (juce::Point<float>) const;
 
-    /** What a click with the pedal chosen does: puts it down, or lifts the one that's down, or
-        between where one goes down and comes up, lifts it and puts it straight down again.
+    /** What a click with the pedal chosen does: on where one comes up, takes that out, so the
+        pedal stays down to where the next one comes up, or to the end; otherwise puts it down,
+        or lifts the one that's down, or between where one goes down and comes up, lifts it and
+        puts it straight down again.
     */
     void clickPedal (std::pair<int, double> point);
+
+    /** The pedal mark that comes up at a point, if one does. */
+    std::optional<size_t> findPedalUp (const std::vector<PedalSpan>&, std::pair<int, double> point) const;
 
     float getPedalLineY() const;                // the line under the lower staff, below the numerals
     float getScoreBeatsX (double beats) const;  // across the view, for a point in beats from the start of the score

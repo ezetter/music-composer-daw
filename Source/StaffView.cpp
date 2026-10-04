@@ -1649,8 +1649,19 @@ void StaffView::drawPedals (juce::Graphics& g) const
         draw (getPedalSpan (pedal), pedal.lifted, true);
     }
 
+    // Over where one comes up, a click would take that out, so it's red.
+    const auto hoveredUp = isPedalChosen() && hoverMarkPoint.has_value() && ! hoverHintHidden ? findPedalUp (pedals, *hoverMarkPoint)
+                                                                                              : std::nullopt;
+
+    if (hoveredUp.has_value())
+    {
+        const auto x = getPedalSpan (pedals[*hoveredUp]).getEnd();
+        g.setColour (removalColour);
+        g.fillRect (juce::Rectangle<float>::leftTopRightBottom (x - thickness, y - tick, x + thickness, y + thickness / 2.0f));
+    }
+
     // Where a click would put the pedal down, or lift the one that's down
-    if (isPedalChosen() && hoverMarkPoint.has_value() && ! hoverHintHidden)
+    else if (isPedalChosen() && hoverMarkPoint.has_value() && ! hoverHintHidden)
     {
         const auto at = toScoreBeats (hoverMarkPoint->first, hoverMarkPoint->second);
         const auto x = getScoreBeatsX (at);
@@ -1683,10 +1694,45 @@ std::optional<std::pair<int, double>> StaffView::getPedalPointAt (juce::Point<fl
     return std::pair { measure, (double) slot / Score::slotsPerBeat };
 }
 
+std::optional<size_t> StaffView::findPedalUp (const std::vector<PedalSpan>& pedals, std::pair<int, double> point) const
+{
+    const auto at = toScoreBeats (point.first, point.second);
+
+    for (size_t i = 0; i < pedals.size(); ++i)
+        if (pedals[i].lifted && juce::exactlyEqual (pedals[i].end, at))
+            return i;
+
+    return {};
+}
+
 void StaffView::clickPedal (std::pair<int, double> point)
 {
     const auto at = toScoreBeats (point.first, point.second);
     auto pedals = score.getPedals (part);
+
+    // On where one comes up, the pedal stays down instead: through where the next goes down, to
+    // where that comes up, or to the end.
+    if (const auto up = findPedalUp (pedals, point))
+    {
+        auto& held = pedals[*up];
+
+        if (*up + 1 < pedals.size())
+        {
+            held.end = pedals[*up + 1].end;
+            held.lifted = pedals[*up + 1].lifted;
+            pedals.erase (pedals.begin() + (std::ptrdiff_t) *up + 1);
+        }
+        else
+        {
+            held.end = (double) (score.getNumMeasures() * score.getBeatsPerMeasure());
+            held.lifted = false;
+        }
+
+        score.setPedals (part, pedals);
+        hoverHintHidden = true;
+        return;
+    }
+
     const auto open = std::find_if (pedals.begin(), pedals.end(), [] (const PedalSpan& p) { return ! p.lifted; });
     const auto within = std::find_if (pedals.begin(), pedals.end(), [at] (const PedalSpan& p) { return p.lifted && p.start < at && at < p.end; });
 
