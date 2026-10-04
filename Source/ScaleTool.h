@@ -9,7 +9,7 @@
 */
 struct ScaleSettings
 {
-    static constexpr int minNotes = 3, maxNotes = 14;
+    static constexpr int minNotes = 3, maxNotes = 16;
 
     int numNotes = 8;
     int length = 8;             // in 32nds: a quarter note
