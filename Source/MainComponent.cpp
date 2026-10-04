@@ -14,7 +14,7 @@ namespace
     constexpr int volumeColumnWidth = 64;
     constexpr int volumeDialSize = 44;
     constexpr int volumeTextHeight = 16;
-    constexpr int deleteButtonSize = 22;        // under the volume dial
+    constexpr int deleteButtonSize = 22;        // to the right of the staves, in line with the measure buttons
     constexpr int addPartButtonSize = 28;       // in the space under the last part's staves, at the left
     constexpr int addPartBottom = 8;            // up from the bottom of the last part
     constexpr int measureButtonSize = 28;
@@ -603,7 +603,7 @@ void MainComponent::insertTrack (int index, bool reloadFromSettings)
         if (const auto part = score.findPart (id); part >= 0)
             deletePart (part);
     };
-    volumeColumn.addAndMakeVisible (deleteButton);
+    staffSystems.addAndMakeVisible (deleteButton);
 
     tracks.insert (tracks.begin() + index, std::move (track));
 
@@ -924,8 +924,7 @@ void MainComponent::setMuted (int part, bool muted, bool changedOnDial)
 
 void MainComponent::positionVolumeDials()
 {
-    // Each dial, with the button for deleting its part under it, is centred on its part's staves,
-    // wherever they've scrolled to.
+    // Each dial is centred on its part's staves, wherever they've scrolled to.
     const auto scrolled = staffViewport.getViewPositionY();
 
     for (size_t part = 0; part < tracks.size() && part < staffSystems.views.size(); ++part)
@@ -934,11 +933,8 @@ void MainComponent::positionVolumeDials()
         const auto staves = view.getStavesRange();
         const auto centreY = view.getBounds().getY() + staves.getStart() + staves.getLength() / 2 - scrolled;
         const auto dialHeight = volumeDialSize + volumeTextHeight;
-        const auto top = centreY - (dialHeight + deleteButtonSize) / 2;
 
-        tracks[part].dial->setBounds (0, top, volumeColumnWidth, dialHeight);
-        tracks[part].deleteButton->setBounds (juce::Rectangle<int> (deleteButtonSize, deleteButtonSize)
-                                                  .withCentre ({ volumeColumnWidth / 2, top + dialHeight + deleteButtonSize / 2 }));
+        tracks[part].dial->setBounds (0, centreY - dialHeight / 2, volumeColumnWidth, dialHeight);
     }
 }
 
@@ -952,8 +948,30 @@ void MainComponent::positionMeasureButtons()
     // over Clone
     constexpr int gap = 6;
     const auto viewArea = staffViewport.getViewArea();
+    const auto columnX = staffSystems.views[0]->getFinalBarlineX() + measureButtonsGap + measureButtonsWidth / 2;
     auto stack = juce::Rectangle<int> (measureButtonsWidth, measureButtonSize + 2 * gap + cloneButtonHeight)
-                     .withCentre ({ staffSystems.views[0]->getFinalBarlineX() + measureButtonsGap + measureButtonsWidth / 2, viewArea.getCentreY() });
+                     .withCentre ({ columnX, viewArea.getCentreY() });
+
+    // Each part's delete button, in line with them, level with the middle of its staves. They
+    // scroll with the staves, and the measure buttons move up or down, as little as they need
+    // to, to stay clear of them.
+    for (size_t part = 0; part < tracks.size() && part < staffSystems.views.size(); ++part)
+    {
+        const auto& view = *staffSystems.views[part];
+        const auto staves = view.getStavesRange();
+        const auto bin = juce::Rectangle<int> (deleteButtonSize, deleteButtonSize)
+                             .withCentre ({ columnX, view.getBounds().getY() + staves.getStart() + staves.getLength() / 2 });
+        tracks[part].deleteButton->setBounds (bin);
+        tracks[part].deleteButton->toFront (false);
+
+        if (const auto clear = bin.expanded (0, 2 * gap); stack.intersects (clear))
+        {
+            const auto up = stack.getBottom() - clear.getY();
+            const auto down = clear.getBottom() - stack.getY();
+            stack.translate (0, up <= down ? -up : down);
+        }
+    }
+
     auto pair = stack.removeFromTop (measureButtonSize).withSizeKeepingCentre (measureButtonSize * 2 + gap, measureButtonSize);
     addMeasureButton.setBounds (pair.removeFromLeft (measureButtonSize));
     removeMeasureButton.setBounds (pair.removeFromRight (measureButtonSize));

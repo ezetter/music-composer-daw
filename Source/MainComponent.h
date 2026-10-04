@@ -97,8 +97,8 @@ private:
         juce::TextButton addPartButton { "+" };
     };
 
-    /** What each part has besides its staves: its instrument, the volume dial beside its staves,
-        and a button under the dial for taking the part out.
+    /** What each part has besides its staves: its instrument, the volume dial to the left of its
+        staves, and a button to the right of them, past the end of the score, for taking the part out.
     */
     struct Track
     {
@@ -266,12 +266,13 @@ private:
     */
     void setMuted (int part, bool muted, bool changedOnDial);
 
-    /** Keeps each part's volume dial, and the button for taking it out, beside its staves, as
-        they scroll up and down.
-    */
+    /** Keeps each part's volume dial beside the middle of its staves, as they scroll up and down. */
     void positionVolumeDials();
 
-    /** Keeps the measure buttons just after the final barline, halfway down the staves in view. */
+    /** Keeps the measure buttons just after the final barline, halfway down the staves in view,
+        and in line with them, each part's button for taking it out, level with the middle of its
+        staves. The measure buttons move up or down out of the way of those.
+    */
     void positionMeasureButtons();
 
     /** Keeps each part's volume and muting in the settings, by its number. */
@@ -316,7 +317,7 @@ private:
     controls::RoundButtonLookAndFeel roundButtonLookAndFeel;
     juce::TextButton addMeasureButton { "+" }, removeMeasureButton { juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) };
     juce::TextButton cloneButton { "Clone" };
-    VolumeColumn volumeColumn;          // to the left of the staves, holding each part's volume dial and delete button
+    VolumeColumn volumeColumn;          // to the left of the staves, holding each part's volume dial
 
     PianoKeyboard keyboard { instrumentHost.getKeyboardState() };
 
