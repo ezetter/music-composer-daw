@@ -872,7 +872,8 @@ namespace
     // 10: the sustain pedal
     // 11: minor keys
     // 12: a minor key's chords numbered up its own scale, rather than its relative major's
-    constexpr int formatVersion = 12;
+    // 13: a chord's root raised
+    constexpr int formatVersion = 13;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -1041,6 +1042,7 @@ juce::var Score::toJSON (bool withPartIds) const
             auto* chordObject = new juce::DynamicObject();
             chordObject->setProperty ("degree", chord.spec.degree);
             chordObject->setProperty ("flat", chord.spec.flat);
+            chordObject->setProperty ("sharp", chord.spec.sharp);
             chordObject->setProperty ("minor", chord.spec.minor);
             chordObject->setProperty ("altered", chord.spec.altered);
             chordObject->setProperty ("addedNote", (int) chord.spec.addedNote);
@@ -1195,6 +1197,7 @@ juce::Result Score::loadJSON (const juce::var& json)
                 MeasureChord chord;
                 chord.spec.degree = readInt (c.getProperty ("degree", {}), -1, 6, -1);
                 chord.spec.flat = (bool) c.getProperty ("flat", false);
+                chord.spec.sharp = (bool) c.getProperty ("sharp", false) && ! chord.spec.flat;
                 chord.spec.minor = (bool) c.getProperty ("minor", false);
                 chord.spec.altered = (bool) c.getProperty ("altered", false);
                 chord.spec.addedNote = (music::AddedNote) readInt (c.getProperty ("addedNote", {}), 0, 6, 0);

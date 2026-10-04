@@ -417,8 +417,9 @@ Chord createChord (Key key, const ChordSpec& spec, Staff staff)
     const auto inversion = hasSeventh ? spec.inversion : juce::jmin (spec.inversion, 2);
 
     const auto scaleRoot = getScale (key)[(size_t) spec.degree];
-    const auto root = spec.flat ? spell (scaleRoot.letter, naturalPitchClasses[(size_t) scaleRoot.letter] + scaleRoot.alter - 1)
-                                : scaleRoot;
+    const auto rootShift = spec.flat ? -1 : spec.sharp ? 1 : 0;
+    const auto root = rootShift != 0 ? spell (scaleRoot.letter, naturalPitchClasses[(size_t) scaleRoot.letter] + scaleRoot.alter + rootShift)
+                                     : scaleRoot;
     const auto keyAlterations = getKeyAlterations (key);
 
     std::vector<Member> members { { 0, 0 }, { 2, spec.minor ? 3 : 4 }, { 4, augmented ? 8 : diminished ? 6 : 7 } };
@@ -454,7 +455,7 @@ Chord createChord (Key key, const ChordSpec& spec, Staff staff)
 
     const auto roman = juce::String (degreeNumerals[(size_t) spec.degree]);
 
-    chord.numeral = (spec.flat ? getSymbol (flat) : juce::String()) + (spec.minor ? roman.toLowerCase() : roman);
+    chord.numeral = (spec.flat ? getSymbol (flat) : spec.sharp ? getSymbol (sharp) : juce::String()) + (spec.minor ? roman.toLowerCase() : roman);
     chord.sign = augmented ? "+" : diminished ? getSymbol (degreeSign) : juce::String();
     chord.seventhMark = spec.addedNote == AddedNote::major7th || spec.addedNote == AddedNote::major9th ? "M" : "";
 
@@ -616,13 +617,27 @@ NotesDescription describeNotes (Key key, Staff staff, std::vector<int> midiNotes
             return note == scale.end() ? -1 : (int) std::distance (scale.begin(), note);
         };
 
+        // Outside the scale, a minor key's root on its raised 6th or 7th, as its melodic and
+        // harmonic minor scales have them, is raised; any other is a lowered degree.
         auto& spec = description.spec;
         spec = *found.shape->spec;
         spec.degree = findDegree (0);
-        spec.flat = spec.degree < 0;
 
-        if (spec.flat)
-            spec.degree = findDegree (1);
+        if (spec.degree < 0)
+        {
+            const auto raised = findDegree (-1);
+
+            if (key.minor && (raised == 5 || raised == 6))
+            {
+                spec.degree = raised;
+                spec.sharp = true;
+            }
+            else
+            {
+                spec.degree = findDegree (1);
+                spec.flat = true;
+            }
+        }
 
         spec.inversion = found.inversion;
 

@@ -41,7 +41,11 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
     // Changing anything that defines the chord replaces notes set on the piano.
     flatButton.setButtonText (controls::fromUTF8 ("\xe2\x99\xad"));
     flatButton.setTooltip ("Lowers the chord's root a half step");
-    flatButton.onClick = [this] { edit ([this] (MeasureChord& c) { c.spec.flat = flatButton.getToggleState(); c.keyboardNotes.reset(); }); };
+    flatButton.onClick = [this] { edit ([this] (MeasureChord& c) { c.spec.flat = flatButton.getToggleState(); c.spec.sharp = false; c.keyboardNotes.reset(); }); };
+
+    sharpButton.setButtonText (controls::fromUTF8 ("\xe2\x99\xaf"));
+    sharpButton.setTooltip (controls::fromUTF8 ("Raises the chord's root a half step, e.g. for the leading-tone chord in a minor key, \xe2\x99\xafvii\xc2\xb0"));
+    sharpButton.onClick = [this] { edit ([this] (MeasureChord& c) { c.spec.sharp = sharpButton.getToggleState(); c.spec.flat = false; c.keyboardNotes.reset(); }); };
 
     controls::makeSegmented ({ &majorButton, &minorButton }, 1001);
 
@@ -168,7 +172,7 @@ ChordEditor::ChordEditor (Score& scoreToEdit, int partToEdit, int measureToEdit,
         button->setWantsKeyboardFocus (false);
 
     for (auto* component : std::initializer_list<juce::Component*> {
-             &title, &flatButton, &majorButton, &minorButton, &alterButton, &numeralBox, &addedNoteBox,
+             &title, &flatButton, &sharpButton, &majorButton, &minorButton, &alterButton, &numeralBox, &addedNoteBox,
              &positionButtons[0], &positionButtons[1], &positionButtons[2], &positionButtons[3],
              &octaveButtons[0], &octaveButtons[1], &octaveButtons[2], &trebleButton, &bassButton,
              &chordTypeBox, &noteLengthLabel, &noteLengthBox,
@@ -267,6 +271,7 @@ void ChordEditor::update()
                    juce::dontSendNotification);
 
     flatButton.setToggleState (spec.flat, juce::dontSendNotification);
+    sharpButton.setToggleState (spec.sharp, juce::dontSendNotification);
     majorButton.setToggleState (! spec.minor, juce::dontSendNotification);
     minorButton.setToggleState (spec.minor, juce::dontSendNotification);
 
@@ -424,6 +429,7 @@ void ChordEditor::resized()
     bounds.removeFromTop (gap);
     // The added note, with the flat beside it
     auto addedNoteRow = bounds.removeFromTop (rowHeight);
+    sharpButton.setBounds (addedNoteRow.removeFromRight (44));
     flatButton.setBounds (addedNoteRow.removeFromRight (44));
     addedNoteRow.removeFromRight (gap);
     addedNoteBox.setBounds (addedNoteRow);

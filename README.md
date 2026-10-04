@@ -129,7 +129,7 @@ Everything you change in the window goes straight into the measure, and the staf
 
 The chord window has the Chord Progression Builder's settings for one chord:
 
-1. **♭**, the checkbox to the right of the added note, lowers the chord's root a half step, so VII becomes ♭VII.
+1. **♭**, the checkbox to the right of the added note, lowers the chord's root a half step, so VII becomes ♭VII. **♯**, beside it, raises the root a half step instead, as for a minor key's leading-tone chord: in A minor, ♯vii° is G♯ diminished. Ticking one unticks the other. In a minor key, a chord set on the piano whose root is the raised 6th or 7th is named as raised, so G♯ B D in A minor is ♯vii°; any other root outside the scale is a lowered degree.
 2. **Major / Minor** chooses the triad, and **+ / °** makes a major chord augmented or a minor chord diminished.
 3. **Numeral** is the scale step. Each option names the chord in the current key, e.g. "vi (Am)". Choose "—" for no chord.
 4. **Added note** makes a 7th or 9th chord. It can't be on with + / °; choosing one clears the other.

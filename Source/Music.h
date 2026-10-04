@@ -116,6 +116,7 @@ namespace music
     {
         int degree = -1;              // the scale step, from 0 for I to 6 for VII; -1 for no chord
         bool flat = false;            // lowers the root a half step
+        bool sharp = false;           // raises it a half step instead, e.g. for a minor key's leading-tone chord, ♯vii°
         bool minor = false;
         bool altered = false;         // augmented on a major chord, diminished on a minor one
         AddedNote addedNote = AddedNote::none;

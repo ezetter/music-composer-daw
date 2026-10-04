@@ -63,7 +63,7 @@ private:
     MeasureChord chord;
 
     juce::Label title;
-    juce::ToggleButton flatButton;
+    juce::ToggleButton flatButton, sharpButton;      // one or the other, beside the added note
     juce::TextButton majorButton { "Major" }, minorButton { "Minor" }, alterButton;
     juce::ComboBox numeralBox, addedNoteBox;
     std::array<juce::TextButton, 4> positionButtons;
