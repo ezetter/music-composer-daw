@@ -88,6 +88,19 @@ public:
     */
     std::optional<Note> getMoveTarget (const Note&, juce::Point<float>) const;
 
+    /** A note of its own and the notes tied to it, either way, in order: the notes that move
+        together when it's dragged. Each is as long as it's shown.
+    */
+    std::vector<Note> getTiedNotes (const Note&) const;
+
+    /** What dragging a note to a point would make of it and the notes tied to it: each moved as
+        far, the same if they still fit in their measures, or else written again from where the
+        first lands as one note as long as all of them, tied over the barlines, as far as the
+        score goes. They all take the pitch the dragged note lands on. Empty if they can't go
+        there: before the start, or into a measure whose chord has the staff.
+    */
+    std::vector<Note> planMove (const Note& dragged, juce::Point<float>) const;
+
     /** The menu clicking a note while editing shows: its lengths, the ones that fit in what's left
         of its measure, with its own ticked, and Delete.
     */
@@ -260,8 +273,8 @@ private:
     void setEditHover (std::optional<Note>);
     void showNoteMenu (const Note&);
 
-    /** Moves a note, taking it out where it was and adding it where it's going. */
-    void moveNote (const Note& from, const Note& to);
+    /** Moves notes tied together, taking them out where they were, and adding them, tied, where they're going. */
+    void moveNotes (const std::vector<Note>& from, const std::vector<Note>& to);
     void drawDynamics (juce::Graphics&, int measure) const;
     void drawHoverDynamic (juce::Graphics&) const;
     float getDynamicBaseline() const;
@@ -415,7 +428,9 @@ private:
     bool erasing = false, erasingStroke = false;    // the eraser's chosen, and its button's down
     bool editing = false;
     std::optional<Note> editHover;                  // while editing, the note of its own under the mouse
-    std::optional<Note> editedNote, moveTarget;     // the note the mouse went down on while editing, and where a drag would move it
+    std::optional<Note> editedNote;                 // the note the mouse went down on while editing
+    std::vector<Note> editHoverChain, editedChain;  // and the notes tied to them, which move with them
+    std::vector<Note> movePlan;                     // where a drag would move them
     MusicGlyphs menuGlyphs;                         // for the notes in a note's menu
     juce::Point<float> lastErasePoint;
     Erasable hoverErasable;

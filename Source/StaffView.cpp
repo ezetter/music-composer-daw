@@ -506,7 +506,8 @@ void StaffView::setEditing (bool shouldEdit)
 {
     editing = shouldEdit;
     editedNote.reset();
-    moveTarget.reset();
+    editedChain.clear();
+    movePlan.clear();
     setEditHover ({});
 
     if (! erasing && ! scalePlacement.has_value())
@@ -518,11 +519,10 @@ void StaffView::setEditHover (std::optional<Note> note)
     if (note == editHover)
         return;
 
-    for (const auto& changed : { editHover, note })
-        if (changed.has_value())
-            repaint (getBeatArea (changed->measure, changed->beat));
-
+    // The notes tied to it are highlighted with it, as they'd move with it.
     editHover = note;
+    editHoverChain = note.has_value() ? getTiedNotes (*note) : std::vector<Note>();
+    repaint();
 }
 
 std::optional<Note> StaffView::findEditableNoteAt (juce::Point<float> point) const
@@ -573,13 +573,154 @@ std::optional<Note> StaffView::getMoveTarget (const Note& note, juce::Point<floa
     return target;
 }
 
-void StaffView::moveNote (const Note& from, const Note& to)
+std::vector<Note> StaffView::getTiedNotes (const Note& note) const
 {
-    if (from == to)
+    const auto slotsPerMeasure = score.getBeatsPerMeasure() * Score::slotsPerBeat;
+    const auto noteAt = [&] (int measure, double beat) -> std::optional<Note>
+    {
+        const auto& pitches = score.getNotes (part, note.staff, measure, beat);
+
+        if (std::find (pitches.begin(), pitches.end(), note.pitch) == pitches.end())
+            return {};
+
+        const auto slot = (int) std::lround (beat * Score::slotsPerBeat);
+        const auto length = Score::fitNoteLength ((int) std::lround (score.getNoteLength (part, note.staff, measure, beat) * Score::slotsPerBeat),
+                                                  slotsPerMeasure - slot);
+        return Note { note.staff, measure, beat, note.pitch, part, (double) length / Score::slotsPerBeat };
+    };
+
+    const auto first = noteAt (note.measure, note.beat);
+
+    if (! first.has_value())
+        return {};
+
+    std::vector<Note> chain { *first };
+
+    // Back: the note tied to the first, which ends as it starts, in its measure or the one before
+    for (auto found = true; found;)
+    {
+        found = false;
+        const auto front = chain.front();
+        const auto frontSlot = (int) std::lround (front.beat * Score::slotsPerBeat);
+
+        for (auto measure = front.measure; measure >= juce::jmax (0, front.measure - 1) && ! found; --measure)
+        {
+            for (int slot = 0; slot < (measure == front.measure ? frontSlot : slotsPerMeasure) && ! found; ++slot)
+            {
+                const auto beat = (double) slot / Score::slotsPerBeat;
+
+                if (score.isTied (part, note.staff, measure, beat, note.pitch)
+                    && score.getFollowingBeat (part, note.staff, measure, beat) == std::optional<std::pair<int, double>> ({ front.measure, front.beat }))
+                {
+                    if (const auto earlier = noteAt (measure, beat))
+                    {
+                        chain.insert (chain.begin(), *earlier);
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // On: the notes the last is tied to
+    while (score.isTied (part, note.staff, chain.back().measure, chain.back().beat, note.pitch))
+    {
+        const auto next = score.getFollowingBeat (part, note.staff, chain.back().measure, chain.back().beat);
+        const auto later = next.has_value() ? noteAt (next->first, next->second) : std::nullopt;
+
+        if (! later.has_value())
+            break;
+
+        chain.push_back (*later);
+    }
+
+    return chain;
+}
+
+std::vector<Note> StaffView::planMove (const Note& dragged, juce::Point<float> point) const
+{
+    const auto target = getMoveTarget (dragged, point);
+    const auto chain = getTiedNotes (dragged);
+
+    if (! target.has_value() || chain.empty())
+        return {};
+
+    const auto slotsPerMeasure = score.getBeatsPerMeasure() * Score::slotsPerBeat;
+    const auto scoreSlots = score.getNumMeasures() * slotsPerMeasure;
+    const auto toSlots = [&] (int measure, double beat) { return measure * slotsPerMeasure + (int) std::lround (beat * Score::slotsPerBeat); };
+    const auto toLength = [] (const Note& note) { return (int) std::lround (note.length * Score::slotsPerBeat); };
+    const auto shift = toSlots (target->measure, target->beat) - toSlots (dragged.measure, dragged.beat);
+    const auto noteAt = [&] (int at, int length)
+    {
+        return Note { target->staff, at / slotsPerMeasure, (double) (at % slotsPerMeasure) / Score::slotsPerBeat,
+                      target->pitch, part, (double) length / Score::slotsPerBeat };
+    };
+
+    // Each note as far along as the dragged one goes, if they all still fit in their measures
+    std::vector<Note> moved;
+
+    for (const auto& note : chain)
+    {
+        const auto at = toSlots (note.measure, note.beat) + shift;
+
+        if (at < 0 || at >= scoreSlots || at % slotsPerMeasure + toLength (note) > slotsPerMeasure)
+        {
+            moved.clear();
+            break;
+        }
+
+        moved.push_back (noteAt (at, toLength (note)));
+    }
+
+    // Otherwise, as one note as long as all of them, from where the first lands, filling each
+    // measure up to the barline and tied over it
+    if (moved.empty())
+    {
+        auto at = toSlots (chain.front().measure, chain.front().beat) + shift;
+        auto total = 0;
+
+        for (const auto& note : chain)
+            total += toLength (note);
+
+        if (at < 0)
+            return {};
+
+        for (const auto end = juce::jmin (at + total, scoreSlots); at < end;)
+        {
+            const auto barline = (at / slotsPerMeasure + 1) * slotsPerMeasure;
+            const auto length = Score::fitNoteLength (end - at, barline - at);
+            moved.push_back (noteAt (at, length));
+            at += length;
+        }
+    }
+
+    for (const auto& note : moved)
+        if (score.chordUsesStaff (part, note.measure, note.staff))
+            return {};
+
+    return moved;
+}
+
+void StaffView::moveNotes (const std::vector<Note>& from, const std::vector<Note>& to)
+{
+    if (from == to || to.empty())
         return;
 
-    score.removeNotesAt (part, from.staff, from.measure, from.beat, from.pitch.step);
-    score.addNote (to);
+    for (const auto& note : from)
+        score.removeNotesAt (part, note.staff, note.measure, note.beat, note.pitch.step);
+
+    for (const auto& note : to)
+        score.addNote (note);
+
+    // Tied together again, each to the next, where they follow one another
+    for (size_t i = 1; i < to.size(); ++i)
+    {
+        const auto& note = to[i - 1];
+
+        if (! score.isTied (part, note.staff, note.measure, note.beat, note.pitch))
+            score.toggleTie (part, note.staff, note.measure, note.beat, to[i].measure, to[i].beat, note.pitch);
+    }
+
     hoverHintHidden = true;
 }
 
@@ -830,6 +971,10 @@ void StaffView::changeListenerCallback (juce::ChangeBroadcaster*)
 
     if (selectedMeasure.has_value() && *selectedMeasure >= score.getNumMeasures())
         selectedMeasure.reset();
+
+    // The notes tied to the one under the pointer while editing may have changed.
+    if (editHover.has_value())
+        editHoverChain = getTiedNotes (*editHover);
 
     // The height follows how far the music reaches above and below the staves.
     setSize (getContentWidth(), getContentHeight());
@@ -1429,22 +1574,37 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
     // The note under the pointer is red, to show a click will take it out. A chord's
     // notes are taken out wherever they are in the measure; a quarter note only on its own beat.
     // While editing, the note under the pointer, or being moved, is blue instead.
-    std::optional<int> highlightedPosition;
-    const auto& edited = editedNote.has_value() ? editedNote : editHover;
-    const auto& highlighted = edited.has_value() ? edited : hoverNote;
+    // The notes tied to it are blue too, as they move with it.
+    const auto& editChain = editedNote.has_value() ? editedChain : editHoverChain;
 
-    if (highlighted.has_value() && (edited.has_value() || ! hoverHintHidden)
-        && highlighted->staff == staff && highlighted->measure == measure)
-        highlightedPosition = highlighted->pitch.step - getBottomLineStep (staff);
-
-    for (size_t i = 0; i < notes.size(); ++i)
+    if (! editChain.empty())
     {
-        // A Random chord's notes are taken out one at a time, so only the one under the pointer is red.
-        const auto onItsOwn = content.source == StaffContent::Source::notes || hasRandomChord (measure);
-        const auto isHovered = highlightedPosition.has_value()
-                            && (! onItsOwn || juce::exactlyEqual (notes[i].onset, (double) highlighted->beat));
-        drawNote (g, staff, notes[i], rolled[i], isHovered ? highlightedPosition : std::nullopt,
-                  edited.has_value() ? editColour : removalColour);
+        for (size_t i = 0; i < notes.size(); ++i)
+        {
+            std::optional<int> editedPosition;
+
+            for (const auto& edited : editChain)
+                if (edited.staff == staff && edited.measure == measure && juce::exactlyEqual (notes[i].onset, edited.beat))
+                    editedPosition = edited.pitch.step - getBottomLineStep (staff);
+
+            drawNote (g, staff, notes[i], rolled[i], editedPosition, editColour);
+        }
+    }
+    else
+    {
+        std::optional<int> highlightedPosition;
+
+        if (hoverNote.has_value() && ! hoverHintHidden && hoverNote->staff == staff && hoverNote->measure == measure)
+            highlightedPosition = hoverNote->pitch.step - getBottomLineStep (staff);
+
+        for (size_t i = 0; i < notes.size(); ++i)
+        {
+            // A Random chord's notes are taken out one at a time, so only the one under the pointer is red.
+            const auto onItsOwn = content.source == StaffContent::Source::notes || hasRandomChord (measure);
+            const auto isHovered = highlightedPosition.has_value()
+                                && (! onItsOwn || juce::exactlyEqual (notes[i].onset, (double) hoverNote->beat));
+            drawNote (g, staff, notes[i], rolled[i], isHovered ? highlightedPosition : std::nullopt, removalColour);
+        }
     }
 
     for (const auto& note : notes)
@@ -1778,8 +1938,33 @@ void StaffView::drawGhostNote (juce::Graphics& g, const Note& note) const
 
 void StaffView::drawMoveHint (juce::Graphics& g) const
 {
-    if (editedNote.has_value() && moveTarget.has_value() && moveTarget->measure < score.getNumMeasures())
-        drawGhostNote (g, *moveTarget);
+    // Faint notes where they'd go, as where a click would add one, with faint ties between them
+    if (! editedNote.has_value())
+        return;
+
+    for (size_t i = 0; i < movePlan.size(); ++i)
+    {
+        const auto& note = movePlan[i];
+
+        if (note.measure >= score.getNumMeasures())
+            break;
+
+        drawGhostNote (g, note);
+
+        if (i + 1 < movePlan.size())
+        {
+            const auto& next = movePlan[i + 1];
+            const auto position = note.pitch.step - getBottomLineStep (note.staff);
+            const auto upwards = position >= middleLine;
+            const auto y = getY (note.staff, position) + 0.45f * staffSpace * (upwards ? -1.0f : 1.0f);
+            const auto halfWidth = 0.6f * staffSpace;
+
+            g.setColour (hoverColour);
+            drawTie (g, { getOnsetX (note.measure, note.beat) + halfWidth + 0.15f * staffSpace, y },
+                     { getOnsetX (next.measure, next.beat) - halfWidth - 0.15f * staffSpace, y }, upwards);
+            g.setColour (inkColour);
+        }
+    }
 }
 
 float StaffView::getPedalLineY() const
@@ -2204,7 +2389,8 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     hairpinDrag.reset();
     tieFrom.reset();
     editedNote.reset();
-    moveTarget.reset();
+    editedChain.clear();
+    movePlan.clear();
 
     if (e.mods.isPopupMenu())
         return;
@@ -2240,6 +2426,7 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
         if (const auto note = findEditableNoteAt (e.position))
         {
             editedNote = note;
+            editedChain = getTiedNotes (*note);
             return;
         }
     }
@@ -2305,9 +2492,9 @@ void StaffView::mouseDrag (const juce::MouseEvent& e)
     {
         if (e.mouseWasDraggedSinceMouseDown())
         {
-            if (const auto target = getMoveTarget (*editedNote, e.position); target != moveTarget)
+            if (auto plan = planMove (*editedNote, e.position); plan != movePlan)
             {
-                moveTarget = target;
+                movePlan = std::move (plan);
                 hoverHintHidden = true;
                 repaint();
             }
@@ -2368,7 +2555,8 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
     // A note dragged while editing moves to where it's let go, and one clicked shows its menu.
     if (const auto edited = std::exchange (editedNote, std::nullopt))
     {
-        moveTarget.reset();
+        const auto chain = std::exchange (editedChain, {});
+        movePlan.clear();
         repaint();
 
         if (e.mods.isPopupMenu())
@@ -2376,8 +2564,8 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
 
         if (! e.mouseWasDraggedSinceMouseDown())
             showNoteMenu (*edited);
-        else if (const auto target = getMoveTarget (*edited, e.position))
-            moveNote (*edited, *target);
+        else
+            moveNotes (chain, planMove (*edited, e.position));
 
         setEditHover (findEditableNoteAt (e.position));
         return;
