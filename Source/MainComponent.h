@@ -9,6 +9,7 @@
 #include "EraserButton.h"
 #include "NoteLengthPicker.h"
 #include "PianoKeyboard.h"
+#include "Recorder.h"
 #include "Score.h"
 #include "ScoreDocument.h"
 #include "ScoreHistory.h"
@@ -200,6 +201,19 @@ private:
     void scrollToMeasure (int measure);
     void pianoKeyClicked (int midiNote);
     void togglePlayback();
+
+    /** Starts recording what's played into the active part, playing the score if it isn't
+        already, or stops recording, playing on.
+    */
+    void toggleRecording();
+
+    /** Writes the keys played since last time into the score, while recording. */
+    void recordPlayedKeys();
+
+    /** Stops recording, writing the notes of the keys still down as ending at a point, or at the
+        end of the score, so it's all undone in one go.
+    */
+    void finishRecording (std::optional<double> beat);
     void showPlaybackPosition();
     void addMeasure();
     void removeMeasure();
@@ -244,9 +258,11 @@ private:
     Score score;
     ScoreDocument document;
     ScoreHistory history { score };
+    Recorder recorder { score };
     juce::ApplicationCommandManager commandManager;
 
-    juce::TextButton playButton { "Play" };
+    controls::TransportButton playButton { controls::TransportButton::Symbol::play };          // a stop button while playing
+    controls::TransportButton recordButton { controls::TransportButton::Symbol::record };
     juce::TextButton loopButton { "Loop" };
     juce::Label tempoLabel;
     juce::TextEditor tempoEditor;

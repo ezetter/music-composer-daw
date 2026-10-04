@@ -363,6 +363,11 @@ Spelling spellPitchClass (Key key, int pitchClass)
     return { (int) std::distance (naturalPitchClasses.begin(), letter), shift };
 }
 
+Pitch spellMidiNote (Key key, int midiNote)
+{
+    return makeTone ({ midiNote, spellPitchClass (key, mod (midiNote, 12)) }, {}).pitch;
+}
+
 //==============================================================================
 const AddedNoteInfo& getInfo (AddedNote addedNote)
 {

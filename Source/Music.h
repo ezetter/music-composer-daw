@@ -94,6 +94,9 @@ namespace music
     */
     Spelling spellPitchClass (Key, int pitchClass);
 
+    /** A MIDI note written as the key spells its pitch class, in the octave it sounds in. */
+    Pitch spellMidiNote (Key, int midiNote);
+
     //==============================================================================
     enum class AddedNote { none, dominant7th, major7th, minor7th, dominant9th, major9th, minor9th };
 

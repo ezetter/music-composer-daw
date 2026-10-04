@@ -161,11 +161,20 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     document.getInstrumentToSave = [this] (int part) { return tracks[(size_t) part].panel->saveToJSON(); };
     document.loadInstrument = [this] (int part, const juce::var& json) { tracks[(size_t) part].panel->loadFromJSON (json); };
 
+    playButton.setButtonText ("Play");
+    playButton.setTooltip ("Play the score, or stop it (space)");
     playButton.onClick = [this] { togglePlayback(); };
     playButton.addShortcut (juce::KeyPress (juce::KeyPress::spaceKey));
 
+    // Record plays the score too, and writes what's played on the keyboard into the active part.
+    recordButton.setButtonText ("Record");
+    recordButton.setTooltip ("Play the score, and add what's played on the keyboard to the active instrument's staves");
+    recordButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xfffbe2e0));
+    recordButton.onClick = [this] { toggleRecording(); };
+
     // Loop is remembered from one run of the app to the next.
     playButton.setConnectedEdges (juce::Button::ConnectedOnRight);
+    recordButton.setConnectedEdges (juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
     loopButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
     loopButton.setClickingTogglesState (true);
     loopButton.setToggleState (settings.getBoolValue (loopKey), juce::dontSendNotification);
@@ -200,9 +209,10 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     // Clicking a button shouldn't take the keyboard focus away from the piano, which the
     // computer keyboard can play too.
     playButton.setWantsKeyboardFocus (false);
+    recordButton.setWantsKeyboardFocus (false);
     loopButton.setWantsKeyboardFocus (false);
 
-    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &loopButton, &tempoLabel, &tempoEditor, &partBox })
+    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &recordButton, &loopButton, &tempoLabel, &tempoEditor, &partBox })
         addAndMakeVisible (component);
 
     staffSystems.onAddPart = [this] { addPart(); };
@@ -351,7 +361,8 @@ void MainComponent::resized()
     auto bounds = getLocalBounds();
 
     auto toolbar = bounds.removeFromTop (toolbarHeight).reduced (12, 8);
-    playButton.setBounds (toolbar.removeFromLeft (80));
+    playButton.setBounds (toolbar.removeFromLeft (46));
+    recordButton.setBounds (toolbar.removeFromLeft (46));
     loopButton.setBounds (toolbar.removeFromLeft (64));
     toolbar.removeFromLeft (16);
     tempoLabel.setBounds (toolbar.removeFromLeft (34));
@@ -1004,13 +1015,17 @@ void MainComponent::showHeldNotes()
 //==============================================================================
 void MainComponent::timerCallback()
 {
+    recordPlayedKeys();
     showPlaybackPosition();
 }
 
 void MainComponent::togglePlayback()
 {
-    if (instrumentHost.getPlaybackPosition().has_value())
+    if (const auto position = instrumentHost.getPlaybackPosition())
     {
+        if (instrumentHost.isRecording())
+            finishRecording (position);
+
         instrumentHost.stop();
         showPlaybackPosition();
     }
@@ -1022,16 +1037,70 @@ void MainComponent::togglePlayback()
     }
 }
 
+void MainComponent::toggleRecording()
+{
+    // Recording again stops recording, and the score plays on.
+    if (instrumentHost.isRecording())
+    {
+        finishRecording (instrumentHost.getPlaybackPosition());
+        return;
+    }
+
+    if (! instrumentHost.getPlaybackPosition().has_value())
+    {
+        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState());
+        startTimerHz (30);
+    }
+
+    // Without the audio running, nothing plays, so there's nothing to record along with.
+    if (instrumentHost.getPlaybackPosition().has_value())
+    {
+        // Everything recorded is undone in one go.
+        history.beginGesture();
+        instrumentHost.takeRecordedKeys();
+        instrumentHost.setRecording (true);
+        recordButton.setToggleState (true, juce::dontSendNotification);
+    }
+
+    showPlaybackPosition();
+}
+
+void MainComponent::recordPlayedKeys()
+{
+    for (const auto& key : instrumentHost.takeRecordedKeys())
+    {
+        if (key.isDown)
+            recorder.keyDown (key.noteNumber, key.beat, activePartId);
+        else
+            recorder.keyUp (key.noteNumber, key.beat);
+    }
+}
+
+void MainComponent::finishRecording (std::optional<double> beat)
+{
+    instrumentHost.setRecording (false);
+    recordPlayedKeys();
+    recorder.finish (beat);
+    recordButton.setToggleState (false, juce::dontSendNotification);
+    history.endGesture();
+}
+
 void MainComponent::showPlaybackPosition()
 {
     const auto position = instrumentHost.getPlaybackPosition();
 
     playButton.setButtonText (position.has_value() ? "Stop" : "Play");
+    playButton.setSymbol (position.has_value() ? controls::TransportButton::Symbol::stop : controls::TransportButton::Symbol::play);
+
     for (auto& view : staffSystems.views)
         view->setPlaybackPosition (position);
 
     if (! position.has_value())
     {
+        // Recording stops when the score stops, at the end, the notes still held lasting to there.
+        if (instrumentHost.isRecording())
+            finishRecording ({});
+
         stopTimer();
         return;
     }
@@ -1297,7 +1366,16 @@ void MainComponent::saveChangesThen (std::function<void()> action)
 
 void MainComponent::scoreReplaced()
 {
-    // A new score starts from the beginning, with nothing playing or selected, and nothing to undo.
+    // A new score starts from the beginning, with nothing playing, recording or selected, and
+    // nothing to undo. Keys held while recording the old one aren't written into it.
+    if (instrumentHost.isRecording())
+    {
+        instrumentHost.setRecording (false);
+        recorder.clear();
+        recordButton.setToggleState (false, juce::dontSendNotification);
+        history.endGesture();
+    }
+
     history.clear();
     instrumentHost.stop();
     showPlaybackPosition();

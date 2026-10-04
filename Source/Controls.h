@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <utility>
+
 /** Colours and helpers shared by the app's controls. */
 namespace controls
 {
@@ -200,6 +202,58 @@ namespace controls
                                         safeThis->onItemChosen (result);
                                 });
         }
+    };
+
+    /** A toolbar button showing a transport symbol instead of its text: a green triangle to play,
+        a black square to stop, or a red circle to record. Its text names it, for accessibility.
+    */
+    struct TransportButton final : public juce::TextButton
+    {
+        enum class Symbol { play, stop, record };
+
+        explicit TransportButton (Symbol initialSymbol) : symbol (initialSymbol) {}
+
+        void setSymbol (Symbol newSymbol)
+        {
+            if (std::exchange (symbol, newSymbol) != newSymbol)
+                repaint();
+        }
+
+        Symbol getSymbol() const noexcept { return symbol; }
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            getLookAndFeel().drawButtonBackground (g, *this, findColour (getToggleState() ? buttonOnColourId : buttonColourId),
+                                                   highlighted, down);
+
+            const auto size = (float) getHeight() * 0.42f;
+            const auto centre = getLocalBounds().toFloat().getCentre();
+
+            if (symbol == Symbol::play)
+            {
+                // Pointing right, its middle a little right of the centre, so it looks centred
+                juce::Path triangle;
+                const auto height = size * 1.05f, width = height * 0.88f;
+                const auto left = centre.x - width * 0.42f;
+                triangle.addTriangle (left, centre.y - height / 2.0f, left, centre.y + height / 2.0f, left + width, centre.y);
+                g.setColour (juce::Colour (0xff2e9e4f));
+                g.fillPath (triangle);
+                g.strokePath (triangle, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+            else if (symbol == Symbol::stop)
+            {
+                g.setColour (juce::Colour (0xff1b1b1b));
+                g.fillRoundedRectangle (juce::Rectangle<float> (size * 0.85f, size * 0.85f).withCentre (centre), 1.5f);
+            }
+            else
+            {
+                g.setColour (juce::Colour (0xffd8413a));
+                g.fillEllipse (juce::Rectangle<float> (size, size).withCentre (centre));
+            }
+        }
+
+    private:
+        Symbol symbol;
     };
 
     /** A small button showing a waste bin, for taking something out: grey, and red under the mouse. */

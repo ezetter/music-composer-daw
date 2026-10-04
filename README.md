@@ -34,8 +34,9 @@ Each instrument has a **volume dial** to the left of its staves, setting how lou
 
 ### Toolbar
 
-- **Play** (or the space bar) plays the score from the beginning, highlighting each beat and following it along the staff. **Stop** stops it.
-- **Loop**, beside Play, makes the score play over and over, going straight from the end back to the beginning, until you press **Stop**. It can be turned on or off while the score plays; turning it off lets the score finish this time through. While it loops, changes to the score, tempo included, are heard from the next time through. Loop is remembered the next time the app starts.
+- **Play**, the green arrow (or the space bar), plays the score from the beginning, highlighting each beat and following it along the staff. While it plays, it becomes **Stop**, a black square, which stops it, recording too.
+- **Record**, the red circle beside it, plays the score as Play does and records what you play on the piano or a MIDI controller into the active instrument (see [Recording](#recording)). It's tinted red while recording. Pressed while the score's already playing, it starts recording from there; pressed while recording, it stops recording and the score plays on.
+- **Loop**, beside Record, makes the score play over and over, going straight from the end back to the beginning, until you press **Stop**. It can be turned on or off while the score plays; turning it off lets the score finish this time through. While it loops, changes to the score, tempo included, are heard from the next time through. Loop is remembered the next time the app starts.
 - **BPM** sets the tempo in quarter notes per minute, from 20 to 300, fractions allowed. The default is 120. A change applies from the next Play, or the next time through a loop.
 - The instrument menu (**Instrument 1**, **Instrument 2** and so on) chooses the active instrument.
 - **Load Instrument…** loads a VST3 instrument plugin for the active instrument, such as one from `/Library/Audio/Plug-Ins/VST3`. **Edit [plugin]**, named for the loaded plugin (e.g. **Edit Pigments**), opens the plugin's own window, where you can choose its sounds. The instruments can use different plugins, or the same one with different sounds.
@@ -65,7 +66,7 @@ The **File** menu saves and opens scores:
 
 The **Edit** menu's **Undo** (⌘Z) undoes the last change to the score, and pressing it again undoes the one before, back to how the score was when it was opened or started (the last 500 changes are remembered). **Redo** (⇧⌘Z) makes an undone change again, until something else is changed. Each is greyed out when there's nothing to undo or redo.
 
-- Everything about the score can be undone: notes, ties, chords and the chord window's changes, dynamics and hairpins, the key, time signature, tempo and alternate staff, and adding, removing, cloning and copying measures and progressions. What one click, drag or command does is undone in one go, e.g. a whole Copy Progression, a hairpin however far it was dragged, or everything an eraser stroke took out.
+- Everything about the score can be undone: notes, ties, everything one recording added, chords and the chord window's changes, dynamics and hairpins, the key, time signature, tempo and alternate staff, and adding, removing, cloning and copying measures and progressions. What one click, drag or command does is undone in one go, e.g. a whole Copy Progression, a hairpin however far it was dragged, or everything an eraser stroke took out.
 - The chord window shows the chord as undoing leaves it, and closes if its measure's undone away.
 - Undoing counts as a change that needs saving. The instruments, their volumes and muting, and what's chosen to add, such as the note length, aren't part of what's undone.
 - Typing in the BPM box, ⌘Z undoes the typing instead.
@@ -162,6 +163,17 @@ Every note is held for exactly as long as it's written on the staff, whatever wr
 
 Click or drag across the piano keys to play the active instrument yourself. Once the piano has been clicked, the computer keyboard plays it too: A is middle C, and the row from A to L (with W, E, T, Y, U, O and P for the black keys) plays upwards from there.
 
+### Recording
+
+While recording, each key played on the piano, the computer keyboard or a MIDI controller is written into the active instrument's staves as it's let go of, as a note as long as it was held, where the score had got to when it went down. Keys from middle C up go on the treble staff, and those below on the bass.
+
+- Notes start and end on the nearest 16th note, so a note is at least a 16th long. Within a measure a note is written as the length nearest to how long it was held (halfway between two, the shorter), as long as that doesn't run into a note already on the staff after it. A note held across a barline fills its measure to the barline and is tied over it, to a whole note for each measure it's held right through, and in the measure where it's let go of, the length nearest to the rest of it.
+- Keys pressed together, within a 16th, make a chord, which takes the length of whichever is let go of last. A staff has one line of notes, so a key still held when another starts on its staff ends there.
+- The notes are spelled in the key, B♭ rather than A♯ in F major, say. They take the place of what they're written over, as notes added by clicking do, and a measure whose chord has the staff is left alone.
+- Keys still held when recording stops end there, or at the end of the score when it plays to the end. Recording stops when the score does.
+- With **Loop** on, recording goes on through each time round. What was recorded is heard the next time through, and more can be played along with it. A key held as the loop goes back to the beginning lasts to the end of the score.
+- Everything one recording adds is undone in one go. Choosing another instrument while recording records the next keys into that one.
+
 ### MIDI controllers
 
 Plug a MIDI controller into a USB port and it plays the active instrument like the on-screen piano, whose keys go down as you play. It's used as soon as it's plugged in, even with the app already running. The keys play at the velocity you strike them, and the sustain pedal, pitch bend, mod wheel and other controls go through to the plugin too. While the chord window is open, a key adds its note to the window's chord or takes it out, as clicking the piano does.
@@ -188,8 +200,9 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | `Source/EraserButton.*` | The eraser button, and the eraser the pointer becomes |
 | `Source/NoteLengthPicker.*` | The whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, 16th and 32nd note buttons for choosing the length of the notes clicks add |
 | `Source/PianoKeyboard.*` | The on-screen piano |
-| `Source/Controls.h` | Colours and helpers shared by the controls |
-| `Source/InstrumentHost.*` | Hosts each instrument's plugin, and plays them from the piano, MIDI controllers and the score, once or looping |
+| `Source/Controls.h` | Colours and helpers shared by the controls, and the play, stop and record buttons |
+| `Source/InstrumentHost.*` | Hosts each instrument's plugin, and plays them from the piano, MIDI controllers and the score, once or looping, noting the keys played while recording |
+| `Source/Recorder.*` | Writes the keys played while recording into the score as notes, tied across barlines |
 | `Source/MidiInputs.*` | Connects MIDI controllers, as they're plugged in, and the MIDI menu's settings |
 | `Source/InstrumentPanel.*` | Loads an instrument's plugin and opens its editor, and saves and loads it with the score |
 | `Source/PluginWindow.*` | The window for an instrument's editor |

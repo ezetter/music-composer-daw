@@ -86,6 +86,23 @@ public:
     /** How far playback has got, in beats from the start of the score, or nothing if it's stopped. */
     std::optional<double> getPlaybackPosition() const noexcept;
 
+    /** A key going down or coming up, on the on-screen keyboard or a MIDI controller, while
+        recording, and where the score had got to, in beats from its start.
+    */
+    struct RecordedKey
+    {
+        int noteNumber = 0;
+        bool isDown = false;
+        double beat = 0.0;
+    };
+
+    /** Starts or stops noting the keys played while the score plays, for takeRecordedKeys(). */
+    void setRecording (bool shouldRecord) noexcept { recording = shouldRecord; }
+    bool isRecording() const noexcept { return recording; }
+
+    /** The keys played while recording since this was last called, in the order they were played. */
+    std::vector<RecordedKey> takeRecordedKeys();
+
     void prepareToPlay (double sampleRate, int maximumBlockSize);
     void releaseResources();
 
@@ -139,7 +156,9 @@ private:
 
     juce::Optional<PositionInfo> getPosition() const override;
 
-    double getBeatsPlayed() const noexcept;
+    /** Where playback is, in beats from the start of the score, a number of samples into the block being played. */
+    double getBeatsPlayed (int64_t samplesIntoBlock = 0) const noexcept;
+    void recordKeys (const juce::MidiBuffer&);
     void allocateInstrumentBuffer (Slot&);
     void addScoreEvents (int numSamples);
     void letGoOfKeyboardNotes (Slot&);
@@ -147,6 +166,11 @@ private:
 
     juce::MidiKeyboardState keyboardState;
     juce::MidiMessageCollector midiInput;     // messages from MIDI controllers, waiting for the next block
+    juce::MidiBuffer playedMidi;              // what the keyboard and MIDI controllers play in a block
+
+    std::atomic<bool> recording { false };
+    juce::AbstractFifo recordedKeysFifo { 1024 };
+    std::array<RecordedKey, 1024> recordedKeys;     // played on the audio thread, waiting to be taken on the message thread
     std::atomic<bool> midiInputReady { false };
 
     // Everything below is shared with the audio thread, which holds this lock while it's working.

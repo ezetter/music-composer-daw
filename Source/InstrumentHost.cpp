@@ -38,6 +38,8 @@ namespace
 
 InstrumentHost::InstrumentHost()
 {
+    playedMidi.ensureSize (4096);
+
     for (int part = 0; part < Score::initialParts; ++part)
         insertPart (part);
 }
@@ -496,11 +498,17 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
 
     auto& keyboardSlot = *slots[(size_t) keyboardPart];
     addScoreEvents (numSamples);
-    midiInput.removeNextBlockOfMessages (keyboardSlot.midi, numSamples);
 
-    // This adds the notes played on the on-screen keyboard, and shows the active part's notes and
-    // the MIDI controllers' notes on it.
-    keyboardState.processNextMidiBuffer (keyboardSlot.midi, 0, numSamples, true);
+    // What's played: the MIDI controllers' notes, which show on the on-screen keyboard, and the
+    // notes played on it. Kept apart from the score's notes, it can be recorded.
+    playedMidi.clear();
+    midiInput.removeNextBlockOfMessages (playedMidi, numSamples);
+    keyboardState.processNextMidiBuffer (playedMidi, 0, numSamples, true);
+    recordKeys (playedMidi);
+
+    // The active part's notes from the score show on the keyboard too.
+    keyboardState.processNextMidiBuffer (keyboardSlot.midi, 0, numSamples, false);
+    keyboardSlot.midi.addEvents (playedMidi, 0, numSamples, 0);
 
     for (auto& slotPointer : slots)
     {
@@ -557,11 +565,38 @@ juce::Optional<juce::AudioPlayHead::PositionInfo> InstrumentHost::getPosition() 
     return info;
 }
 
-double InstrumentHost::getBeatsPlayed() const noexcept
+double InstrumentHost::getBeatsPlayed (int64_t samplesIntoBlock) const noexcept
 {
-    // A loop that starts again right at the start of the next block is shown back at the beginning.
-    const auto samples = looping && position >= passage.length ? position - passage.length : position;
+    // Past the end of a loop is back at the beginning.
+    const auto played = position + samplesIntoBlock;
+    const auto samples = looping && passage.length > 0 && played >= passage.length ? played - passage.length : played;
     return passage.firstBeat + (double) samples / (sampleRate * passage.secondsPerBeat);
+}
+
+void InstrumentHost::recordKeys (const juce::MidiBuffer& midi)
+{
+    if (! recording || ! playing)
+        return;
+
+    for (const auto metadata : midi)
+    {
+        const auto message = metadata.getMessage();
+
+        if (! message.isNoteOnOrOff())
+            continue;
+
+        // If the message thread's fallen so far behind there's no room, the key's lost.
+        const RecordedKey key { message.getNoteNumber(), message.isNoteOn(), getBeatsPlayed (metadata.samplePosition) };
+        recordedKeysFifo.write (1).forEach ([&] (int index) { recordedKeys[(size_t) index] = key; });
+    }
+}
+
+std::vector<InstrumentHost::RecordedKey> InstrumentHost::takeRecordedKeys()
+{
+    std::vector<RecordedKey> keys;
+    const auto scope = recordedKeysFifo.read (recordedKeysFifo.getNumReady());
+    scope.forEach ([&] (int index) { keys.push_back (recordedKeys[(size_t) index]); });
+    return keys;
 }
 
 void InstrumentHost::allocateInstrumentBuffer (Slot& slot)
