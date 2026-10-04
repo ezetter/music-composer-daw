@@ -175,6 +175,12 @@ private:
     */
     void setErasing (bool);
 
+    /** Turns editing notes on, for moving notes by dragging them and changing their lengths or
+        taking them out by clicking them, or off. Clicks anywhere else go on adding notes or
+        marking as before. It turns the eraser off, and the eraser turns it off.
+    */
+    void setEditing (bool);
+
     /** Shows the Scale button's settings, in a box beside it. */
     void showScalePanel (juce::Component& button);
 
@@ -280,6 +286,7 @@ private:
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add
     DynamicPicker dynamicPicker;        // beside it: a dynamic or hairpin to mark instead
     EraserButton eraserButton;          // at the top right of the score, over the staves: the eraser
+    controls::TileTextButton editButton { "Edit" };     // to its left: editing notes
 
     // After the final barline, halfway down what's in view: + and − for adding a measure at the
     // end and taking the last away, and Clone for repeating them all, in every part

@@ -47,6 +47,21 @@ namespace controls
         return chosen ? accent : juce::Colour (0xff1b1b1b);
     }
 
+    /** A button with a word on it, drawn like the small symbol buttons over the score, such as
+        the eraser's, blue while it's on.
+    */
+    struct TileTextButton final : public juce::Button
+    {
+        explicit TileTextButton (const juce::String& text) : juce::Button (text) { setWantsKeyboardFocus (false); }
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            g.setColour (drawSymbolButtonTile (g, *this, highlighted, down));
+            g.setFont (juce::FontOptions (14.5f));
+            g.drawText (getButtonText(), getLocalBounds(), juce::Justification::centred, false);
+        }
+    };
+
     /** A small capitalised heading over a control, such as "KEY". */
     inline void makeHeading (juce::Label& label, const juce::String& text)
     {

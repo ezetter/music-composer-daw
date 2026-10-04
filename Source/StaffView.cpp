@@ -1,6 +1,7 @@
 #include "StaffView.h"
 
 #include "EraserButton.h"
+#include "NoteLengthPicker.h"
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +64,7 @@ namespace
     const juce::Colour inkColour { 0xff1b1b1b };
     const juce::Colour hoverColour { 0x992f7de1 };
     const juce::Colour removalColour { 0xffd8413a };
+    const juce::Colour editColour { 0xff2f7de1 };
     const juce::Colour playbackColour { 0x2e4a8fe0 };
     const juce::Colour selectionColour { 0xff2f5fd0 };
     const juce::Colour numeralColour { 0xff2848b0 };
@@ -305,7 +307,8 @@ StaffView::StaffView (Score& scoreToShow, int partToShow)
     : score (scoreToShow),
       partId (scoreToShow.getPartId (partToShow)),
       part (partToShow),
-      glyphs (staffSpace)
+      glyphs (staffSpace),
+      menuGlyphs (NoteLengthPicker::glyphStaffSpace)
 {
     setOpaque (true);
     score.addChangeListener (this);
@@ -497,6 +500,160 @@ void StaffView::setErasing (bool shouldErase)
 
     if (erasing)
         setMouseCursor (EraserButton::createCursor());
+}
+
+void StaffView::setEditing (bool shouldEdit)
+{
+    editing = shouldEdit;
+    editedNote.reset();
+    moveTarget.reset();
+    setEditHover ({});
+
+    if (! erasing && ! scalePlacement.has_value())
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+}
+
+void StaffView::setEditHover (std::optional<Note> note)
+{
+    if (note == editHover)
+        return;
+
+    for (const auto& changed : { editHover, note })
+        if (changed.has_value())
+            repaint (getBeatArea (changed->measure, changed->beat));
+
+    editHover = note;
+}
+
+std::optional<Note> StaffView::findEditableNoteAt (juce::Point<float> point) const
+{
+    // A notehead on the line or space under the point, and near enough across, of a note clicked
+    // into the staff rather than a chord's
+    const auto spot = getNoteAt (point);
+
+    if (! spot.has_value() || score.chordUsesStaff (part, spot->measure, spot->staff))
+        return {};
+
+    std::optional<Note> found;
+    auto nearestDistance = 1.4f * staffSpace;
+
+    for (const auto& event : measureLayouts[(size_t) spot->measure].content.staves[(size_t) spot->staff].events)
+    {
+        const auto distance = std::abs (point.x - getEventX (spot->measure, event));
+
+        if (distance > nearestDistance)
+            continue;
+
+        for (const auto& pitch : score.getNotes (part, spot->staff, spot->measure, event.onset))
+        {
+            if (pitch.step == spot->pitch.step)
+            {
+                found = Note { spot->staff, spot->measure, event.onset, pitch, part,
+                               score.getNoteLength (part, spot->staff, spot->measure, event.onset) };
+                nearestDistance = distance;
+            }
+        }
+    }
+
+    return found;
+}
+
+std::optional<Note> StaffView::getMoveTarget (const Note& note, juce::Point<float> point) const
+{
+    auto target = getNoteAt (point, note.length);
+
+    if (! target.has_value() || score.chordUsesStaff (part, target->measure, target->staff))
+        return {};
+
+    target->length = note.length;
+
+    if (target->pitch.step == note.pitch.step)
+        target->pitch = note.pitch;
+
+    return target;
+}
+
+void StaffView::moveNote (const Note& from, const Note& to)
+{
+    if (from == to)
+        return;
+
+    score.removeNotesAt (part, from.staff, from.measure, from.beat, from.pitch.step);
+    score.addNote (to);
+    hoverHintHidden = true;
+}
+
+juce::PopupMenu StaffView::createNoteMenu (const Note& note) const
+{
+    juce::PopupMenu menu;
+    const auto room = score.getBeatsPerMeasure() * Score::slotsPerBeat - (int) std::lround (note.beat * Score::slotsPerBeat);
+    const auto length = (int) std::lround (note.length * Score::slotsPerBeat);
+
+    for (auto [slots, name] : { std::pair { 32, "Whole note" }, { 24, "Dotted half note" }, { 16, "Half note" },
+                                { 12, "Dotted quarter note" }, { 8, "Quarter note" }, { 6, "Dotted eighth note" },
+                                { 4, "Eighth note" }, { 2, "16th note" }, { 1, "32nd note" } })
+    {
+        // Each with its note, as on the note length buttons
+        juce::Image image (juce::Image::ARGB, 2 * NoteLengthPicker::buttonSize, 2 * NoteLengthPicker::buttonSize, true);
+
+        {
+            juce::Graphics g (image);
+            g.addTransform (juce::AffineTransform::scale (2.0f));
+            g.setColour (inkColour);
+            NoteLengthPicker::drawNote (g, menuGlyphs, (double) slots / Score::slotsPerBeat,
+                                        juce::Rectangle<float> ((float) NoteLengthPicker::buttonSize, (float) NoteLengthPicker::buttonSize));
+        }
+
+        juce::PopupMenu::Item item (name);
+        item.itemID = slots;
+        item.isEnabled = slots <= room;
+        item.isTicked = slots == length;
+        item.image = std::make_unique<juce::DrawableImage> (image);
+        menu.addItem (std::move (item));
+    }
+
+    menu.addSeparator();
+    menu.addItem (deleteNoteItemId, "Delete");
+    return menu;
+}
+
+void StaffView::showNoteMenu (const Note& note)
+{
+    const auto head = getBeatArea (note.measure, note.beat).withY (juce::roundToInt (getY (note.staff, note.pitch.step - getBottomLineStep (note.staff)) - staffSpace))
+                                                          .withHeight (juce::roundToInt (2.0f * staffSpace));
+
+    createNoteMenu (note).showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (head)),
+                                         [safeThis = juce::Component::SafePointer (this), note] (int result)
+                                         {
+                                             if (safeThis != nullptr && result != 0)
+                                                 safeThis->applyNoteMenuChoice (note, result);
+                                         });
+}
+
+void StaffView::applyNoteMenuChoice (const Note& note, int itemId)
+{
+    if (part < 0 || ! juce::isPositiveAndBelow (note.measure, score.getNumMeasures()))
+        return;
+
+    // The score may have changed while the menu was open.
+    const auto& pitches = score.getNotes (part, note.staff, note.measure, note.beat);
+
+    if (std::find (pitches.begin(), pitches.end(), note.pitch) == pitches.end())
+        return;
+
+    if (itemId == deleteNoteItemId)
+    {
+        score.removeNotesAt (part, note.staff, note.measure, note.beat, note.pitch.step);
+    }
+    else
+    {
+        auto changed = note;
+        changed.length = (double) itemId / Score::slotsPerBeat;
+        score.addNote (changed);
+    }
+
+    hoverHintHidden = true;
+    repaint();
 }
 
 std::optional<music::Dynamic> StaffView::getChosenDynamic() const
@@ -778,6 +935,17 @@ int StaffView::getFinalBarlineX() const
 
 std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
 {
+    // Adding from the scale, the notes going on are the ones of its length.
+    auto note = getNoteAt (point, scalePlacement.has_value() ? (double) scalePlacement->length / Score::slotsPerBeat : noteLength);
+
+    if (note.has_value())
+        note->length = noteLength;
+
+    return note;
+}
+
+std::optional<Note> StaffView::getNoteAt (juce::Point<float> point, double length) const
+{
     const auto measure = findMeasure (point.x);
 
     if (measure < 0 || ! isInClickRange (point))
@@ -793,8 +961,6 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
 
     // The nearest beat, or for a shorter note, the nearest step of its length without its dot: an
     // eighth, 16th or 32nd. Notes already there can be clicked wherever they start.
-    // Adding from the scale, the notes going on are the ones of its length.
-    const auto length = scalePlacement.has_value() ? (double) scalePlacement->length / Score::slotsPerBeat : noteLength;
     auto grid = Score::slotsPerBeat;
 
     while (grid > 1 && grid > (int) std::lround (length * Score::slotsPerBeat))
@@ -808,7 +974,7 @@ std::optional<Note> StaffView::getNoteAt (juce::Point<float> point) const
     const auto step = getBottomLineStep (staff) + clampedPosition;
     const auto alter = music::getKeyAlterations (score.getKey())[(size_t) music::mod (step, 7)];
 
-    return Note { staff, measure, (double) slot / Score::slotsPerBeat, { step, alter }, part, noteLength };
+    return Note { staff, measure, (double) slot / Score::slotsPerBeat, { step, alter }, part, length };
 }
 
 std::optional<std::pair<int, double>> StaffView::getDynamicPointAt (juce::Point<float> point) const
@@ -987,6 +1153,7 @@ void StaffView::paint (juce::Graphics& g)
     drawTies (g, juce::jmax (0, firstMeasure - 1), lastMeasure);
     drawTieDrag (g);
     drawHoverNote (g);
+    drawMoveHint (g);
     drawHairpins (g);
     drawPedals (g);
     drawHoverDynamic (g);
@@ -1261,19 +1428,23 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
 
     // The note under the pointer is red, to show a click will take it out. A chord's
     // notes are taken out wherever they are in the measure; a quarter note only on its own beat.
+    // While editing, the note under the pointer, or being moved, is blue instead.
     std::optional<int> highlightedPosition;
+    const auto& edited = editedNote.has_value() ? editedNote : editHover;
+    const auto& highlighted = edited.has_value() ? edited : hoverNote;
 
-    if (hoverNote.has_value() && ! hoverHintHidden
-        && hoverNote->staff == staff && hoverNote->measure == measure)
-        highlightedPosition = hoverNote->pitch.step - getBottomLineStep (staff);
+    if (highlighted.has_value() && (edited.has_value() || ! hoverHintHidden)
+        && highlighted->staff == staff && highlighted->measure == measure)
+        highlightedPosition = highlighted->pitch.step - getBottomLineStep (staff);
 
     for (size_t i = 0; i < notes.size(); ++i)
     {
         // A Random chord's notes are taken out one at a time, so only the one under the pointer is red.
         const auto onItsOwn = content.source == StaffContent::Source::notes || hasRandomChord (measure);
         const auto isHovered = highlightedPosition.has_value()
-                            && (! onItsOwn || juce::exactlyEqual (notes[i].onset, (double) hoverNote->beat));
-        drawNote (g, staff, notes[i], rolled[i], isHovered ? highlightedPosition : std::nullopt);
+                            && (! onItsOwn || juce::exactlyEqual (notes[i].onset, (double) highlighted->beat));
+        drawNote (g, staff, notes[i], rolled[i], isHovered ? highlightedPosition : std::nullopt,
+                  edited.has_value() ? editColour : removalColour);
     }
 
     for (const auto& note : notes)
@@ -1284,7 +1455,7 @@ void StaffView::drawStaff (juce::Graphics& g, int measure, Staff staff) const
 }
 
 void StaffView::drawNote (juce::Graphics& g, Staff staff, const NoteLayout& note, bool rolled,
-                          std::optional<int> highlightedPosition) const
+                          std::optional<int> highlightedPosition, juce::Colour highlightColour) const
 {
     drawLedgerLines (g, staff, note.positions, note.headLefts, note.headWidth);
 
@@ -1293,7 +1464,7 @@ void StaffView::drawNote (juce::Graphics& g, Staff staff, const NoteLayout& note
         const auto highlighted = note.positions[i] == highlightedPosition;
 
         if (highlighted)
-            g.setColour (removalColour);
+            g.setColour (highlightColour);
 
         glyphs.draw (g, getNoteheadGlyph (note.duration), { note.headLefts[i], getY (staff, note.positions[i]) });
 
@@ -1579,23 +1750,36 @@ void StaffView::drawHoverNote (juce::Graphics& g) const
     if (findNoteUnder (*hoverNote).has_value())
         return;
 
-    // The notehead of the length a click adds, once it's fitted into what's left of the measure:
+    drawGhostNote (g, *hoverNote);
+}
+
+void StaffView::drawGhostNote (juce::Graphics& g, const Note& note) const
+{
+    // The notehead of the note's length, once it's fitted into what's left of the measure:
     // filled for a dotted quarter or shorter, open for a half or longer
-    const auto room = (int) std::lround ((score.getBeatsPerMeasure() - hoverNote->beat) * Score::slotsPerBeat);
-    const auto slots = Score::fitNoteLength ((int) std::lround (hoverNote->length * Score::slotsPerBeat), room);
+    const auto room = (int) std::lround ((score.getBeatsPerMeasure() - note.beat) * Score::slotsPerBeat);
+    const auto slots = Score::fitNoteLength ((int) std::lround (note.length * Score::slotsPerBeat), room);
     const auto duration = getDurationForBeats ((double) slots / Score::slotsPerBeat);
     const auto notehead = getNoteheadGlyph (duration);
     const auto width = getNoteheadWidth (duration) * staffSpace;
-    const auto position = hoverNote->pitch.step - getBottomLineStep (hoverNote->staff);
-    const auto left = getOnsetX (hoverNote->measure, hoverNote->beat) - width / 2.0f;
+    const auto position = note.pitch.step - getBottomLineStep (note.staff);
+    const auto left = getOnsetX (note.measure, note.beat) - width / 2.0f;
 
     g.setColour (hoverColour);
-    drawLedgerLines (g, hoverNote->staff, { position }, { left }, width);
-    glyphs.draw (g, notehead, { left, getY (hoverNote->staff, position) });
+    drawLedgerLines (g, note.staff, { position }, { left }, width);
+    glyphs.draw (g, notehead, { left, getY (note.staff, position) });
 
     // A dotted note has its dot in a space.
     if (isDotted (duration))
-        glyphs.draw (g, Smufl::augmentationDot, { left + width + 0.35f * staffSpace, getY (hoverNote->staff, isLine (position) ? position + 1 : position) });
+        glyphs.draw (g, Smufl::augmentationDot, { left + width + 0.35f * staffSpace, getY (note.staff, isLine (position) ? position + 1 : position) });
+
+    g.setColour (inkColour);
+}
+
+void StaffView::drawMoveHint (juce::Graphics& g) const
+{
+    if (editedNote.has_value() && moveTarget.has_value() && moveTarget->measure < score.getNumMeasures())
+        drawGhostNote (g, *moveTarget);
 }
 
 float StaffView::getPedalLineY() const
@@ -1936,6 +2120,24 @@ void StaffView::mouseMove (const juce::MouseEvent& e)
         return;
     }
 
+    // While editing, a note of its own under the pointer can be dragged or clicked.
+    if (editing)
+    {
+        const auto editable = findEditableNoteAt (e.position);
+        setEditHover (editable);
+
+        if (editable.has_value())
+        {
+            setHoverNote ({});
+            setHoverMarkPoint ({});
+            hoverHairpin.reset();
+            setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+            return;
+        }
+
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+    }
+
     if (! marking.has_value())
     {
         setHoverNote (getNoteToClickAt (e.position));
@@ -1980,6 +2182,9 @@ void StaffView::mouseExit (const juce::MouseEvent&)
     setHoverNote ({});
     setHoverMarkPoint ({});
 
+    if (! editedNote.has_value())
+        setEditHover ({});
+
     if (hoverHairpin.has_value())
     {
         hoverHairpin.reset();
@@ -1998,6 +2203,8 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     pressedHairpin.reset();
     hairpinDrag.reset();
     tieFrom.reset();
+    editedNote.reset();
+    moveTarget.reset();
 
     if (e.mods.isPopupMenu())
         return;
@@ -2024,6 +2231,17 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
         eraseAt (e.position);
         setHoverErasable (findErasableAt (e.position));
         return;
+    }
+
+    // While editing, a note of its own is moved by dragging it, or clicked for its menu, when
+    // the mouse is let go.
+    if (editing)
+    {
+        if (const auto note = findEditableNoteAt (e.position))
+        {
+            editedNote = note;
+            return;
+        }
     }
 
     // With the pedal chosen, a click marks it, when the mouse is let go.
@@ -2082,6 +2300,22 @@ void StaffView::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    // A note being moved shows where it would go.
+    if (editedNote.has_value())
+    {
+        if (e.mouseWasDraggedSinceMouseDown())
+        {
+            if (const auto target = getMoveTarget (*editedNote, e.position); target != moveTarget)
+            {
+                moveTarget = target;
+                hoverHintHidden = true;
+                repaint();
+            }
+        }
+
+        return;
+    }
+
     // A hairpin stretches to the beat nearest the mouse, at least an eighth note long.
     if (hairpinDrag.has_value())
     {
@@ -2128,6 +2362,24 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
         if (start.has_value() && ! e.mods.isPopupMenu() && ! e.mouseWasDraggedSinceMouseDown())
             placeScale (*start);
 
+        return;
+    }
+
+    // A note dragged while editing moves to where it's let go, and one clicked shows its menu.
+    if (const auto edited = std::exchange (editedNote, std::nullopt))
+    {
+        moveTarget.reset();
+        repaint();
+
+        if (e.mods.isPopupMenu())
+            return;
+
+        if (! e.mouseWasDraggedSinceMouseDown())
+            showNoteMenu (*edited);
+        else if (const auto target = getMoveTarget (*edited, e.position))
+            moveNote (*edited, *target);
+
+        setEditHover (findEditableNoteAt (e.position));
         return;
     }
 

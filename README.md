@@ -120,7 +120,16 @@ While the pedal's down, every note of that instrument that's still sounding as i
 
 The eraser button, floating over the top right of the staves, always in view and apart from the note lengths, dynamics, hairpins and pedal, turns the eraser on, and the pointer becomes an eraser. Hold the mouse button down and move over the staves, and whatever the eraser passes over is taken out: notes, by their noteheads; a chord's notes, which come out of the chord, as clicking them does; ties, letting go of the notes they join; dynamics; hairpins, anywhere along them; and pedal marks. It catches everything along the way, however quickly it's moved. A click without moving takes out what's under the pointer. Before you press, whatever the eraser is over is shown in red. It works on either instrument's staves, and never adds anything.
 
-Everything one stroke takes out is undone in one go. Clicking the eraser button again, or choosing a note length, dynamic or hairpin, goes back to adding those. Chord names and numerals aren't erased; take a chord out with Remove Chord in its window, or by erasing its notes.
+Everything one stroke takes out is undone in one go. Clicking the eraser button again, or choosing a note length, dynamic or hairpin, goes back to adding those. Chord names and numerals aren't erased; take a chord out with Remove Chord in its window, or by erasing its notes. Turning the eraser on turns Edit off.
+
+### Editing notes
+
+The **Edit** button, just left of the eraser, turns editing on, and is blue while it's on. Clicking it again turns it off. While it's on, a note under the pointer is blue and the pointer becomes a hand:
+
+- **Drag** a note to move it. A faint note shows where it will go, and it goes to the line or space and beat where you let go, on either staff, snapping to the nearest step of its length without its dot, as clicks add notes, or to where a note already starts. It keeps its length. Moved along its own line or space, it keeps its sharp or flat; moved to another, it takes the key signature's. Notes it lands on are treated as when a note is added there: one starting at the same point joins it in a chord, taking its length. It won't move into a measure whose chord has that staff, and a tie from it is let go of.
+- **Click** a note, without dragging, for a menu of note lengths, each shown with its note, and its own length ticked. Lengths too long for the rest of the measure are greyed out. Choosing one changes the note's length, and the notes starting with it change too, as notes starting together share a length. **Delete**, at the bottom, takes the note out.
+
+Anywhere there isn't a note, clicks and drags do what they do anyway: they add notes of the length chosen, or mark the dynamic, hairpin or pedal chosen, so you can edit and add without switching back and forth. Choosing a note length, dynamic, hairpin or pedal leaves Edit on. A chord's notes aren't edited this way; clicking one takes it out of the chord, as before. Each move or change is undone in one go.
 
 ### Chords
 
@@ -192,13 +201,13 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | `Source/ScoreHistory.*` | Remembers the score before each change, or each eraser stroke, for Undo and Redo |
 | `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics, hairpins and their velocities |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
-| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instruments', and turns clicks and drags into notes, dynamics and hairpins, or erases them |
+| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instruments', and turns clicks and drags into notes, dynamics and hairpins, erases them, or moves notes and changes their lengths |
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, major or minor, time signature, alternate staff, Copy Progression and Scale |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |
 | `Source/DynamicPicker.*` | The ppp to fff, crescendo and decrescendo buttons for choosing what clicks and drags mark |
 | `Source/EraserButton.*` | The eraser button, and the eraser the pointer becomes |
-| `Source/NoteLengthPicker.*` | The whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, 16th and 32nd note buttons for choosing the length of the notes clicks add |
+| `Source/NoteLengthPicker.*` | The whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, 16th and 32nd note buttons for choosing the length of the notes clicks add, and the notes drawn on them, which a note's menu shows too |
 | `Source/PianoKeyboard.*` | The on-screen piano |
 | `Source/Controls.h` | Colours and helpers shared by the controls, and the play, stop and record buttons |
 | `Source/InstrumentHost.*` | Hosts each instrument's plugin, and plays them from the piano, MIDI controllers and the score, once or looping, noting the keys played while recording |

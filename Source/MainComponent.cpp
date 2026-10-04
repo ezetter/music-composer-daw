@@ -27,6 +27,7 @@ namespace
     constexpr int measureButtonsWidth = 84;     // the measure buttons, after the final barline
     constexpr int measureButtonsGap = 14;       // between the final barline and them
     constexpr int eraserMargin = 10;            // from the eraser to the scroll bar
+    constexpr int editButtonWidth = 44, editButtonGap = 6;     // the Edit button, to the eraser's left
     constexpr int cloneButtonWidth = 56, cloneButtonHeight = 26;
     constexpr int rightMargin = measureButtonsGap + measureButtonsWidth + 12;      // after the final barline, for the measure buttons
 
@@ -238,6 +239,8 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     noteLengthPicker.onChange = [this] (double beats) { setNoteLength (beats); };
     dynamicPicker.onChange = [this] (std::optional<music::Marking> marking) { setMarking (marking); };
     eraserButton.onClick = [this] { setErasing (! eraserButton.getToggleState()); };
+    editButton.setTooltip ("Edit notes: drag a note to move it, or click one to change its length or delete it");
+    editButton.onClick = [this] { setEditing (! editButton.getToggleState()); };
     setNoteLength (1.0);
 
     scorePanel.onCopyProgression = [this] (int toPart) { copyProgression (toPart); };
@@ -255,6 +258,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     addAndMakeVisible (noteLengthPicker);
     addAndMakeVisible (dynamicPicker);
     addAndMakeVisible (eraserButton);
+    addAndMakeVisible (editButton);
 
     for (auto* component : std::initializer_list<juce::Component*> { &addMeasureButton, &removeMeasureButton, &cloneButton })
         staffSystems.addAndMakeVisible (component);
@@ -395,6 +399,7 @@ void MainComponent::resized()
     dynamicPicker.setTopLeftPosition (noteLengthPicker.getRight() + 14, noteLengthPicker.getY());
     eraserButton.setBounds (staffViewport.getRight() - staffViewport.getScrollBarThickness() - eraserMargin - EraserButton::buttonWidth,
                             noteLengthPicker.getY(), EraserButton::buttonWidth, EraserButton::buttonHeight);
+    editButton.setBounds (eraserButton.getBounds().withWidth (editButtonWidth).translated (-editButtonWidth - editButtonGap, 0));
 
     staffSystems.setMinimumHeight (staffViewport.getHeight() - staffViewport.getScrollBarThickness());
     positionVolumeDials();
@@ -586,6 +591,8 @@ void MainComponent::insertTrack (int index, bool reloadFromSettings)
         view.setErasing (true);
     else if (const auto marking = dynamicPicker.getChoice())
         view.setMarking (marking);
+
+    view.setEditing (editButton.getToggleState());
 
     // A part being added starts at 0 dB, rather than with whatever its number had before.
     setVolume (index, reloadFromSettings ? (float) settings.getDoubleValue (getVolumeKey (index), 0.0) : 0.0f, false);
@@ -826,12 +833,25 @@ void MainComponent::setErasing (bool shouldErase)
         return;
     }
 
+    setEditing (false);
     eraserButton.setToggleState (true, juce::dontSendNotification);
     dynamicPicker.setChoice ({});
     noteLengthPicker.setChoiceShown (false);
 
     for (auto& view : staffSystems.views)
         view->setErasing (true);
+}
+
+void MainComponent::setEditing (bool shouldEdit)
+{
+    // Editing goes with adding notes or marking, as before, but not with erasing.
+    if (shouldEdit && eraserButton.getToggleState())
+        setErasing (false);
+
+    editButton.setToggleState (shouldEdit, juce::dontSendNotification);
+
+    for (auto& view : staffSystems.views)
+        view->setEditing (shouldEdit);
 }
 
 void MainComponent::showPartTitles()

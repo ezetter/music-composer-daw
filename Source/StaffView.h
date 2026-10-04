@@ -22,6 +22,9 @@
     unties them; dragging anywhere else does nothing. Above each measure is a button to add a
     chord to it, or edit the one it has.
 
+    With editing on, dragging a note of its own moves it, and clicking one offers a menu of
+    lengths to change it to, and Delete; anywhere else, clicks and drags do what they would anyway.
+
     With a dynamic chosen, clicks mark it instead, between the staves, at the beat clicked. With
     a crescendo or decrescendo chosen, dragging along the staves marks one as long as the drag,
     and dragging the end of one stretches it. With the eraser, whatever the mouse passes over
@@ -65,6 +68,37 @@ public:
         the mouse is red, to show it would go. Nothing's added.
     */
     void setErasing (bool);
+
+    /** Turns editing notes on or off. While it's on, dragging a note moves it to wherever it's
+        let go, and clicking one without dragging offers a menu of note lengths to change it to,
+        and Delete. Clicks and drags anywhere else, and on a chord's notes, do what they would
+        anyway: adding notes of the length chosen, or marking what's chosen.
+    */
+    void setEditing (bool);
+
+    /** The note of its own whose head is at a point, as it's written, for editing: its pitch,
+        sharp or flat and all, and how long it is. A chord's notes aren't edited.
+    */
+    std::optional<Note> findEditableNoteAt (juce::Point<float>) const;
+
+    /** Where a note being moved would go if it were let go at a point: on the line or space
+        there, at the nearest step of its length without its dot, or where a note starts, as long
+        as the measure's chord doesn't have the staff. It keeps its length, and its sharp or flat
+        if it stays on its line or space; on another, it takes the key signature's.
+    */
+    std::optional<Note> getMoveTarget (const Note&, juce::Point<float>) const;
+
+    /** The menu clicking a note while editing shows: its lengths, the ones that fit in what's left
+        of its measure, with its own ticked, and Delete.
+    */
+    juce::PopupMenu createNoteMenu (const Note&) const;
+
+    /** Does what was chosen from a note's menu: changes its length, along with the notes starting
+        with it, or takes it out. Nothing happens if the note's gone in the meantime.
+    */
+    void applyNoteMenuChoice (const Note&, int itemId);
+
+    static constexpr int deleteNoteItemId = 1000;   // the menu's other items are the lengths, in 32nds
 
     /** Called when an eraser stroke starts and finishes, so everything it takes out can be undone together. */
     std::function<void()> onEraseStarted, onEraseFinished;
@@ -208,7 +242,8 @@ private:
         A note on its own in a group keeps its flag.
     */
     static std::vector<std::vector<size_t>> groupBeams (const std::vector<const StaffEvent*>& notes);
-    void drawNote (juce::Graphics&, Staff, const NoteLayout&, bool rolled, std::optional<int> highlightedPosition) const;
+    void drawNote (juce::Graphics&, Staff, const NoteLayout&, bool rolled, std::optional<int> highlightedPosition,
+                   juce::Colour highlightColour) const;
     void drawStem (juce::Graphics&, Staff, const NoteLayout&) const;
     void drawBeams (juce::Graphics&, Staff, std::vector<NoteLayout*>&) const;
     void drawLedgerLines (juce::Graphics&, Staff, const std::vector<int>& staffPositions,
@@ -216,6 +251,17 @@ private:
     void drawRollSign (juce::Graphics&, float right, float top, float bottom) const;
     void drawLabels (juce::Graphics&, int measure) const;
     void drawHoverNote (juce::Graphics&) const;
+
+    /** A faint notehead, for a note that a click or a drag would put there. */
+    void drawGhostNote (juce::Graphics&, const Note&) const;
+
+    /** A note being moved, where it would go. */
+    void drawMoveHint (juce::Graphics&) const;
+    void setEditHover (std::optional<Note>);
+    void showNoteMenu (const Note&);
+
+    /** Moves a note, taking it out where it was and adding it where it's going. */
+    void moveNote (const Note& from, const Note& to);
     void drawDynamics (juce::Graphics&, int measure) const;
     void drawHoverDynamic (juce::Graphics&) const;
     float getDynamicBaseline() const;
@@ -341,6 +387,11 @@ private:
         clicked into the staff, rather than a chord's.
     */
     std::optional<Note> getTieableNoteAt (juce::Point<float>) const;
+
+    /** The note clicking at this point would add, on a grid of the nearest step of a length
+        without its dot, though notes already there can be clicked wherever they start.
+    */
+    std::optional<Note> getNoteAt (juce::Point<float>, double gridLength) const;
     void drawCentred (juce::Graphics&, juce::juce_wchar glyph, float centreX, float y) const;
 
     /** The note already written where this note would go, if any. */
@@ -362,6 +413,10 @@ private:
     std::optional<HairpinMark> hoverHairpin, pressedHairpin;     // the hairpin under the mouse, and one a click would take out
     std::optional<HairpinDrag> hairpinDrag;
     bool erasing = false, erasingStroke = false;    // the eraser's chosen, and its button's down
+    bool editing = false;
+    std::optional<Note> editHover;                  // while editing, the note of its own under the mouse
+    std::optional<Note> editedNote, moveTarget;     // the note the mouse went down on while editing, and where a drag would move it
+    MusicGlyphs menuGlyphs;                         // for the notes in a note's menu
     juce::Point<float> lastErasePoint;
     Erasable hoverErasable;
     juce::String title;

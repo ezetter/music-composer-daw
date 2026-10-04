@@ -4,7 +4,6 @@
 
 namespace
 {
-    constexpr float glyphStaffSpace = 6.5f;     // the notes are drawn as if on a staff this size
     constexpr int gap = 3;
 }
 
@@ -69,9 +68,12 @@ NoteLengthPicker::NoteButton::NoteButton (const MusicGlyphs& glyphsToUse, double
 
 void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
-    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    const auto ink = controls::drawSymbolButtonTile (g, *this, highlighted, down);
+    g.setColour (controls::drawSymbolButtonTile (g, *this, highlighted, down));
+    drawNote (g, glyphs, beats, getLocalBounds().toFloat().reduced (0.5f));
+}
 
+void NoteLengthPicker::drawNote (juce::Graphics& g, const MusicGlyphs& glyphs, double beats, juce::Rectangle<float> bounds)
+{
     // The note: an open notehead for a whole or half note, a filled one for a dotted quarter or
     // shorter, a stem up for all but the whole note, flags on the stems of an eighth, 16th or 32nd,
     // and a dot after a dotted half, quarter or eighth.
@@ -91,7 +93,6 @@ void NoteLengthPicker::NoteButton::paintButton (juce::Graphics& g, bool highligh
     const auto origin = juce::Point<float> (centre.x - headBounds.getCentreX(),
                                             centre.y + noteHeight / 2.0f - headBounds.getBottom());
 
-    g.setColour (ink);
     glyphs.draw (g, glyph, origin);
 
     if (dotted)

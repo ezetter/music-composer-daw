@@ -37,6 +37,14 @@ public:
 
     static constexpr int buttonSize = 28;
 
+    /** The notes are drawn as if on a staff with spaces this size. */
+    static constexpr float glyphStaffSpace = 6.5f;
+
+    /** Draws a note of a length, in beats, in the current colour, centred in an area the size of
+        a button, with glyphs sized for glyphStaffSpace.
+    */
+    static void drawNote (juce::Graphics&, const MusicGlyphs&, double beats, juce::Rectangle<float> area);
+
 private:
     /** A button showing a note. */
     struct NoteButton final : public juce::Button
