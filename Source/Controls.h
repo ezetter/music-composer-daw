@@ -62,6 +62,68 @@ namespace controls
         }
     };
 
+    /** A small button with a triangle pointing up or down, for stepping a number, as one of a
+        pair stacked beside a text box. Held down, it goes on stepping.
+    */
+    struct StepButton final : public juce::Button
+    {
+        explicit StepButton (bool pointsUp)
+            : juce::Button (pointsUp ? "Up" : "Down"),
+              up (pointsUp)
+        {
+            setWantsKeyboardFocus (false);
+            setRepeatSpeed (400, 70, 20);
+        }
+
+        /** Called when the mouse goes down on it, and when it's let go, around the steps it takes. */
+        std::function<void()> onPress, onRelease;
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (onPress != nullptr)
+                onPress();
+
+            juce::Button::mouseDown (e);
+        }
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            juce::Button::mouseUp (e);
+
+            if (onRelease != nullptr)
+                onRelease();
+        }
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            // The upper one's rounded at its top right, the lower one at its bottom right.
+            const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+            juce::Path outline;
+            outline.addRoundedRectangle (bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight(), 4.0f, 4.0f,
+                                         false, up, false, ! up);
+
+            g.setColour (! isEnabled() ? juce::Colours::white
+                         : down        ? accentLight.darker (0.08f)
+                         : highlighted ? accentLight
+                                       : juce::Colours::white);
+            g.fillPath (outline);
+            g.setColour (juce::Colours::black.withAlpha (0.25f));
+            g.strokePath (outline, juce::PathStrokeType (1.0f));
+
+            const auto centre = bounds.getCentre();
+            const auto halfWidth = 4.0f, height = 4.0f;
+            juce::Path triangle;
+            triangle.addTriangle (centre.x - halfWidth, centre.y + (up ? height : -height) / 2.0f,
+                                  centre.x + halfWidth, centre.y + (up ? height : -height) / 2.0f,
+                                  centre.x, centre.y - (up ? height : -height) / 2.0f);
+            g.setColour (! isEnabled() ? juce::Colours::black.withAlpha (0.2f) : highlighted || down ? accent : secondaryText);
+            g.fillPath (triangle);
+        }
+
+    private:
+        const bool up;
+    };
+
     /** A small capitalised heading over a control, such as "KEY". */
     inline void makeHeading (juce::Label& label, const juce::String& text)
     {

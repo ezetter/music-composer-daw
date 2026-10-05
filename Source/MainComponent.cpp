@@ -223,6 +223,22 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     tempoEditor.onReturnKey = [this] { tempoEdited (true); tempoEditor.giveAwayKeyboardFocus(); };
     tempoEditor.onFocusLost = [this] { tempoEdited (true); };
 
+    // The arrows beside it step it up and down, as the up and down arrow keys do while typing in
+    // it. Holding an arrow down goes on stepping, and is undone in one go.
+    tempoEditor.addKeyListener (this);
+    tempoUpButton.setTooltip ("Faster");
+    tempoDownButton.setTooltip ("Slower");
+
+    for (auto [button, direction] : { std::pair { &tempoUpButton, 1 }, { &tempoDownButton, -1 } })
+    {
+        button->onClick = [this, step = direction] { stepTempo (step); };
+        button->onPress = [this] { history.beginGesture(); };
+        button->onRelease = [this] { history.endGesture(); };
+        addAndMakeVisible (*button);
+    }
+
+    updateTempoArrows();
+
 
     // The active part, which the keyboard plays
     partBox.setTooltip ("The instrument the keyboard plays, and whose alternate staff and progression the sidebar sets");
@@ -365,6 +381,7 @@ MainComponent::~MainComponent()
     for (auto* button : { &addMeasureButton, &removeMeasureButton })
         button->setLookAndFeel (nullptr);
 
+    tempoEditor.removeKeyListener (this);
     audioDeviceManager.removeAudioCallback (&instrumentHost);
     score.removeChangeListener (this);
     document.removeChangeListener (this);
@@ -406,6 +423,10 @@ void MainComponent::resized()
     tempoLabel.setBounds (toolbar.removeFromLeft (34));
     toolbar.removeFromLeft (4);
     tempoEditor.setBounds (toolbar.removeFromLeft (56));
+    toolbar.removeFromLeft (2);
+    auto arrows = toolbar.removeFromLeft (18);
+    tempoUpButton.setBounds (arrows.removeFromTop (arrows.getHeight() / 2));
+    tempoDownButton.setBounds (arrows);
     toolbar.removeFromLeft (20);
     partBox.setBounds (toolbar.removeFromLeft (150));
     toolbar.removeFromLeft (20);
@@ -461,8 +482,15 @@ void MainComponent::parentHierarchyChanged()
     showDocumentTitle();
 }
 
-bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
+bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component* originatingComponent)
 {
+    // Typing the tempo, the up and down arrow keys step it.
+    if (originatingComponent == &tempoEditor && (key == juce::KeyPress::upKey || key == juce::KeyPress::downKey))
+    {
+        stepTempo (key == juce::KeyPress::upKey ? 1 : -1);
+        return true;
+    }
+
     if (key == juce::KeyPress::escapeKey && placingScale)
     {
         stopPlacingScale();
@@ -495,6 +523,8 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     // The tempo can change by loading a score, so show it unless it's being typed.
     if (! tempoEditor.hasKeyboardFocus (false))
         tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
+
+    updateTempoArrows();
 
     // A loop plays changes to the score from the next time through.
     if (instrumentHost.getPlaybackPosition().has_value())
@@ -1209,6 +1239,29 @@ void MainComponent::tempoEdited (bool finished)
     }
 
     tempoEditor.repaint();
+}
+
+void MainComponent::stepTempo (int direction)
+{
+    // From a fraction, to the whole number either side of it
+    const auto beatsPerMinute = score.getBeatsPerMinute();
+    const auto stepped = direction > 0 ? std::floor (beatsPerMinute) + 1.0 : std::ceil (beatsPerMinute) - 1.0;
+    score.setBeatsPerMinute (juce::jlimit (Score::minBeatsPerMinute, Score::maxBeatsPerMinute, stepped));
+
+    // Shown straight away, even while it's being typed, which it replaces
+    tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
+
+    for (auto colourId : { juce::TextEditor::outlineColourId, juce::TextEditor::focusedOutlineColourId })
+        tempoEditor.removeColour (colourId);
+
+    tempoEditor.repaint();
+    updateTempoArrows();
+}
+
+void MainComponent::updateTempoArrows()
+{
+    tempoUpButton.setEnabled (score.getBeatsPerMinute() < Score::maxBeatsPerMinute);
+    tempoDownButton.setEnabled (score.getBeatsPerMinute() > Score::minBeatsPerMinute);
 }
 
 void MainComponent::addMeasure()

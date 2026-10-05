@@ -252,6 +252,12 @@ private:
     void cloneMeasures();
     void showHeldNotes();
     void tempoEdited (bool finished);
+
+    /** Steps the tempo to the next whole number up or down, within its range. */
+    void stepTempo (int direction);
+
+    /** Greys out the arrow that would take the tempo past its range. */
+    void updateTempoArrows();
     void scoreReplaced();
     void showDocumentTitle();
     void showPartTitles();
@@ -296,6 +302,7 @@ private:
     juce::TextButton loopButton { "Loop" };
     juce::Label tempoLabel;
     juce::TextEditor tempoEditor;
+    controls::StepButton tempoUpButton { true }, tempoDownButton { false };     // beside it, stacked
     juce::ComboBox partBox;             // the active part
     std::vector<Track> tracks;          // for each part, in order; only the active part's instrument panel shows
 
