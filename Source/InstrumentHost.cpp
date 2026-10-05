@@ -65,9 +65,8 @@ void InstrumentHost::insertPart (int index)
         nextNoteEvents.insert (nextNoteEvents.begin() + index, 0);
 
         // Whatever's playing has nothing for it.
-        for (auto* p : { &passage, &nextPassage })
-            if (index <= (int) p->events.size())
-                p->events.insert (p->events.begin() + index, std::vector<NoteEvent>());
+        if (index <= (int) passage.events.size())
+            passage.events.insert (passage.events.begin() + index, std::vector<NoteEvent>());
     }
 }
 
@@ -83,9 +82,8 @@ void InstrumentHost::removePart (int index)
         slots.erase (slots.begin() + index);
         nextNoteEvents.erase (nextNoteEvents.begin() + index);
 
-        for (auto* p : { &passage, &nextPassage })
-            if (index < (int) p->events.size())
-                p->events.erase (p->events.begin() + index);
+        if (index < (int) passage.events.size())
+            passage.events.erase (passage.events.begin() + index);
 
         // The keyboard moves on to whichever part's active now, which the caller chooses.
         if (keyboardPart > index || keyboardPart >= (int) slots.size())
@@ -182,7 +180,6 @@ void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure
         const juce::ScopedLock sl (lock);
 
         std::swap (passage, newPassage);
-        hasNextPassage = false;
         std::fill (nextNoteEvents.begin(), nextNoteEvents.end(), 0);
         position = 0;
         nextPosition = 0;
@@ -195,7 +192,7 @@ void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure
     // The old passage is freed here, outside the lock.
 }
 
-void InstrumentHost::updateLoop (const Score& score, int firstMeasure, int lastMeasure)
+void InstrumentHost::updatePlaying (const Score& score, int firstMeasure, int lastMeasure)
 {
     double currentSampleRate = 0.0;
 
@@ -216,11 +213,49 @@ void InstrumentHost::updateLoop (const Score& score, int firstMeasure, int lastM
         if (! playing)
             return;
 
-        std::swap (nextPassage, newPassage);
-        hasNextPassage = true;
+        // The same beat, at the new tempo
+        if (passage.secondsPerBeat > 0.0)
+            position = (int64_t) std::llround ((double) position * newPassage.secondsPerBeat / passage.secondsPerBeat);
+
+        nextPosition = position;
+        std::swap (passage, newPassage);
+
+        // Each part carries on from its first event that hasn't been played yet. What it's
+        // played so far is made to match the new passage: notes sounding that it wouldn't have
+        // stop, and the pedal goes where it would be.
+        for (size_t part = 0; part < slots.size(); ++part)
+        {
+            auto& slot = *slots[part];
+            auto& next = nextNoteEvents[part];
+            std::bitset<128> sounding;
+            auto pedalDown = false;
+            next = 0;
+
+            if (part < passage.events.size())
+            {
+                for (const auto& events = passage.events[part]; next < events.size() && events[next].sample < position; ++next)
+                {
+                    if (events[next].isPedal)
+                        pedalDown = events[next].isNoteOn;
+                    else
+                        sounding[(size_t) events[next].noteNumber] = events[next].isNoteOn;
+                }
+            }
+
+            slot.pendingNoteOffs |= slot.scoreNotesOn & ~sounding;
+            slot.scoreNotesOn &= sounding;
+
+            if (slot.scorePedalDown != pedalDown)
+            {
+                slot.pendingPedal = pedalDown ? 1 : 0;
+                slot.scorePedalDown = pedalDown;
+            }
+        }
+
+        playbackPosition = getBeatsPlayed();
     }
 
-    // Whatever was waiting before is freed here, outside the lock.
+    // The old passage is freed here, outside the lock.
 }
 
 InstrumentHost::Passage InstrumentHost::createPassage (const Score& score, int firstMeasure, int lastMeasure, double sampleRate)
@@ -642,6 +677,21 @@ void InstrumentHost::addScoreEvents (int numSamples)
         releaseScoreNotes = false;
     }
 
+    // Notes the score no longer has where they were sounding, and the pedal, as it's changed
+    for (auto& slot : slots)
+    {
+        for (size_t noteNumber = 0; noteNumber < slot->pendingNoteOffs.size(); ++noteNumber)
+            if (slot->pendingNoteOffs[noteNumber])
+                slot->midi.addEvent (juce::MidiMessage::noteOff (midiChannel, (int) noteNumber), 0);
+
+        slot->pendingNoteOffs.reset();
+
+        if (slot->pendingPedal >= 0)
+            slot->midi.addEvent (juce::MidiMessage::controllerEvent (midiChannel, 64, slot->pendingPedal > 0 ? 127 : 0), 0);
+
+        slot->pendingPedal = -1;
+    }
+
     if (! playing)
         return;
 
@@ -688,19 +738,12 @@ void InstrumentHost::addScoreEvents (int numSamples)
         }
 
         // When looping, the next time through can start part way through the block, once
-        // everything in this one has been played. It plays any changes made to the score since.
+        // everything in this one has been played.
         if (! looping || passage.length <= 0 || ! allPlayed || start + passage.length >= numSamples)
             break;
 
         start += passage.length;
         std::fill (nextNoteEvents.begin(), nextNoteEvents.end(), 0);
-
-        if (hasNextPassage)
-        {
-            // Swapping, rather than moving, leaves the old one to be freed on the message thread.
-            std::swap (passage, nextPassage);
-            hasNextPassage = false;
-        }
     }
 
     nextPosition = numSamples - start;

@@ -526,9 +526,9 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     updateTempoArrows();
 
-    // A loop plays changes to the score from the next time through.
+    // Changes to the score are heard as soon as playback reaches them.
     if (instrumentHost.getPlaybackPosition().has_value())
-        instrumentHost.updateLoop (score, 0, score.getNumMeasures() - 1);
+        instrumentHost.updatePlaying (score, 0, score.getNumMeasures() - 1);
 
     showHeldNotes();
 }

@@ -78,10 +78,12 @@ public:
     */
     void setLooping (bool);
 
-    /** Changes the measures being played to the score as it is now, from the next time through
-        when looping. Playing through once is left as it is.
+    /** Changes the measures being played to the score as it is now, straight away, carrying on
+        from the beat playback has got to: notes added ahead of it play when it reaches them, and
+        a new tempo takes over from there. Notes sounding that the score no longer has there stop,
+        and the sustain pedal goes down or comes up if the score now says it should be.
     */
-    void updateLoop (const Score&, int firstMeasure, int lastMeasure);
+    void updatePlaying (const Score&, int firstMeasure, int lastMeasure);
 
     /** How far playback has got, in beats from the start of the score, or nothing if it's stopped. */
     std::optional<double> getPlaybackPosition() const noexcept;
@@ -149,6 +151,8 @@ private:
         juce::MidiBuffer midi;
         std::bitset<128> scoreNotesOn;      // notes from the score that are sounding
         bool scorePedalDown = false;        // whether the score has the sustain pedal down
+        std::bitset<128> pendingNoteOffs;   // notes to stop at the start of the next block, as the score's changed
+        int pendingPedal = -1;              // and the pedal to put down (1) or let up (0) then, if it needs to
         std::atomic<float> volume { 0.0f };                 // in decibels
         std::atomic<bool> muted { false };
         juce::SmoothedValue<float> gain { 1.0f };           // following the volume, so changes don't click
@@ -182,8 +186,6 @@ private:
     int blockSize = 0;
 
     Passage passage;                    // what's playing
-    Passage nextPassage;                // what the loop plays next time through, if hasNextPassage
-    bool hasNextPassage = false;
     std::vector<size_t> nextNoteEvents;            // for each part
     int64_t position = 0;               // in samples since this time through started, at the start of the block being played
     int64_t nextPosition = 0;           // where the next block starts, once this one's been played
