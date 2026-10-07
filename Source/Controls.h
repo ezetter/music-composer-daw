@@ -47,6 +47,48 @@ namespace controls
         return chosen ? accent : juce::Colour (0xff1b1b1b);
     }
 
+    /** A toolbar button showing a loop: two semicircular arrows, the upper one going round to the
+        right and the lower one back to the left, blue while it's on. Its text names it, for
+        accessibility.
+    */
+    struct LoopButton final : public juce::TextButton
+    {
+        LoopButton() : juce::TextButton ("Loop") {}
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            getLookAndFeel().drawButtonBackground (g, *this, findColour (getToggleState() ? buttonOnColourId : buttonColourId),
+                                                   highlighted, down);
+
+            const auto colour = getToggleState() ? accent : juce::Colour (0xff3a3d44);
+            const auto centre = getLocalBounds().toFloat().getCentre();
+            constexpr float radiusX = 8.5f, radiusY = 5.5f;
+            constexpr auto degrees = juce::MathConstants<float>::pi / 180.0f;
+
+            // Angles go clockwise from the top. Each arrow runs from one side, round the top or
+            // the bottom, nearly to the other, where its head points on round the loop.
+            const auto pointAt = [&] (float angle) { return centre + juce::Point<float> (radiusX * std::sin (angle), -radiusY * std::cos (angle)); };
+
+            g.setColour (colour);
+
+            for (const auto [from, to] : { std::pair { -115.0f, 52.0f }, { 65.0f, 232.0f } })
+            {
+                juce::Path arc;
+                arc.addCentredArc (centre.x, centre.y, radiusX, radiusY, 0.0f, from * degrees, to * degrees, true);
+                g.strokePath (arc, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+
+                // The head, along the way the arc's going at its end
+                const auto end = pointAt (to * degrees);
+                const auto direction = juce::Point<float> (radiusX * std::cos (to * degrees), radiusY * std::sin (to * degrees));
+                const auto along = direction / direction.getDistanceFromOrigin();
+                const juce::Point<float> across { -along.y, along.x };
+                juce::Path head;
+                head.addTriangle (end + along * 3.0f, end - along * 1.4f + across * 3.0f, end - along * 1.4f - across * 3.0f);
+                g.fillPath (head);
+            }
+        }
+    };
+
     /** A toolbar button showing a metronome: a pyramid on a base, with its pendulum swung to one
         side, blue while it's on. Its text names it, for accessibility.
     */

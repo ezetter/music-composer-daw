@@ -436,7 +436,7 @@ void MainComponent::resized()
     auto toolbar = bounds.removeFromTop (toolbarHeight).reduced (12, 8);
     playButton.setBounds (toolbar.removeFromLeft (46));
     recordButton.setBounds (toolbar.removeFromLeft (46));
-    loopButton.setBounds (toolbar.removeFromLeft (64));
+    loopButton.setBounds (toolbar.removeFromLeft (44));
     metronomeButton.setBounds (toolbar.removeFromLeft (44));
     toolbar.removeFromLeft (16);
     tempoLabel.setBounds (toolbar.removeFromLeft (34));
