@@ -85,7 +85,7 @@ public:
     */
     void updatePlaying (const Score&, int firstMeasure, int lastMeasure);
 
-    /** Turns the metronome on or off: while the score plays, it sounds each beat, a bell on the
+    /** Turns the metronome on or off: while the score plays, it sounds each beat, a clang on the
         first beat of each measure and a click on the others. This can change while it plays.
     */
     void setMetronome (bool shouldTick) noexcept { metronome = shouldTick; }
@@ -180,9 +180,11 @@ private:
         int delay = 0;                                  // the samples into the block before it starts
     };
 
-    /** The metronome's sounds, at a sample rate: a short woody click, and a bell, which rings on. */
+    /** The metronome's sounds, at a sample rate: a short woody click, and a sharp metallic clang,
+        for the first beat of each measure.
+    */
     static std::vector<float> createClick (double sampleRate);
-    static std::vector<float> createBell (double sampleRate);
+    static std::vector<float> createClang (double sampleRate);
 
     void startMetronomeSound (bool downbeat, int delay);
     void addMetronome (juce::AudioBuffer<float>& output, int numSamples);
@@ -218,7 +220,7 @@ private:
     std::vector<size_t> nextNoteEvents;            // for each part
     size_t nextBeat = 0;                            // the next of the passage's beats for the metronome
     std::atomic<bool> metronome { false };
-    std::vector<float> clickSound, bellSound;
+    std::vector<float> clickSound, clangSound;
     std::array<MetronomeVoice, 6> metronomeVoices;
     int64_t position = 0;               // in samples since this time through started, at the start of the block being played
     int64_t nextPosition = 0;           // where the next block starts, once this one's been played

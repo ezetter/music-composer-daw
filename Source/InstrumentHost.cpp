@@ -12,7 +12,7 @@ namespace
 
     // How loud the metronome is, at its loudest
     constexpr float clickLevel = 0.32f;
-    constexpr float bellLevel = 0.3f;
+    constexpr float clangLevel = 0.36f;
 
     // A chord's notes sound this far apart, from the bottom up: a little for a block chord, so
     // it doesn't sound machine-struck, and more for a rolled one.
@@ -482,7 +482,7 @@ void InstrumentHost::prepareToPlay (double newSampleRate, int maximumBlockSize)
     blockSize = maximumBlockSize;
     midiInput.reset (newSampleRate);
     clickSound = createClick (sampleRate);
-    bellSound = createBell (sampleRate);
+    clangSound = createClang (sampleRate);
     metronomeVoices = {};
     midiInputReady = true;
 
@@ -824,15 +824,17 @@ std::vector<float> InstrumentHost::createClick (double rate)
     return sound;
 }
 
-std::vector<float> InstrumentHost::createBell (double rate)
+std::vector<float> InstrumentHost::createClang (double rate)
 {
-    // A small bell: a fundamental and the inharmonic partials above it, the higher ones dying
-    // away sooner, struck with a quick attack
-    struct Partial { double ratio, amplitude, decay; };
-    constexpr Partial partials[] { { 1.0, 1.0, 0.45 }, { 2.0, 0.55, 0.3 }, { 2.76, 0.4, 0.22 },
-                                   { 5.4, 0.25, 0.12 }, { 8.93, 0.15, 0.06 } };
-    constexpr double fundamental = 1046.5;      // C6
-    std::vector<float> sound ((size_t) std::lround (1.2 * rate));
+    // A sharp clang, like a cowbell's: struck metal that's gone in a moment rather than ringing
+    // on. Two tones a little under a fifth apart, as in the classic drum machine cowbell, and
+    // higher, inharmonic overtones, all dying away fast, over a burst of noise for the strike, and
+    // driven a little hard for a metallic edge.
+    struct Partial { double frequency, amplitude, decay; };
+    constexpr Partial partials[] { { 830.0, 1.0, 0.06 }, { 1205.0, 0.8, 0.045 }, { 2470.0, 0.45, 0.028 },
+                                   { 3540.0, 0.3, 0.018 }, { 5310.0, 0.2, 0.01 } };
+    std::vector<float> sound ((size_t) std::lround (0.25 * rate));
+    juce::Random noise (2);
     auto peak = 0.0f;
 
     for (size_t i = 0; i < sound.size(); ++i)
@@ -841,21 +843,24 @@ std::vector<float> InstrumentHost::createBell (double rate)
         auto value = 0.0;
 
         for (const auto& partial : partials)
-            value += partial.amplitude * std::sin (juce::MathConstants<double>::twoPi * fundamental * partial.ratio * t) * std::exp (-t / partial.decay);
+            value += partial.amplitude * std::sin (juce::MathConstants<double>::twoPi * partial.frequency * t) * std::exp (-t / partial.decay);
 
-        sound[i] = (float) (value * juce::jmin (1.0, t / 0.0015));
+        // Loudest as it's struck, settling quickly into what's left of the clang
+        value *= 0.55 + 0.45 * std::exp (-t / 0.01);
+        value += 0.6 * (noise.nextDouble() * 2.0 - 1.0) * std::exp (-t / 0.0015);
+        sound[i] = (float) std::tanh (1.6 * value);
         peak = juce::jmax (peak, std::abs (sound[i]));
     }
 
     for (auto& sample : sound)
-        sample *= bellLevel / peak;
+        sample *= clangLevel / peak;
 
     return sound;
 }
 
 void InstrumentHost::startMetronomeSound (bool downbeat, int delay)
 {
-    const auto* sound = downbeat ? &bellSound : &clickSound;
+    const auto* sound = downbeat ? &clangSound : &clickSound;
 
     if (sound->empty())
         return;

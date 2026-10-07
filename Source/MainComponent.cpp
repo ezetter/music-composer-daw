@@ -219,7 +219,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     metronomeButton.setClickingTogglesState (true);
     metronomeButton.setToggleState (settings.getBoolValue (metronomeKey), juce::dontSendNotification);
     metronomeButton.setColour (juce::TextButton::buttonOnColourId, controls::accentLight);
-    metronomeButton.setTooltip ("Metronome: a bell on the first beat of each measure, and a click on the others, as the score plays or records");
+    metronomeButton.setTooltip ("Metronome: a clang on the first beat of each measure, and a click on the others, as the score plays or records");
     metronomeButton.onClick = [this]
     {
         settings.setValue (metronomeKey, metronomeButton.getToggleState());
