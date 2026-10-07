@@ -39,6 +39,9 @@ namespace
     // Where Loop is kept in the settings
     const char* const loopKey = "loop";
 
+    // And the metronome
+    const char* const metronomeKey = "metronome";
+
     // The MIDI menu's items are numbered from here, in the order of the inputs they're for.
     constexpr int firstMidiInputItem = 1000;
 
@@ -198,7 +201,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     // Loop is remembered from one run of the app to the next.
     playButton.setConnectedEdges (juce::Button::ConnectedOnRight);
     recordButton.setConnectedEdges (juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
-    loopButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    loopButton.setConnectedEdges (juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
     loopButton.setClickingTogglesState (true);
     loopButton.setToggleState (settings.getBoolValue (loopKey), juce::dontSendNotification);
     loopButton.setColour (juce::TextButton::buttonOnColourId, controls::accentLight);
@@ -209,6 +212,20 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
         settings.setValue (loopKey, loopButton.getToggleState());
         instrumentHost.setLooping (loopButton.getToggleState());
     };
+
+    // The metronome ticks each beat as the score plays or records, and is remembered too.
+    metronomeButton.setButtonText ("Metronome");
+    metronomeButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    metronomeButton.setClickingTogglesState (true);
+    metronomeButton.setToggleState (settings.getBoolValue (metronomeKey), juce::dontSendNotification);
+    metronomeButton.setColour (juce::TextButton::buttonOnColourId, controls::accentLight);
+    metronomeButton.setTooltip ("Metronome: a bell on the first beat of each measure, and a click on the others, as the score plays or records");
+    metronomeButton.onClick = [this]
+    {
+        settings.setValue (metronomeKey, metronomeButton.getToggleState());
+        instrumentHost.setMetronome (metronomeButton.getToggleState());
+    };
+    instrumentHost.setMetronome (metronomeButton.getToggleState());
 
     tempoLabel.setText ("BPM", juce::dontSendNotification);
     tempoLabel.setFont (juce::FontOptions (12.5f));
@@ -250,8 +267,9 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
     playButton.setWantsKeyboardFocus (false);
     recordButton.setWantsKeyboardFocus (false);
     loopButton.setWantsKeyboardFocus (false);
+    metronomeButton.setWantsKeyboardFocus (false);
 
-    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &recordButton, &loopButton, &tempoLabel, &tempoEditor, &partBox })
+    for (auto* component : std::initializer_list<juce::Component*> { &playButton, &recordButton, &loopButton, &metronomeButton, &tempoLabel, &tempoEditor, &partBox })
         addAndMakeVisible (component);
 
     staffSystems.onAddPart = [this] { addPart(); };
@@ -419,6 +437,7 @@ void MainComponent::resized()
     playButton.setBounds (toolbar.removeFromLeft (46));
     recordButton.setBounds (toolbar.removeFromLeft (46));
     loopButton.setBounds (toolbar.removeFromLeft (64));
+    metronomeButton.setBounds (toolbar.removeFromLeft (44));
     toolbar.removeFromLeft (16);
     tempoLabel.setBounds (toolbar.removeFromLeft (34));
     toolbar.removeFromLeft (4);

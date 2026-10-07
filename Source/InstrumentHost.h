@@ -85,6 +85,12 @@ public:
     */
     void updatePlaying (const Score&, int firstMeasure, int lastMeasure);
 
+    /** Turns the metronome on or off: while the score plays, it sounds each beat, a bell on the
+        first beat of each measure and a click on the others. This can change while it plays.
+    */
+    void setMetronome (bool shouldTick) noexcept { metronome = shouldTick; }
+    bool isMetronomeOn() const noexcept { return metronome; }
+
     /** How far playback has got, in beats from the start of the score, or nothing if it's stopped. */
     std::optional<double> getPlaybackPosition() const noexcept;
 
@@ -130,10 +136,18 @@ private:
         bool isPedal = false;
     };
 
+    /** A beat, for the metronome: where it is, and whether it's the first of its measure. */
+    struct Beat
+    {
+        int64_t sample;
+        bool downbeat;
+    };
+
     /** Some measures of the score, ready to play. */
     struct Passage
     {
         std::vector<std::vector<NoteEvent>> events;     // for each part
+        std::vector<Beat> beats;
         int64_t length = 0;             // in samples
         double secondsPerBeat = 0.5;
         int beatsPerMeasure = 4;
@@ -157,6 +171,21 @@ private:
         std::atomic<bool> muted { false };
         juce::SmoothedValue<float> gain { 1.0f };           // following the volume, so changes don't click
     };
+
+    /** A metronome sound playing, and how far it's got. */
+    struct MetronomeVoice
+    {
+        const std::vector<float>* sound = nullptr;     // null when it's finished
+        size_t played = 0;
+        int delay = 0;                                  // the samples into the block before it starts
+    };
+
+    /** The metronome's sounds, at a sample rate: a short woody click, and a bell, which rings on. */
+    static std::vector<float> createClick (double sampleRate);
+    static std::vector<float> createBell (double sampleRate);
+
+    void startMetronomeSound (bool downbeat, int delay);
+    void addMetronome (juce::AudioBuffer<float>& output, int numSamples);
 
     juce::Optional<PositionInfo> getPosition() const override;
 
@@ -187,6 +216,10 @@ private:
 
     Passage passage;                    // what's playing
     std::vector<size_t> nextNoteEvents;            // for each part
+    size_t nextBeat = 0;                            // the next of the passage's beats for the metronome
+    std::atomic<bool> metronome { false };
+    std::vector<float> clickSound, bellSound;
+    std::array<MetronomeVoice, 6> metronomeVoices;
     int64_t position = 0;               // in samples since this time through started, at the start of the block being played
     int64_t nextPosition = 0;           // where the next block starts, once this one's been played
     bool looping = false;

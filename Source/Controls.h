@@ -47,6 +47,45 @@ namespace controls
         return chosen ? accent : juce::Colour (0xff1b1b1b);
     }
 
+    /** A toolbar button showing a metronome: a pyramid on a base, with its pendulum swung to one
+        side, blue while it's on. Its text names it, for accessibility.
+    */
+    struct MetronomeButton final : public juce::TextButton
+    {
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            getLookAndFeel().drawButtonBackground (g, *this, findColour (getToggleState() ? buttonOnColourId : buttonColourId),
+                                                   highlighted, down);
+
+            const auto colour = getToggleState() ? accent : juce::Colour (0xff3a3d44);
+            const auto area = getLocalBounds().toFloat().withSizeKeepingCentre (16.0f, 20.0f);
+            const auto centreX = area.getCentreX();
+            const auto bodyBottom = area.getBottom() - 3.0f;
+            const juce::PathStrokeType stroke (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+
+            // The body, narrowing to its top, on a base
+            juce::Path body;
+            body.startNewSubPath (centreX - 2.6f, area.getY() + 0.7f);
+            body.lineTo (centreX + 2.6f, area.getY() + 0.7f);
+            body.lineTo (centreX + 6.6f, bodyBottom);
+            body.lineTo (centreX - 6.6f, bodyBottom);
+            body.closeSubPath();
+
+            g.setColour (colour.withAlpha (0.13f));
+            g.fillPath (body);
+            g.setColour (colour);
+            g.strokePath (body, stroke);
+            g.fillRoundedRectangle (area.withTop (bodyBottom).withTrimmedTop (0.6f), 1.0f);
+
+            // The pendulum, from its pivot near the bottom, swung to the right, with its weight
+            const juce::Point<float> pivot { centreX, bodyBottom - 3.2f };
+            const juce::Point<float> tip { centreX + 6.2f, area.getY() + 2.0f };
+            g.drawLine ({ pivot, tip }, 1.4f);
+            const auto weight = pivot + (tip - pivot) * 0.62f;
+            g.fillRoundedRectangle (juce::Rectangle<float> (4.4f, 3.0f).withCentre (weight), 0.8f);
+        }
+    };
+
     /** A button with a word on it, drawn like the small symbol buttons over the score, such as
         the eraser's, blue while it's on.
     */

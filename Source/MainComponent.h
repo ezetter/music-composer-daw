@@ -300,6 +300,7 @@ private:
     controls::TransportButton playButton { controls::TransportButton::Symbol::play };          // a stop button while playing
     controls::TransportButton recordButton { controls::TransportButton::Symbol::record };
     juce::TextButton loopButton { "Loop" };
+    controls::MetronomeButton metronomeButton;     // beside Loop
     juce::Label tempoLabel;
     juce::TextEditor tempoEditor;
     controls::StepButton tempoUpButton { true }, tempoDownButton { false };     // beside it, stacked

@@ -10,6 +10,10 @@ namespace
 {
     constexpr int midiChannel = 1;
 
+    // How loud the metronome is, at its loudest
+    constexpr float clickLevel = 0.32f;
+    constexpr float bellLevel = 0.3f;
+
     // A chord's notes sound this far apart, from the bottom up: a little for a block chord, so
     // it doesn't sound machine-struck, and more for a rolled one.
     constexpr double blockChordSpread = 0.012;
@@ -181,6 +185,7 @@ void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure
 
         std::swap (passage, newPassage);
         std::fill (nextNoteEvents.begin(), nextNoteEvents.end(), 0);
+        nextBeat = 0;
         position = 0;
         nextPosition = 0;
         looping = loop;
@@ -219,6 +224,9 @@ void InstrumentHost::updatePlaying (const Score& score, int firstMeasure, int la
 
         nextPosition = position;
         std::swap (passage, newPassage);
+
+        // The metronome carries on from the next beat.
+        for (nextBeat = 0; nextBeat < passage.beats.size() && passage.beats[nextBeat].sample < position; ++nextBeat) {}
 
         // Each part carries on from its first event that hasn't been played yet. What it's
         // played so far is made to match the new passage: notes sounding that it wouldn't have
@@ -269,6 +277,17 @@ InstrumentHost::Passage InstrumentHost::createPassage (const Score& score, int f
     result.beatsPerMeasure = score.getBeatsPerMeasure();
     result.secondsPerBeat = score.getSecondsPerMeasure() / result.beatsPerMeasure;
     result.firstBeat = (double) (firstMeasure * result.beatsPerMeasure);
+
+    // The metronome's beats, the first of each measure its downbeat
+    for (int beat = 0;; ++beat)
+    {
+        const auto sample = (int64_t) std::llround ((double) beat * result.secondsPerBeat * sampleRate);
+
+        if (sample >= result.length)
+            break;
+
+        result.beats.push_back ({ sample, beat % result.beatsPerMeasure == 0 });
+    }
 
     // Nothing sounds past the end, so a loop's notes are all finished before it starts again.
     for (auto& events : result.events)
@@ -462,6 +481,9 @@ void InstrumentHost::prepareToPlay (double newSampleRate, int maximumBlockSize)
     sampleRate = newSampleRate;
     blockSize = maximumBlockSize;
     midiInput.reset (newSampleRate);
+    clickSound = createClick (sampleRate);
+    bellSound = createBell (sampleRate);
+    metronomeVoices = {};
     midiInputReady = true;
 
     for (auto& slotPointer : slots)
@@ -572,6 +594,7 @@ void InstrumentHost::audioDeviceIOCallbackWithContext (const float* const*, int,
                 output.addFrom (channel, 0, slot.buffer, juce::jmin (channel, numInstrumentOutputs - 1), 0, numSamples);
     }
 
+    addMetronome (output, numSamples);
     advancePlayback();
 }
 
@@ -737,6 +760,21 @@ void InstrumentHost::addScoreEvents (int numSamples)
             allPlayed = allPlayed && next == events.size();
         }
 
+        // The metronome's beats, heard only while it's on
+        for (; nextBeat < passage.beats.size(); ++nextBeat)
+        {
+            const auto& beat = passage.beats[nextBeat];
+            const auto samplePosition = start + beat.sample;
+
+            if (samplePosition >= numSamples)
+                break;
+
+            if (metronome)
+                startMetronomeSound (beat.downbeat, (int) juce::jmax ((int64_t) 0, samplePosition));
+        }
+
+        allPlayed = allPlayed && nextBeat == passage.beats.size();
+
         // When looping, the next time through can start part way through the block, once
         // everything in this one has been played.
         if (! looping || passage.length <= 0 || ! allPlayed || start + passage.length >= numSamples)
@@ -744,6 +782,7 @@ void InstrumentHost::addScoreEvents (int numSamples)
 
         start += passage.length;
         std::fill (nextNoteEvents.begin(), nextNoteEvents.end(), 0);
+        nextBeat = 0;
     }
 
     nextPosition = numSamples - start;
@@ -764,4 +803,99 @@ void InstrumentHost::advancePlayback()
     }
 
     playbackPosition = playing ? getBeatsPlayed() : -1.0;
+}
+
+//==============================================================================
+std::vector<float> InstrumentHost::createClick (double rate)
+{
+    // A woodblock's knock: two high partials dying away in a few milliseconds, over a burst of noise
+    std::vector<float> sound ((size_t) std::lround (0.05 * rate));
+    juce::Random noise (1);
+
+    for (size_t i = 0; i < sound.size(); ++i)
+    {
+        const auto t = (double) i / rate;
+        const auto tone = 0.65 * std::sin (juce::MathConstants<double>::twoPi * 1900.0 * t)
+                        + 0.35 * std::sin (juce::MathConstants<double>::twoPi * 3100.0 * t);
+        sound[i] = clickLevel * (float) (tone * std::exp (-t / 0.006)
+                                         + 0.35 * (noise.nextDouble() * 2.0 - 1.0) * std::exp (-t / 0.0012));
+    }
+
+    return sound;
+}
+
+std::vector<float> InstrumentHost::createBell (double rate)
+{
+    // A small bell: a fundamental and the inharmonic partials above it, the higher ones dying
+    // away sooner, struck with a quick attack
+    struct Partial { double ratio, amplitude, decay; };
+    constexpr Partial partials[] { { 1.0, 1.0, 0.45 }, { 2.0, 0.55, 0.3 }, { 2.76, 0.4, 0.22 },
+                                   { 5.4, 0.25, 0.12 }, { 8.93, 0.15, 0.06 } };
+    constexpr double fundamental = 1046.5;      // C6
+    std::vector<float> sound ((size_t) std::lround (1.2 * rate));
+    auto peak = 0.0f;
+
+    for (size_t i = 0; i < sound.size(); ++i)
+    {
+        const auto t = (double) i / rate;
+        auto value = 0.0;
+
+        for (const auto& partial : partials)
+            value += partial.amplitude * std::sin (juce::MathConstants<double>::twoPi * fundamental * partial.ratio * t) * std::exp (-t / partial.decay);
+
+        sound[i] = (float) (value * juce::jmin (1.0, t / 0.0015));
+        peak = juce::jmax (peak, std::abs (sound[i]));
+    }
+
+    for (auto& sample : sound)
+        sample *= bellLevel / peak;
+
+    return sound;
+}
+
+void InstrumentHost::startMetronomeSound (bool downbeat, int delay)
+{
+    const auto* sound = downbeat ? &bellSound : &clickSound;
+
+    if (sound->empty())
+        return;
+
+    // A free voice, or else the one that's played longest, which is nearly finished
+    auto* voice = &metronomeVoices.front();
+
+    for (auto& candidate : metronomeVoices)
+    {
+        if (candidate.sound == nullptr)
+        {
+            voice = &candidate;
+            break;
+        }
+
+        if (candidate.played > voice->played)
+            voice = &candidate;
+    }
+
+    *voice = { sound, 0, delay };
+}
+
+void InstrumentHost::addMetronome (juce::AudioBuffer<float>& output, int numSamples)
+{
+    for (auto& voice : metronomeVoices)
+    {
+        if (voice.sound == nullptr)
+            continue;
+
+        const auto& sound = *voice.sound;
+        const auto from = juce::jmin (voice.delay, numSamples);
+        const auto count = (int) juce::jmin ((size_t) (numSamples - from), sound.size() - voice.played);
+
+        for (int channel = 0; channel < output.getNumChannels(); ++channel)
+            output.addFrom (channel, from, sound.data() + voice.played, count);
+
+        voice.played += (size_t) count;
+        voice.delay = juce::jmax (0, voice.delay - numSamples);
+
+        if (voice.played >= sound.size())
+            voice.sound = nullptr;
+    }
 }
