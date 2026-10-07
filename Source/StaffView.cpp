@@ -1983,6 +1983,18 @@ float StaffView::getScoreBeatsX (double beats) const
     return getOnsetX (measure, beat);
 }
 
+int StaffView::getBeatAt (float x) const
+{
+    const auto beats = score.getNumMeasures() * score.getBeatsPerMeasure();
+    auto nearest = 0;
+
+    for (int beat = 1; beat < beats; ++beat)
+        if (std::abs (getScoreBeatsX (beat) - x) < std::abs (getScoreBeatsX (nearest) - x))
+            nearest = beat;
+
+    return nearest;
+}
+
 juce::Range<float> StaffView::getPedalSpan (const std::vector<PedalSpan>& pedals, size_t index) const
 {
     const auto& pedal = pedals[index];

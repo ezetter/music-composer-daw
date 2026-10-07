@@ -190,6 +190,14 @@ public:
     /** Where the final barline is, across the view. */
     int getFinalBarlineX() const;
 
+    /** Where a point in the score, in beats from its start, is across the view: where notes on
+        its beat go, or part of the way on to the next beat.
+    */
+    float getBeatX (double scoreBeats) const { return getScoreBeatsX (scoreBeats); }
+
+    /** The beat nearest to a point across the view, counted from the start of the score. */
+    int getBeatAt (float x) const;
+
     /** Highlights the beat that's playing, given in beats from the start of the score. */
     void setPlaybackPosition (std::optional<double> beats);
 

@@ -37,6 +37,7 @@ target_sources(AnthropoceneMusic
         Source/NoteLengthPicker.cpp
         Source/PianoKeyboard.cpp
         Source/PluginWindow.cpp
+        Source/PositionRuler.cpp
         Source/Recorder.cpp
         Source/Score.cpp
         Source/ScaleTool.cpp

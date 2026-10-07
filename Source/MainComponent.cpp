@@ -332,8 +332,14 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
         staffSystems.addAndMakeVisible (component);
 
     updateRemoveMeasureButton();
-    staffSystems.onLayoutChanged = [this] { positionVolumeDials(); positionMeasureButtons(); };
-    staffViewport.onScroll = [this] { positionVolumeDials(); positionMeasureButtons(); };
+    staffSystems.onLayoutChanged = [this] { positionVolumeDials(); positionMeasureButtons(); positionRuler.repaint(); };
+    staffViewport.onScroll = [this] { positionVolumeDials(); positionMeasureButtons(); positionRuler.repaint(); };
+
+    // The ruler follows the first part's staves, as they all line up, and where they've scrolled to.
+    positionRuler.getView = [this] { return staffSystems.views.empty() ? nullptr : staffSystems.views[0].get(); };
+    positionRuler.getScrolledX = [this] { return staffViewport.getViewPositionX(); };
+    positionRuler.onBeatChosen = [this] (int beat) { choosePlaybackStart (beat); };
+    addAndMakeVisible (positionRuler);
 
     // A track for each part of the new score, with the instruments, volumes and muting it had last time
     for (int part = 0; part < score.getNumParts(); ++part)
@@ -373,7 +379,7 @@ MainComponent::MainComponent (juce::PropertiesFile& settingsToUse)
 
     setActivePart (0);
     showPartTitles();
-    setSize (1676, 920);    // wide enough for four measures of most music, and the buttons after them
+    setSize (1676, 944);    // wide enough for four measures of most music, and the buttons after them, and tall enough for two instruments
 
     juce::AudioDeviceManager::AudioDeviceSetup preferredSetup;
     preferredSetup.bufferSize = 256;    // small enough for the keyboard to feel immediate
@@ -423,6 +429,7 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (StaffView::paperColour);
     g.fillRect (staffViewport.getBounds());
     g.fillRect (volumeColumn.getBounds());
+    g.fillRect (positionRuler.getBounds().withLeft (volumeColumn.getX()));
 
     g.setColour (juce::Colours::black.withAlpha (0.15f));
     g.fillRect (0, toolbarHeight - 1, getWidth(), 1);
@@ -464,8 +471,11 @@ void MainComponent::resized()
     keyboard.setBounds (bounds.removeFromBottom (keyboardHeight));
     keyboard.setKeyWidth ((float) keyboard.getWidth() / (float) numWhiteKeys);
 
+    // The ruler goes along the top of the staves, the volume dials and staves under it.
+    auto rulerRow = bounds.removeFromTop (PositionRuler::height);
     volumeColumn.setBounds (bounds.removeFromLeft (volumeColumnWidth));
     staffViewport.setBounds (bounds);
+    positionRuler.setBounds (rulerRow.withLeft (staffViewport.getX()));
 
     // The note length and dynamic buttons stay in the top left corner of the score, over the
     // staves as they scroll, and the eraser in the top right corner, clear of the scroll bar.
@@ -544,6 +554,11 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         tempoEditor.setText (formatNumber (score.getBeatsPerMinute()), false);
 
     updateTempoArrows();
+
+    // Where the score plays from stays within it, as measures come and go and the time signature changes.
+    playbackStart = juce::jlimit (0.0, (double) (score.getNumMeasures() * score.getBeatsPerMeasure() - 1), playbackStart);
+    positionRuler.setMarker (instrumentHost.getPlaybackPosition().value_or (playbackStart), instrumentHost.getPlaybackPosition().has_value());
+    positionRuler.repaint();
 
     // Changes to the score are heard as soon as playback reaches them.
     if (instrumentHost.getPlaybackPosition().has_value())
@@ -1153,10 +1168,29 @@ void MainComponent::togglePlayback()
     }
     else
     {
-        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState());
+        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState(), playbackStart);
         startTimerHz (30);
         showPlaybackPosition();
     }
+}
+
+void MainComponent::choosePlaybackStart (int beat)
+{
+    playbackStart = beat;
+
+    if (const auto position = instrumentHost.getPlaybackPosition())
+    {
+        // Keys held while recording end where it jumps from.
+        if (instrumentHost.isRecording())
+        {
+            recordPlayedKeys();
+            recorder.finish (position);
+        }
+
+        instrumentHost.jumpTo (beat);
+    }
+
+    showPlaybackPosition();
 }
 
 void MainComponent::toggleRecording()
@@ -1170,7 +1204,7 @@ void MainComponent::toggleRecording()
 
     if (! instrumentHost.getPlaybackPosition().has_value())
     {
-        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState());
+        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState(), playbackStart);
         startTimerHz (30);
     }
 
@@ -1216,6 +1250,9 @@ void MainComponent::showPlaybackPosition()
 
     for (auto& view : staffSystems.views)
         view->setPlaybackPosition (position);
+
+    // The ruler's marker is where it's playing, or where it'll start from.
+    positionRuler.setMarker (position.value_or (playbackStart), position.has_value());
 
     if (! position.has_value())
     {
@@ -1523,6 +1560,7 @@ void MainComponent::scoreReplaced()
 
     history.clear();
     instrumentHost.stop();
+    playbackStart = 0.0;
     showPlaybackPosition();
     closeChordEditor();
     staffViewport.setViewPosition (0, 0);

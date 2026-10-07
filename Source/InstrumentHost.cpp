@@ -166,7 +166,7 @@ int InstrumentHost::getBlockSize() const
 }
 
 //==============================================================================
-void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure, bool loop)
+void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure, bool loop, double startBeat)
 {
     double currentSampleRate = 0.0;
 
@@ -190,8 +190,13 @@ void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure
         nextPosition = 0;
         looping = loop;
         playing = true;
-        releaseScoreNotes = true;
-        playbackPosition = passage.firstBeat;
+
+        // From the start, or part way through: the notes that were sounding stop, and the pedal
+        // goes where the score has it there.
+        position = juce::jlimit ((int64_t) 0, passage.length,
+                                 (int64_t) std::llround ((startBeat - passage.firstBeat) * passage.secondsPerBeat * sampleRate));
+        nextPosition = position;
+        catchUp (false);
     }
 
     // The old passage is freed here, outside the lock.
@@ -224,46 +229,66 @@ void InstrumentHost::updatePlaying (const Score& score, int firstMeasure, int la
 
         nextPosition = position;
         std::swap (passage, newPassage);
-
-        // The metronome carries on from the next beat.
-        for (nextBeat = 0; nextBeat < passage.beats.size() && passage.beats[nextBeat].sample < position; ++nextBeat) {}
-
-        // Each part carries on from its first event that hasn't been played yet. What it's
-        // played so far is made to match the new passage: notes sounding that it wouldn't have
-        // stop, and the pedal goes where it would be.
-        for (size_t part = 0; part < slots.size(); ++part)
-        {
-            auto& slot = *slots[part];
-            auto& next = nextNoteEvents[part];
-            std::bitset<128> sounding;
-            auto pedalDown = false;
-            next = 0;
-
-            if (part < passage.events.size())
-            {
-                for (const auto& events = passage.events[part]; next < events.size() && events[next].sample < position; ++next)
-                {
-                    if (events[next].isPedal)
-                        pedalDown = events[next].isNoteOn;
-                    else
-                        sounding[(size_t) events[next].noteNumber] = events[next].isNoteOn;
-                }
-            }
-
-            slot.pendingNoteOffs |= slot.scoreNotesOn & ~sounding;
-            slot.scoreNotesOn &= sounding;
-
-            if (slot.scorePedalDown != pedalDown)
-            {
-                slot.pendingPedal = pedalDown ? 1 : 0;
-                slot.scorePedalDown = pedalDown;
-            }
-        }
-
-        playbackPosition = getBeatsPlayed();
+        catchUp (true);
     }
 
     // The old passage is freed here, outside the lock.
+}
+
+void InstrumentHost::jumpTo (double beat)
+{
+    const juce::ScopedLock sl (lock);
+
+    if (! playing)
+        return;
+
+    position = juce::jlimit ((int64_t) 0, passage.length,
+                             (int64_t) std::llround ((beat - passage.firstBeat) * passage.secondsPerBeat * sampleRate));
+    nextPosition = position;
+    catchUp (false);
+}
+
+void InstrumentHost::catchUp (bool keepNotesSounding)
+{
+    // The metronome carries on from the next beat.
+    for (nextBeat = 0; nextBeat < passage.beats.size() && passage.beats[nextBeat].sample < position; ++nextBeat) {}
+
+    // Each part carries on from its first event that hasn't been played yet. What it's played
+    // so far is made to match: notes sounding that it wouldn't have stop, or all of them, and the
+    // pedal goes where it would be.
+    for (size_t part = 0; part < slots.size(); ++part)
+    {
+        auto& slot = *slots[part];
+        auto& next = nextNoteEvents[part];
+        std::bitset<128> sounding;
+        auto pedalDown = false;
+        next = 0;
+
+        if (part < passage.events.size())
+        {
+            for (const auto& events = passage.events[part]; next < events.size() && events[next].sample < position; ++next)
+            {
+                if (events[next].isPedal)
+                    pedalDown = events[next].isNoteOn;
+                else
+                    sounding[(size_t) events[next].noteNumber] = events[next].isNoteOn;
+            }
+        }
+
+        if (! keepNotesSounding)
+            sounding.reset();
+
+        slot.pendingNoteOffs |= slot.scoreNotesOn & ~sounding;
+        slot.scoreNotesOn &= sounding;
+
+        if (slot.scorePedalDown != pedalDown)
+        {
+            slot.pendingPedal = pedalDown ? 1 : 0;
+            slot.scorePedalDown = pedalDown;
+        }
+    }
+
+    playbackPosition = getBeatsPlayed();
 }
 
 InstrumentHost::Passage InstrumentHost::createPassage (const Score& score, int firstMeasure, int lastMeasure, double sampleRate)
@@ -710,7 +735,10 @@ void InstrumentHost::addScoreEvents (int numSamples)
         slot->pendingNoteOffs.reset();
 
         if (slot->pendingPedal >= 0)
+        {
             slot->midi.addEvent (juce::MidiMessage::controllerEvent (midiChannel, 64, slot->pendingPedal > 0 ? 127 : 0), 0);
+            slot->scorePedalDown = slot->pendingPedal > 0;
+        }
 
         slot->pendingPedal = -1;
     }
@@ -749,6 +777,11 @@ void InstrumentHost::addScoreEvents (int numSamples)
                     slot.scorePedalDown = event.isNoteOn;
                     continue;
                 }
+
+                // A note that didn't start, as playing started after it, isn't stopped, in case
+                // the same key's being played.
+                if (! event.isNoteOn && ! slot.scoreNotesOn[(size_t) event.noteNumber])
+                    continue;
 
                 slot.midi.addEvent (event.isNoteOn ? juce::MidiMessage::noteOn (midiChannel, event.noteNumber, event.velocity)
                                                    : juce::MidiMessage::noteOff (midiChannel, event.noteNumber),

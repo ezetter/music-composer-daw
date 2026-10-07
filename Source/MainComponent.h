@@ -9,6 +9,7 @@
 #include "EraserButton.h"
 #include "NoteLengthPicker.h"
 #include "PianoKeyboard.h"
+#include "PositionRuler.h"
 #include "Recorder.h"
 #include "Score.h"
 #include "ScoreDocument.h"
@@ -231,6 +232,9 @@ private:
     void pianoKeyClicked (int midiNote);
     void togglePlayback();
 
+    /** Chooses the beat the score plays from, counted from its start, jumping there if it's playing. */
+    void choosePlaybackStart (int beat);
+
     /** Starts recording what's played into the active part, playing the score if it isn't
         already, or stops recording, playing on.
     */
@@ -313,6 +317,8 @@ private:
 
     StaffSystems staffSystems { score };
     ScrollingViewport staffViewport;
+    PositionRuler positionRuler { score };     // along the top of the staves, for choosing where the score plays from
+    double playbackStart = 0.0;             // where Play and Record start, in beats from the start of the score
 
     controls::DialLookAndFeel dialLookAndFeel;
     NoteLengthPicker noteLengthPicker;  // at the top left of the score, over the staves: the length of the notes that clicks add

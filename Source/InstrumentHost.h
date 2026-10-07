@@ -70,8 +70,14 @@ public:
     /** Plays some measures of the score, as they are now, every part on its own instrument. Does
         nothing unless the audio is running. When looping, they play over and over until stopped.
     */
-    void play (const Score&, int firstMeasure, int lastMeasure, bool loop = false);
+    void play (const Score&, int firstMeasure, int lastMeasure, bool loop = false, double startBeat = 0.0);
     void stop();
+
+    /** Jumps to a beat, counted from the start of the score, while it's playing, carrying on
+        from there. The score's notes that were sounding stop, and the sustain pedal goes where
+        the score has it there. Notes that started before the beat aren't started part way.
+    */
+    void jumpTo (double beat);
 
     /** Whether playback goes back to the start of the measures it's playing when it reaches the
         end of them, rather than stopping. This can change while they're playing.
@@ -193,6 +199,13 @@ private:
 
     /** Where playback is, in beats from the start of the score, a number of samples into the block being played. */
     double getBeatsPlayed (int64_t samplesIntoBlock = 0) const noexcept;
+
+    /** With the lock held, after the position's moved or the passage has changed: carries on from
+        the first notes and beats not played yet, stopping the score's notes that are sounding,
+        all of them or the ones the passage doesn't have sounding there, and putting the pedal
+        where the passage has it.
+    */
+    void catchUp (bool keepNotesSounding);
     void recordKeys (const juce::MidiBuffer&);
     void allocateInstrumentBuffer (Slot&);
     void addScoreEvents (int numSamples);
