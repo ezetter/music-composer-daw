@@ -33,7 +33,7 @@ Recorder::Recorder (Score& scoreToUse)
 
 int Recorder::getScoreSlots() const
 {
-    return score.getNumMeasures() * score.getBeatsPerMeasure() * Score::slotsPerBeat;
+    return (int) score.getPerformanceOrder().size() * score.getBeatsPerMeasure() * Score::slotsPerBeat;
 }
 
 void Recorder::keyDown (int midiNote, double beat, int partId)
@@ -86,18 +86,32 @@ void Recorder::write (const HeldKey& key, double endBeat)
     const auto slotsPerMeasure = score.getBeatsPerMeasure() * Score::slotsPerBeat;
     const auto scoreSlots = getScoreSlots();
 
+    // Which measure as it's written each measure as it's played is
+    const auto order = score.getPerformanceOrder();
+    const auto writtenMeasure = [&] (int at) { return order[(size_t) (at / slotsPerMeasure)]; };
+
     // A note's at least a 16th, and stops where the next note on its staff starts, or the score ends.
     auto end = endBeat < key.beat ? scoreSlots : (int) std::lround (endBeat * Score::slotsPerBeat / grid) * grid;
     end = juce::jmin (juce::jmax (end, key.start + grid), key.cut.value_or (scoreSlots), scoreSlots);
+
+    // It stops where the music goes back for a repeat, too, as there's nowhere to tie it to.
+    for (auto barline = (key.start / slotsPerMeasure + 1) * slotsPerMeasure; barline < end; barline += slotsPerMeasure)
+    {
+        if (writtenMeasure (barline) != writtenMeasure (barline - 1) + 1)
+        {
+            end = barline;
+            break;
+        }
+    }
 
     // The notes it's written as, by where they start and how long they are, in 32nds from the start of the score
     std::vector<std::pair<int, int>> written;
 
     for (auto at = key.start; at < end;)
     {
-        const auto measure = at / slotsPerMeasure;
+        const auto measure = writtenMeasure (at);
         const auto slot = at % slotsPerMeasure;
-        const auto barline = (measure + 1) * slotsPerMeasure;
+        const auto barline = (at / slotsPerMeasure + 1) * slotsPerMeasure;
         const auto lastMeasure = end <= barline;
         int length = 0;
 
@@ -113,7 +127,7 @@ void Recorder::write (const HeldKey& key, double endBeat)
             auto room = juce::jmin (barline, key.cut.value_or (barline));
 
             for (auto later = end; later < room; later += grid)
-                if (! score.getNotes (part, key.staff, measure, toBeats (later - measure * slotsPerMeasure)).empty())
+                if (! score.getNotes (part, key.staff, measure, toBeats (later % slotsPerMeasure)).empty())
                     room = later;
 
             length = getNearestLength (end - at, room - at);
@@ -140,7 +154,7 @@ void Recorder::write (const HeldKey& key, double endBeat)
     {
         const auto [from, fromLength] = written[i - 1];
         const auto to = written[i].first;
-        const auto fromMeasure = from / slotsPerMeasure, toMeasure = to / slotsPerMeasure;
+        const auto fromMeasure = writtenMeasure (from), toMeasure = writtenMeasure (to);
         const auto fromBeat = toBeats (from % slotsPerMeasure), toBeat = toBeats (to % slotsPerMeasure);
 
         if (from + fromLength == to && ! score.isTied (part, key.staff, fromMeasure, fromBeat, pitch))

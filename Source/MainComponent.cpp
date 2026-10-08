@@ -557,12 +557,39 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     // Where the score plays from stays within it, as measures come and go and the time signature changes.
     playbackStart = juce::jlimit (0.0, (double) (score.getNumMeasures() * score.getBeatsPerMeasure() - 1), playbackStart);
-    positionRuler.setMarker (instrumentHost.getPlaybackPosition().value_or (playbackStart), instrumentHost.getPlaybackPosition().has_value());
     positionRuler.repaint();
 
-    // Changes to the score are heard as soon as playback reaches them.
-    if (instrumentHost.getPlaybackPosition().has_value())
-        instrumentHost.updatePlaying (score, 0, score.getNumMeasures() - 1);
+    // Changes to the score are heard as soon as playback reaches them. If the repeats have
+    // changed what's played when, it carries on from the same place in the same time through.
+    if (const auto played = instrumentHost.getPlaybackPosition())
+    {
+        const auto previousOrder = performanceOrder;
+        const auto beatsPerMeasure = score.getBeatsPerMeasure();
+        const auto index = juce::jlimit (0, juce::jmax (0, (int) previousOrder.size() - 1), (int) std::floor (*played / beatsPerMeasure));
+        updatePerformance();
+
+        if (performanceOrder != previousOrder && ! previousOrder.empty())
+        {
+            // The same time through the measure it's in, or the last time it's played now
+            const auto measure = previousOrder[(size_t) index];
+            const auto timesBefore = (size_t) std::count (previousOrder.begin(), previousOrder.begin() + index, measure);
+            std::vector<size_t> times;
+
+            for (size_t i = 0; i < performanceOrder.size(); ++i)
+                if (performanceOrder[i] == measure)
+                    times.push_back (i);
+
+            const auto found = times.empty() ? (size_t) 0 : times[juce::jmin (timesBefore, times.size() - 1)];
+            const auto beat = (double) found * beatsPerMeasure + (*played - index * beatsPerMeasure);
+            instrumentHost.updatePlaying (performance, 0, performance.getNumMeasures() - 1, beat);
+        }
+        else
+        {
+            instrumentHost.updatePlaying (performance, 0, performance.getNumMeasures() - 1);
+        }
+    }
+
+    showPlaybackPosition();
 
     showHeldNotes();
 }
@@ -1168,10 +1195,39 @@ void MainComponent::togglePlayback()
     }
     else
     {
-        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState(), playbackStart);
+        updatePerformance();
+        instrumentHost.play (performance, 0, performance.getNumMeasures() - 1, loopButton.getToggleState(), toPlayedBeats (playbackStart));
         startTimerHz (30);
         showPlaybackPosition();
     }
+}
+
+void MainComponent::updatePerformance()
+{
+    score.writePerformance (performance);
+    performanceOrder = score.getPerformanceOrder();
+}
+
+double MainComponent::toWrittenBeats (double playedBeats) const
+{
+    if (performanceOrder.empty())
+        return playedBeats;
+
+    const auto beatsPerMeasure = score.getBeatsPerMeasure();
+    const auto index = juce::jlimit (0, (int) performanceOrder.size() - 1, (int) std::floor (playedBeats / beatsPerMeasure));
+    return performanceOrder[(size_t) index] * beatsPerMeasure + (playedBeats - index * beatsPerMeasure);
+}
+
+double MainComponent::toPlayedBeats (double writtenBeats) const
+{
+    const auto beatsPerMeasure = score.getBeatsPerMeasure();
+    const auto measure = (int) std::floor (writtenBeats / beatsPerMeasure);
+    const auto first = std::find (performanceOrder.begin(), performanceOrder.end(), measure);
+
+    if (first == performanceOrder.end())
+        return writtenBeats;
+
+    return (double) std::distance (performanceOrder.begin(), first) * beatsPerMeasure + (writtenBeats - measure * beatsPerMeasure);
 }
 
 void MainComponent::choosePlaybackStart (int beat)
@@ -1187,7 +1243,7 @@ void MainComponent::choosePlaybackStart (int beat)
             recorder.finish (position);
         }
 
-        instrumentHost.jumpTo (beat);
+        instrumentHost.jumpTo (toPlayedBeats (beat));
     }
 
     showPlaybackPosition();
@@ -1204,7 +1260,8 @@ void MainComponent::toggleRecording()
 
     if (! instrumentHost.getPlaybackPosition().has_value())
     {
-        instrumentHost.play (score, 0, score.getNumMeasures() - 1, loopButton.getToggleState(), playbackStart);
+        updatePerformance();
+        instrumentHost.play (performance, 0, performance.getNumMeasures() - 1, loopButton.getToggleState(), toPlayedBeats (playbackStart));
         startTimerHz (30);
     }
 
@@ -1243,7 +1300,9 @@ void MainComponent::finishRecording (std::optional<double> beat)
 
 void MainComponent::showPlaybackPosition()
 {
-    const auto position = instrumentHost.getPlaybackPosition();
+    // Shown where it is in the score as it's written
+    const auto played = instrumentHost.getPlaybackPosition();
+    const auto position = played.has_value() ? std::optional (toWrittenBeats (*played)) : std::nullopt;
 
     playButton.setButtonText (position.has_value() ? "Stop" : "Play");
     playButton.setSymbol (position.has_value() ? controls::TransportButton::Symbol::stop : controls::TransportButton::Symbol::play);

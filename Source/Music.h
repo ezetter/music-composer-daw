@@ -259,6 +259,13 @@ namespace music
     /** The sustain pedal, whose marks say when it goes down and comes up. */
     enum class Pedal { sustain };
 
-    /** Something marked on the score to say how it's played: a dynamic, a hairpin, or the pedal. */
-    using Marking = std::variant<Dynamic, Hairpin, Pedal>;
+    /** A repeat sign: a start repeat, at the start of a measure, or an end repeat, at its end,
+        which sends the music back to the last start repeat the first time it's reached.
+    */
+    enum class Repeat { start, end };
+
+    /** Something marked on the score to say how it's played: a dynamic, a hairpin, the pedal, or
+        a repeat sign.
+    */
+    using Marking = std::variant<Dynamic, Hairpin, Pedal, Repeat>;
 }

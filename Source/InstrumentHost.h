@@ -87,9 +87,11 @@ public:
     /** Changes the measures being played to the score as it is now, straight away, carrying on
         from the beat playback has got to: notes added ahead of it play when it reaches them, and
         a new tempo takes over from there. Notes sounding that the score no longer has there stop,
-        and the sustain pedal goes down or comes up if the score now says it should be.
+        and the sustain pedal goes down or comes up if the score now says it should be. With a
+        beat, it carries on from that beat instead, as when the score's repeats have changed what
+        comes where.
     */
-    void updatePlaying (const Score&, int firstMeasure, int lastMeasure);
+    void updatePlaying (const Score&, int firstMeasure, int lastMeasure, std::optional<double> beat = {});
 
     /** Turns the metronome on or off: while the score plays, it sounds each beat, a clang on the
         first beat of each measure and a click on the others. This can change while it plays.

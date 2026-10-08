@@ -132,11 +132,13 @@ public:
         std::optional<std::pair<int, double>> dynamic;  // the measure and beat of a dynamic there
         std::optional<HairpinMark> hairpin;
         std::optional<PedalSpan> pedal;
+        std::optional<std::pair<int, music::Repeat>> repeat;    // the measure of a repeat sign there, and which it is
 
-        bool isEmpty() const { return ! note.has_value() && ! tie.has_value() && ! dynamic.has_value() && ! hairpin.has_value() && ! pedal.has_value(); }
+        bool isEmpty() const { return ! note.has_value() && ! tie.has_value() && ! dynamic.has_value() && ! hairpin.has_value() && ! pedal.has_value() && ! repeat.has_value(); }
         bool operator== (const Erasable& other) const
         {
-            return note == other.note && tie == other.tie && dynamic == other.dynamic && hairpin == other.hairpin && pedal == other.pedal;
+            return note == other.note && tie == other.tie && dynamic == other.dynamic && hairpin == other.hairpin && pedal == other.pedal
+                && repeat == other.repeat;
         }
     };
 
@@ -370,6 +372,18 @@ private:
     std::optional<music::Dynamic> getChosenDynamic() const;
     std::optional<music::Hairpin> getChosenHairpin() const;
     bool isPedalChosen() const;
+    std::optional<music::Repeat> getChosenRepeat() const;
+
+    /** The measure a click at this point would mark a repeat sign at the start or end of, if any. */
+    std::optional<int> getRepeatMeasureAt (juce::Point<float>) const;
+
+    /** Draws a repeat sign, in the current colour: at the start of a measure, a thick line, a thin
+        one and two dots on each staff, or at its end, the dots, a thin line and a thick one.
+    */
+    void drawRepeatSign (juce::Graphics&, int measure, music::Repeat) const;
+
+    /** Where a measure's repeat sign is across the view, for finding it under the eraser. */
+    juce::Range<float> getRepeatSignSpan (int measure, music::Repeat) const;
 
     /** Where clicking at this point would put a pedal mark, as a measure and beat: on or under
         the lower staff, at the nearest beat, or 32nd note where a note starts.
@@ -431,6 +445,7 @@ private:
     juce::Random random;
     std::optional<music::Marking> marking;          // marked by clicks and drags, instead of adding notes
     std::optional<std::pair<int, double>> hoverMarkPoint, pressedDynamic, pressedPedal;
+    std::optional<int> hoverRepeat, pressedRepeat;  // where a click would mark the repeat sign chosen, or take it out
     std::optional<HairpinMark> hoverHairpin, pressedHairpin;     // the hairpin under the mouse, and one a click would take out
     std::optional<HairpinDrag> hairpinDrag;
     bool erasing = false, erasingStroke = false;    // the eraser's chosen, and its button's down

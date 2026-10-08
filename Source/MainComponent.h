@@ -48,7 +48,7 @@ public:
     void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
     bool perform (const InvocationInfo&) override;
 
-    static constexpr int minimumWidth = 1170;     // room for the note length and dynamic buttons, and the eraser
+    static constexpr int minimumWidth = 1240;     // room for the note length, dynamic, pedal and repeat buttons, and Edit and the eraser
     static constexpr int minimumHeight = 640;
 
 private:
@@ -235,6 +235,15 @@ private:
     /** Chooses the beat the score plays from, counted from its start, jumping there if it's playing. */
     void choosePlaybackStart (int beat);
 
+    /** Writes the score out as it's played, with its repeats, for the instruments to play. */
+    void updatePerformance();
+
+    /** A point in the score as it's played, repeats and all, as a beat of the score as it's
+        written, and the other way, where it's first played. Both are in beats from the start.
+    */
+    double toWrittenBeats (double playedBeats) const;
+    double toPlayedBeats (double writtenBeats) const;
+
     /** Starts recording what's played into the active part, playing the score if it isn't
         already, or stops recording, playing on.
     */
@@ -298,6 +307,8 @@ private:
     Score score;
     ScoreDocument document;
     ScoreHistory history { score };
+    Score performance;                  // the score as it's played, its repeats written out, which the instruments play
+    std::vector<int> performanceOrder;  // which of the score's measures each of the performance's is
     Recorder recorder { score };
     juce::ApplicationCommandManager commandManager;
 

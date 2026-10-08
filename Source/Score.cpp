@@ -188,6 +188,8 @@ void Score::addMeasure()
     for (auto& part : parts)
         part.measures.emplace_back();
 
+    repeats.emplace_back();
+
     sendSynchronousChangeMessage();
 }
 
@@ -198,6 +200,9 @@ void Score::cloneMeasures()
         const auto copy = part.measures;
         part.measures.insert (part.measures.end(), copy.begin(), copy.end());
     }
+
+    const auto copiedRepeats = repeats;
+    repeats.insert (repeats.end(), copiedRepeats.begin(), copiedRepeats.end());
 
     sendSynchronousChangeMessage();
 }
@@ -210,8 +215,98 @@ void Score::removeLastMeasure()
     for (auto& part : parts)
         part.measures.pop_back();
 
+    repeats.pop_back();
     pruneTies();
     sendSynchronousChangeMessage();
+}
+
+//==============================================================================
+bool Score::hasRepeatStart (int measure) const
+{
+    return juce::isPositiveAndBelow (measure, (int) repeats.size()) && repeats[(size_t) measure].start;
+}
+
+bool Score::hasRepeatEnd (int measure) const
+{
+    return juce::isPositiveAndBelow (measure, (int) repeats.size()) && repeats[(size_t) measure].end;
+}
+
+void Score::setRepeatStart (int measure, bool shouldStart)
+{
+    if (! juce::isPositiveAndBelow (measure, (int) repeats.size()) || repeats[(size_t) measure].start == shouldStart)
+        return;
+
+    repeats[(size_t) measure].start = shouldStart;
+    sendSynchronousChangeMessage();
+}
+
+void Score::setRepeatEnd (int measure, bool shouldEnd)
+{
+    if (! juce::isPositiveAndBelow (measure, (int) repeats.size()) || repeats[(size_t) measure].end == shouldEnd)
+        return;
+
+    repeats[(size_t) measure].end = shouldEnd;
+    sendSynchronousChangeMessage();
+}
+
+bool Score::hasRepeats() const
+{
+    return std::any_of (repeats.begin(), repeats.end(), [] (const RepeatSigns& signs) { return signs.start || signs.end; });
+}
+
+std::vector<int> Score::getPerformanceOrder() const
+{
+    std::vector<int> order;
+    std::vector<bool> repeated (repeats.size(), false);
+    auto back = 0;      // where the next end repeat goes back to
+
+    for (auto measure = 0; measure < getNumMeasures();)
+    {
+        const auto& signs = repeats[(size_t) measure];
+
+        if (signs.start)
+            back = measure;
+
+        order.push_back (measure);
+
+        if (signs.end && ! repeated[(size_t) measure])
+        {
+            repeated[(size_t) measure] = true;
+            measure = back;
+            continue;
+        }
+
+        // Played through the second time, the next end repeat without a start goes back to here.
+        if (signs.end)
+            back = measure + 1;
+
+        ++measure;
+    }
+
+    return order;
+}
+
+void Score::writePerformance (Score& performance) const
+{
+    const auto order = getPerformanceOrder();
+    performance.parts.clear();
+
+    for (const auto& part : parts)
+    {
+        Part played { part.id, {}, part.alternateStaff };
+
+        for (auto measure : order)
+            played.measures.push_back (part.measures[(size_t) measure]);
+
+        performance.parts.push_back (std::move (played));
+    }
+
+    performance.repeats.assign (order.size(), {});
+    performance.nextPartId = nextPartId;
+    performance.keyIndex = keyIndex;
+    performance.minor = minor;
+    performance.beatsPerMeasure = beatsPerMeasure;
+    performance.beatsPerMinute = beatsPerMinute;
 }
 
 //==============================================================================
@@ -873,7 +968,8 @@ namespace
     // 11: minor keys
     // 12: a minor key's chords numbered up its own scale, rather than its relative major's
     // 13: a chord's root raised
-    constexpr int formatVersion = 13;
+    // 14: repeat signs
+    constexpr int formatVersion = 14;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
     {
@@ -927,6 +1023,7 @@ void Score::clear()
         emptied.push_back ({ part < getNumParts() ? parts[(size_t) part].id : nextPartId++ });
 
     parts = std::move (emptied);
+    repeats.assign (initialMeasures, {});
     keyIndex = 0;
     minor = false;
     beatsPerMeasure = 4;
@@ -943,6 +1040,24 @@ juce::var Score::toJSON (bool withPartIds) const
     root->setProperty ("minor", minor);
     root->setProperty ("beatsPerMeasure", beatsPerMeasure);
     root->setProperty ("beatsPerMinute", beatsPerMinute);
+
+    // The measures with repeat signs, by number from 0, if there are any
+    if (hasRepeats())
+    {
+        juce::Array<juce::var> starts, ends;
+
+        for (size_t measure = 0; measure < repeats.size(); ++measure)
+        {
+            if (repeats[measure].start)
+                starts.add ((int) measure);
+
+            if (repeats[measure].end)
+                ends.add ((int) measure);
+        }
+
+        root->setProperty ("repeatStarts", starts);
+        root->setProperty ("repeatEnds", ends);
+    }
 
     const auto measureToJSON = [] (const Measure& measure)
     {
@@ -1302,6 +1417,15 @@ juce::Result Score::loadJSON (const juce::var& json)
 
     const auto tempo = (double) json.getProperty ("beatsPerMinute", 120.0);
     beatsPerMinute = tempo >= minBeatsPerMinute && tempo <= maxBeatsPerMinute ? tempo : 120.0;
+
+    // Repeat signs, in measures the score has
+    repeats.assign ((size_t) getNumMeasures(), {});
+
+    for (const auto [key, isStart] : { std::pair { "repeatStarts", true }, { "repeatEnds", false } })
+        if (const auto* list = json.getProperty (key, {}).getArray())
+            for (const auto& item : *list)
+                if (const auto measure = readInt (item, 0, getNumMeasures() - 1, -1); measure >= 0)
+                    (isStart ? repeats[(size_t) measure].start : repeats[(size_t) measure].end) = true;
 
     // A saved random order is kept if it still fits its chord, and made again if not.
     for (auto& part : parts)

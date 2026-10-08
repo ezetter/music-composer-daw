@@ -10,8 +10,8 @@
 #include <optional>
 
 /** Small buttons, side by side, showing the dynamics from ppp to fff, then a crescendo and a
-    decrescendo hairpin, then the sustain pedal, for choosing one for the score to mark. Clicking
-    the chosen one again goes back to none.
+    decrescendo hairpin, then the sustain pedal, then start and end repeat signs, for choosing one
+    for the score to mark. Clicking the chosen one again goes back to none.
 */
 class DynamicPicker final : public juce::Component
 {
@@ -33,7 +33,7 @@ public:
     void resized() override;
 
     static constexpr int buttonWidth = 36, buttonHeight = 28;      // wide enough for ppp and fff
-    static constexpr int groupGap = 8;                              // more space between the dynamics, the hairpins and the pedal
+    static constexpr int groupGap = 8;                              // more space between the dynamics, the hairpins, the pedal and the repeat signs
 
 private:
     /** A button showing a dynamic or a hairpin. */
@@ -48,7 +48,7 @@ private:
     };
 
     MusicGlyphs glyphs;
-    std::array<std::unique_ptr<MarkingButton>, music::allDynamics.size() + 3> buttons;
+    std::array<std::unique_ptr<MarkingButton>, music::allDynamics.size() + 5> buttons;
     std::optional<music::Marking> choice;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicPicker)

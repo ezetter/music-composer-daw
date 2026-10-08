@@ -8,6 +8,10 @@
 /** Writes the keys played while recording into the score, each as a note as long as the key was
     held, on the treble staff from middle C up and the bass staff below it, in the part it played.
 
+    Keys are given where the score's got to as it's played, its repeats written out, and their
+    notes go in the measures as written: a key played the second time through a repeat goes in
+    the repeated measure, and one held as the music goes back for a repeat ends there.
+
     Notes start and end on the nearest 16th note. A note within a measure is written as the length
     nearest to how long it was held; one held over a barline is tied across it. A note still held
     when another starts on its staff ends there, as a staff has one line of notes at a time, and
@@ -47,6 +51,8 @@ private:
     };
 
     void write (const HeldKey&, double endBeat);
+
+    /** How long the score is, as it's played, its repeats and all, in 32nds. */
     int getScoreSlots() const;
 
     Score& score;

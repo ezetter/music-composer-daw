@@ -13,6 +13,12 @@ namespace
             return music::getDynamicMark (*dynamic) + " (" + music::getDynamicName (*dynamic) + "): click the score to mark it, "
                    "and the notes from there on play at velocity " + juce::String (music::getDynamicVelocity (*dynamic));
 
+        if (const auto* repeat = std::get_if<music::Repeat> (&marking))
+            return *repeat == music::Repeat::start
+                       ? juce::String ("Start repeat: click a measure to start a repeated passage there, in every instrument, or click one that's there to take it out")
+                       : juce::String ("End repeat: click a measure to end a repeated passage there, in every instrument, or click one that's there to take it out. "
+                                       "The first time the music gets there, it goes back to the start repeat, or the beginning");
+
         if (std::holds_alternative<music::Pedal> (marking))
             return "Pedal: click under an instrument's lower staff to put the sustain pedal down, and again to lift it. "
                    "Clicking between where it goes down and comes up lifts it and puts it straight down again there. "
@@ -34,7 +40,9 @@ DynamicPicker::DynamicPicker()
         const auto shown = i < numDynamics ? music::Marking (music::allDynamics[i])
                          : i == numDynamics ? music::Marking (music::Hairpin::crescendo)
                          : i == numDynamics + 1 ? music::Marking (music::Hairpin::decrescendo)
-                                                : music::Marking (music::Pedal::sustain);
+                         : i == numDynamics + 2 ? music::Marking (music::Pedal::sustain)
+                         : i == numDynamics + 3 ? music::Marking (music::Repeat::start)
+                                                : music::Marking (music::Repeat::end);
         auto& button = buttons[i];
         button = std::make_unique<MarkingButton> (glyphs, shown);
         button->setTooltip (describe (shown));
@@ -62,14 +70,15 @@ void DynamicPicker::setChoice (std::optional<music::Marking> newChoice)
 
 juce::Rectangle<int> DynamicPicker::getIdealBounds() const
 {
-    return { (int) buttons.size() * buttonWidth + ((int) buttons.size() - 1) * gap + 2 * groupGap, buttonHeight };
+    return { (int) buttons.size() * buttonWidth + ((int) buttons.size() - 1) * gap + 3 * groupGap, buttonHeight };
 }
 
 void DynamicPicker::resized()
 {
     for (size_t i = 0; i < buttons.size(); ++i)
         buttons[i]->setBounds ((int) i * (buttonWidth + gap) + (i >= music::allDynamics.size() ? groupGap : 0)
-                                   + (i >= music::allDynamics.size() + 2 ? groupGap : 0),
+                                   + (i >= music::allDynamics.size() + 2 ? groupGap : 0)
+                                   + (i >= music::allDynamics.size() + 3 ? groupGap : 0),
                                0, buttonWidth, buttonHeight);
 }
 
@@ -93,6 +102,25 @@ void DynamicPicker::MarkingButton::paintButton (juce::Graphics& g, bool highligh
         const auto glyph = Smufl::dynamics[(size_t) *dynamic];
         const auto glyphBounds = glyphs.getPath (glyph).getBounds();
         glyphs.draw (g, glyph, { centre.x - glyphBounds.getCentreX(), centre.y + 0.45f * glyphStaffSpace });
+        return;
+    }
+
+    // A repeat sign: a thick line, a thin one and two dots, the dots inside the repeated passage
+    if (const auto* repeat = std::get_if<music::Repeat> (&marking))
+    {
+        const auto start = *repeat == music::Repeat::start;
+        const auto area = getLocalBounds().toFloat().withSizeKeepingCentre (14.0f, 0.62f * (float) getHeight());
+        const auto direction = start ? 1.0f : -1.0f;
+        const auto thickX = start ? area.getX() : area.getRight() - 3.0f;
+        const auto thinX = start ? area.getX() + 5.0f : area.getRight() - 6.2f;
+        const auto dotX = start ? area.getX() + 10.0f : area.getRight() - 10.0f;
+
+        g.fillRect (juce::Rectangle<float> (thickX, area.getY(), 3.0f, area.getHeight()));
+        g.fillRect (juce::Rectangle<float> (thinX, area.getY(), 1.2f, area.getHeight()));
+
+        for (auto dy : { -0.17f, 0.17f })
+            g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre ({ dotX + direction * 0.5f, area.getCentreY() + dy * area.getHeight() }));
+
         return;
     }
 

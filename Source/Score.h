@@ -299,6 +299,30 @@ public:
     int getVelocity (int part, int measure, double beat) const;
 
     //==============================================================================
+    /** Whether a measure starts with a start repeat sign, or ends with an end repeat sign. Repeat
+        signs are the score's, for every part alike, so the parts stay together.
+    */
+    bool hasRepeatStart (int measure) const;
+    bool hasRepeatEnd (int measure) const;
+    void setRepeatStart (int measure, bool);
+    void setRepeatEnd (int measure, bool);
+
+    /** Whether there are any repeat signs. */
+    bool hasRepeats() const;
+
+    /** The measures in the order they're played. The first time an end repeat is reached, the
+        music goes back to the last start repeat before it, or if there isn't one since the last
+        end repeat it went on past, to just after that, or the beginning; the second time, it
+        goes on.
+    */
+    std::vector<int> getPerformanceOrder() const;
+
+    /** Makes another score this one as it's played: its measures in the order they're played,
+        with what's repeated written out again, and no repeat signs.
+    */
+    void writePerformance (Score&) const;
+
+    //==============================================================================
     /** The measure's chord, or null if it doesn't have one. */
     const MeasureChord* getChord (int part, int measure) const;
 
@@ -435,6 +459,12 @@ private:
         }
     };
 
+    /** The repeat signs at a measure's start and end. */
+    struct RepeatSigns
+    {
+        bool start = false, end = false;
+    };
+
     struct Part
     {
         int id = 0;
@@ -460,6 +490,7 @@ private:
     std::optional<std::pair<int, int>> getFollowingSlot (int part, Staff, int measure, int slot) const;
 
     std::vector<Part> parts;
+    std::vector<RepeatSigns> repeats = std::vector<RepeatSigns> (initialMeasures);     // for each measure
     int nextPartId = 1;
     int keyIndex = 0;
     bool minor = false;

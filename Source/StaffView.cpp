@@ -40,6 +40,10 @@ namespace
     constexpr float thinBarlineThickness = 0.16f;
     constexpr float thickBarlineThickness = 0.5f;
     constexpr float thinThickBarlineSeparation = 0.4f;
+    constexpr float repeatDotRadius = 0.22f;
+    constexpr float repeatDotSeparation = 0.45f;       // between the dots and the thin line
+    constexpr float repeatSignWidth = thickBarlineThickness + thinThickBarlineSeparation + thinBarlineThickness
+                                    + repeatDotSeparation + 2.0f * repeatDotRadius + 0.5f;     // and room after it
     constexpr float legerLineThickness = 0.16f;
     constexpr float legerLineExtension = 0.4f;
     constexpr float stemThickness = 0.12f;
@@ -375,6 +379,7 @@ void StaffView::setMarking (std::optional<music::Marking> newMarking)
     erasing = false;
     hoverErasable = {};
     hoverHairpin.reset();
+    hoverRepeat.reset();
     setMouseCursor (juce::MouseCursor::NormalCursor);
     setHoverNote ({});
     setHoverMarkPoint ({});
@@ -806,6 +811,15 @@ std::optional<music::Dynamic> StaffView::getChosenDynamic() const
     return {};
 }
 
+std::optional<music::Repeat> StaffView::getChosenRepeat() const
+{
+    if (marking.has_value())
+        if (const auto* repeat = std::get_if<music::Repeat> (&*marking))
+            return *repeat;
+
+    return {};
+}
+
 bool StaffView::isPedalChosen() const
 {
     return marking.has_value() && std::holds_alternative<music::Pedal> (*marking);
@@ -903,8 +917,14 @@ void StaffView::updateLayout()
 
         layout.beatWidth = getBeatWidth (notesPerBeat) * staffSpace;
 
-        layout.width = juce::jmax (minMeasureWidth * staffSpace,
-                                   layout.padding + measurePadding * staffSpace + (beats - 1.0f / (float) notesPerBeat) * layout.beatWidth);
+        // Repeat signs take room at the start or end.
+        const auto startRoom = score.hasRepeatStart (measure) ? repeatSignWidth * staffSpace : 0.0f;
+        const auto endRoom = score.hasRepeatEnd (measure) ? repeatSignWidth * staffSpace : 0.0f;
+        layout.padding += startRoom;
+
+        layout.width = juce::jmax (minMeasureWidth * staffSpace + startRoom,
+                                   layout.padding + measurePadding * staffSpace + (beats - 1.0f / (float) notesPerBeat) * layout.beatWidth)
+                     + endRoom;
         layout.x = x;
         x += layout.width;
 
@@ -1303,6 +1323,16 @@ void StaffView::paint (juce::Graphics& g)
     drawPedals (g);
     drawHoverDynamic (g);
     drawScaleHint (g);
+
+    // A repeat sign, faintly, where a click would mark it
+    if (const auto type = getChosenRepeat(); type.has_value() && hoverRepeat.has_value() && ! hoverHintHidden
+        && *hoverRepeat < score.getNumMeasures()
+        && ! (*type == music::Repeat::start ? score.hasRepeatStart (*hoverRepeat) : score.hasRepeatEnd (*hoverRepeat)))
+    {
+        g.setColour (hoverColour);
+        drawRepeatSign (g, *hoverRepeat, *type);
+        g.setColour (inkColour);
+    }
 }
 
 void StaffView::drawHeader (juce::Graphics& g) const
@@ -1370,7 +1400,23 @@ void StaffView::drawMeasure (juce::Graphics& g, int measure) const
 
     g.setColour (inkColour);
 
-    if (measure == score.getNumMeasures() - 1)
+    // Repeat signs, red under the eraser or where a click would take them out
+    for (auto type : { music::Repeat::start, music::Repeat::end })
+    {
+        const auto marked = type == music::Repeat::start ? score.hasRepeatStart (measure) : score.hasRepeatEnd (measure);
+        const auto underEraser = erasing && hoverErasable.repeat == std::pair { measure, type };
+        const auto clickWouldTakeOut = getChosenRepeat() == type && hoverRepeat == measure && ! hoverHintHidden;
+
+        if (marked)
+        {
+            g.setColour (underEraser || clickWouldTakeOut ? removalColour : inkColour);
+            drawRepeatSign (g, measure, type);
+            g.setColour (inkColour);
+        }
+    }
+
+    // A measure ending with a repeat sign has the sign for its barline.
+    if (! score.hasRepeatEnd (measure) && measure == score.getNumMeasures() - 1)
     {
         // A final barline: a thin line, then a thick one
         const auto thickLeft = right - thickBarlineThickness * staffSpace;
@@ -1380,7 +1426,7 @@ void StaffView::drawMeasure (juce::Graphics& g, int measure) const
         g.fillRect (juce::Rectangle<float>::leftTopRightBottom (thinRight - thinBarlineThickness * staffSpace, top,
                                                                 thinRight, bottom));
     }
-    else
+    else if (! score.hasRepeatEnd (measure))
     {
         const auto thickness = thinBarlineThickness * staffSpace;
         g.fillRect (juce::Rectangle<float> (right - thickness / 2.0f, top, thickness, bottom - top));
@@ -1900,6 +1946,65 @@ std::optional<music::Tone> StaffView::findNoteUnder (const Note& note) const
     return {};
 }
 
+void StaffView::drawRepeatSign (juce::Graphics& g, int measure, music::Repeat type) const
+{
+    const auto& layout = measureLayouts[(size_t) measure];
+    const auto top = getStaffTop (Staff::treble);
+    const auto bottom = getStaffTop (Staff::bass) + staffHeight * staffSpace;
+    const auto thick = thickBarlineThickness * staffSpace, thin = thinBarlineThickness * staffSpace;
+    const auto separation = thinThickBarlineSeparation * staffSpace;
+    const auto line = [&] (float left, float width) { g.fillRect (juce::Rectangle<float>::leftTopRightBottom (left, top, left + width, bottom)); };
+
+    // The dots, in the two spaces either side of each staff's middle line
+    const auto dots = [&] (float centreX)
+    {
+        for (auto staff : { Staff::treble, Staff::bass })
+            for (auto position : { middleLine - 1, middleLine + 1 })
+                g.fillEllipse (juce::Rectangle<float> (2.0f * repeatDotRadius * staffSpace, 2.0f * repeatDotRadius * staffSpace)
+                                   .withCentre ({ centreX, getY (staff, position) }));
+    };
+
+    if (type == music::Repeat::start)
+    {
+        // Going on from an end repeat, the two share the thick line, drawn with the end.
+        const auto left = layout.x;
+        const auto thinLeft = (measure > 0 && score.hasRepeatEnd (measure - 1)) ? left + separation : left + thick + separation;
+
+        if (! (measure > 0 && score.hasRepeatEnd (measure - 1)))
+            line (left, thick);
+
+        line (thinLeft, thin);
+        dots (thinLeft + thin + (repeatDotSeparation + repeatDotRadius) * staffSpace);
+    }
+    else
+    {
+        const auto right = layout.x + layout.width;
+        const auto thinLeft = right - thick - separation - thin;
+        line (right - thick, thick);
+        line (thinLeft, thin);
+        dots (thinLeft - (repeatDotSeparation + repeatDotRadius) * staffSpace);
+    }
+}
+
+juce::Range<float> StaffView::getRepeatSignSpan (int measure, music::Repeat type) const
+{
+    const auto& layout = measureLayouts[(size_t) measure];
+    const auto width = (repeatSignWidth - 0.5f) * staffSpace;
+
+    return type == music::Repeat::start ? juce::Range<float> (layout.x, layout.x + width)
+                                        : juce::Range<float> (layout.x + layout.width - width, layout.x + layout.width);
+}
+
+std::optional<int> StaffView::getRepeatMeasureAt (juce::Point<float> point) const
+{
+    const auto measure = findMeasure (point.x);
+
+    if (measure < 0 || ! isInClickRange (point))
+        return {};
+
+    return measure;
+}
+
 void StaffView::drawHoverNote (juce::Graphics& g) const
 {
     if (! hoverNote.has_value() || hoverHintHidden
@@ -2341,6 +2446,19 @@ void StaffView::mouseMove (const juce::MouseEvent& e)
         return;
     }
 
+    // With a repeat sign chosen, one shows faintly where a click would mark it, or the one a click would take out is red.
+    if (getChosenRepeat().has_value())
+    {
+        if (const auto measure = getRepeatMeasureAt (e.position); measure != hoverRepeat)
+        {
+            hoverRepeat = measure;
+            hoverHintHidden = false;
+            repaint();
+        }
+
+        return;
+    }
+
     // With the pedal chosen, a pedal mark shows where a click would put it.
     if (isPedalChosen())
     {
@@ -2379,6 +2497,12 @@ void StaffView::mouseExit (const juce::MouseEvent&)
     setHoverNote ({});
     setHoverMarkPoint ({});
 
+    if (hoverRepeat.has_value())
+    {
+        hoverRepeat.reset();
+        repaint();
+    }
+
     if (! editedNote.has_value())
         setEditHover ({});
 
@@ -2397,6 +2521,7 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     pressedNote.reset();
     pressedDynamic.reset();
     pressedPedal.reset();
+    pressedRepeat.reset();
     pressedHairpin.reset();
     hairpinDrag.reset();
     tieFrom.reset();
@@ -2447,6 +2572,13 @@ void StaffView::mouseDown (const juce::MouseEvent& e)
     if (isPedalChosen())
     {
         pressedPedal = getPedalPointAt (e.position);
+        return;
+    }
+
+    // With a repeat sign chosen, a click marks it, or takes it out, when the mouse is let go.
+    if (getChosenRepeat().has_value())
+    {
+        pressedRepeat = getRepeatMeasureAt (e.position);
         return;
     }
 
@@ -2587,11 +2719,13 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
     const auto from = tieFrom;
     const auto pressedPoint = pressedDynamic;
     const auto pedalPoint = pressedPedal;
+    const auto repeatMeasure = pressedRepeat;
     const auto clickedHairpin = pressedHairpin;
     const auto drag = hairpinDrag;
     pressedNote.reset();
     pressedDynamic.reset();
     pressedPedal.reset();
+    pressedRepeat.reset();
     pressedHairpin.reset();
     hairpinDrag.reset();
     tieFrom.reset();
@@ -2603,6 +2737,19 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
     if (pedalPoint.has_value() && isPedalChosen() && ! e.mouseWasDraggedSinceMouseDown())
     {
         clickPedal (*pedalPoint);
+        return;
+    }
+
+    // A start repeat goes at the start of the measure clicked, and an end repeat at its end, for
+    // every part. Clicking where there's one takes it out.
+    if (const auto type = getChosenRepeat(); type.has_value() && repeatMeasure.has_value() && ! e.mouseWasDraggedSinceMouseDown())
+    {
+        if (*type == music::Repeat::start)
+            score.setRepeatStart (*repeatMeasure, ! score.hasRepeatStart (*repeatMeasure));
+        else
+            score.setRepeatEnd (*repeatMeasure, ! score.hasRepeatEnd (*repeatMeasure));
+
+        hoverHintHidden = true;
         return;
     }
 
@@ -2794,6 +2941,14 @@ StaffView::Erasable StaffView::findErasableAt (juce::Point<float> point) const
     if (const auto hairpin = findHairpinAt (point))
         found.hairpin = hairpin->first;
 
+    // A repeat sign, anywhere on its lines or dots
+    if (point.y >= getStaffTop (Staff::treble) - 0.5f * staffSpace && point.y <= getStaffTop (Staff::bass) + (staffHeight + 0.5f) * staffSpace)
+        for (int m = juce::jmax (0, nearMeasure - 1); m <= nearMeasure + 1 && m < score.getNumMeasures(); ++m)
+            for (auto type : { music::Repeat::start, music::Repeat::end })
+                if ((type == music::Repeat::start ? score.hasRepeatStart (m) : score.hasRepeatEnd (m))
+                    && getRepeatSignSpan (m, type).expanded (0.3f * staffSpace).contains (point.x))
+                    found.repeat = std::pair { m, type };
+
     // A pedal mark, anywhere along its line or ticks
     if (const auto lineY = getPedalLineY(); point.y >= lineY - 1.4f * staffSpace && point.y <= lineY + 0.6f * staffSpace)
         if (const auto pedals = score.getPedals (part); ! pedals.empty())
@@ -2825,6 +2980,14 @@ void StaffView::eraseAt (juce::Point<float> point)
 
     if (found.dynamic.has_value())
         score.setDynamic (part, found.dynamic->first, found.dynamic->second, std::nullopt);
+
+    if (found.repeat.has_value())
+    {
+        if (found.repeat->second == music::Repeat::start)
+            score.setRepeatStart (found.repeat->first, false);
+        else
+            score.setRepeatEnd (found.repeat->first, false);
+    }
 
     // A note is taken out as a click takes it out: from the chord, if it's a chord's, or for a
     // Random chord, by writing the chord's other notes out on their own.

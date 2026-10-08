@@ -202,7 +202,7 @@ void InstrumentHost::play (const Score& score, int firstMeasure, int lastMeasure
     // The old passage is freed here, outside the lock.
 }
 
-void InstrumentHost::updatePlaying (const Score& score, int firstMeasure, int lastMeasure)
+void InstrumentHost::updatePlaying (const Score& score, int firstMeasure, int lastMeasure, std::optional<double> beat)
 {
     double currentSampleRate = 0.0;
 
@@ -223,8 +223,11 @@ void InstrumentHost::updatePlaying (const Score& score, int firstMeasure, int la
         if (! playing)
             return;
 
-        // The same beat, at the new tempo
-        if (passage.secondsPerBeat > 0.0)
+        // The beat asked for, or the same beat, at the new tempo
+        if (beat.has_value())
+            position = juce::jlimit ((int64_t) 0, newPassage.length,
+                                     (int64_t) std::llround ((*beat - newPassage.firstBeat) * newPassage.secondsPerBeat * sampleRate));
+        else if (passage.secondsPerBeat > 0.0)
             position = (int64_t) std::llround ((double) position * newPassage.secondsPerBeat / passage.secondsPerBeat);
 
         nextPosition = position;
