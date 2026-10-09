@@ -48,7 +48,7 @@ public:
     void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
     bool perform (const InvocationInfo&) override;
 
-    static constexpr int minimumWidth = 1240;     // room for the note length, dynamic, pedal and repeat buttons, and Edit and the eraser
+    static constexpr int minimumWidth = 1290;     // room for the note length, dynamic, pedal and repeat buttons, and Edit and the eraser
     static constexpr int minimumHeight = 640;
 
 private:

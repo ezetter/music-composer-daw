@@ -131,9 +131,22 @@ The score plays as written music does. The first time the music reaches an end r
 
 While it plays, the staves' highlighted beat and the ruler's marker show where it is in the measures as written, going back with the music. Choosing a beat on the ruler plays from the first time that beat comes. Adding or taking out repeat signs while it plays carries on from the same place in the score, the same time through. Recording follows the repeats too: what's played the second time through a repeated passage goes into its measures, alongside what was played the first time, and a key held as the music goes back for a repeat ends at the end repeat. Repeat signs are saved with the score, copied by **Clone**, taken away with the last measure, and undone like any other change; the eraser takes them out too.
 
+### First and second endings
+
+The last button in the repeat group, two brackets numbered 1 and 2, adds first and second endings. With it chosen, click the measure the first ending starts at:
+
+- Before an end repeat, the first ending runs from the measure clicked to the end repeat.
+- With no end repeat after it, the first ending runs to the end of the score, and an end repeat is added there.
+
+A bracket numbered **1.** goes over the first ending, closed at its end, and a faint one shows where it'll go before you click, with the end repeat it would add. The second ending is added just after it: as many new measures, in every instrument, so the staves stay lined up, with the first ending's music copied into them, notes, chords, dynamics, hairpins and pedal marks and all, to change as you like. Its bracket, numbered **2.**, is left open at its end, as the music goes on. The brackets go over the treble staff, above the measure numbers, and the chord names and buttons move up to make room for them.
+
+The first time through, the music plays the first ending and goes back at its end repeat; the second time, it skips the first ending and plays the second, and goes on from there. So A, B, C :‖ D, with the first ending over B and C, plays as A, B, C, A, B′, C′, D, where B′ and C′ are the second ending. The metronome, pedal, playback marker and recording follow it, as they do repeats.
+
+Clicking a measure in either ending, with the endings chosen, takes out both brackets, leaving their measures, their music and the end repeat as they are, and the eraser does the same anywhere along a bracket. Endings can't overlap. They're saved with the score, copied by **Clone**, and undone in one go, measures and all.
+
 ### Eraser
 
-The eraser button, floating over the top right of the staves, always in view and apart from the note lengths, dynamics, hairpins and pedal, turns the eraser on, and the pointer becomes an eraser. Hold the mouse button down and move over the staves, and whatever the eraser passes over is taken out: notes, by their noteheads; a chord's notes, which come out of the chord, as clicking them does; ties, letting go of the notes they join; dynamics; hairpins, anywhere along them; pedal marks; and repeat signs. It catches everything along the way, however quickly it's moved. A click without moving takes out what's under the pointer. Before you press, whatever the eraser is over is shown in red. It works on either instrument's staves, and never adds anything.
+The eraser button, floating over the top right of the staves, always in view and apart from the note lengths, dynamics, hairpins and pedal, turns the eraser on, and the pointer becomes an eraser. Hold the mouse button down and move over the staves, and whatever the eraser passes over is taken out: notes, by their noteheads; a chord's notes, which come out of the chord, as clicking them does; ties, letting go of the notes they join; dynamics; hairpins, anywhere along them; pedal marks; repeat signs; and endings' brackets. It catches everything along the way, however quickly it's moved. A click without moving takes out what's under the pointer. Before you press, whatever the eraser is over is shown in red. It works on either instrument's staves, and never adds anything.
 
 Everything one stroke takes out is undone in one go. Clicking the eraser button again, or choosing a note length, dynamic or hairpin, goes back to adding those. Chord names and numerals aren't erased; take a chord out with Remove Chord in its window, or by erasing its notes. Turning the eraser on turns Edit off.
 
@@ -211,17 +224,17 @@ The **MIDI** menu lists the MIDI inputs, ticked when they're on. Choose one to t
 | --- | --- |
 | `Source/Main.cpp` | The application and its window, and asking to save before quitting |
 | `Source/MainComponent.*` | The File, Edit and MIDI menus, the toolbar, the sidebar, the instruments' scrolling staves, with their volume dials and delete buttons, adding and deleting instruments, the piano, and the audio output |
-| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, crescendos and decrescendos, chords and alternate staff (a part, in the code), the repeat signs, and the order the measures are played in, and saving it as JSON |
+| `Source/Score.*` | The music: the key, time signature and speed, and each instrument's notes, by eighth note, dynamics, crescendos and decrescendos, chords and alternate staff (a part, in the code), the repeat signs and endings, and the order the measures are played in, and saving it as JSON |
 | `Source/ScaleTool.*` | The Scale button's settings, for adding notes from the key's scale |
 | `Source/ScoreDocument.*` | Saves the score to a file and opens it, and keeps track of unsaved changes |
 | `Source/ScoreHistory.*` | Remembers the score before each change, or each eraser stroke, for Undo and Redo |
 | `Source/Music.*` | Music theory: keys, spelling, building, recognising and naming chords, and dynamics, hairpins and their velocities |
 | `Source/MeasureContent.*` | Works out the notes, rests and their lengths that each measure has on each staff |
-| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instruments', with its repeat signs, and turns clicks and drags into notes, dynamics, hairpins and repeat signs, erases them, or moves notes and changes their lengths |
+| `Source/StaffView.*` | Draws an instrument's grand staff with each measure's chord button, lined up with the other instruments', with its repeat signs and endings, and turns clicks and drags into notes, dynamics, hairpins, repeat signs and endings, erases them, or moves notes and changes their lengths |
 | `Source/MusicGlyphs.*` | Music symbols from the Bravura font |
 | `Source/ScorePanel.*` | The key, major or minor, time signature, alternate staff, Copy Progression and Scale |
 | `Source/ChordEditor.*` | The chord window, with the settings for a measure's chord |
-| `Source/DynamicPicker.*` | The ppp to fff, crescendo and decrescendo, pedal and repeat sign buttons for choosing what clicks and drags mark |
+| `Source/DynamicPicker.*` | The ppp to fff, crescendo and decrescendo, pedal, repeat sign and endings buttons for choosing what clicks and drags mark |
 | `Source/EraserButton.*` | The eraser button, and the eraser the pointer becomes |
 | `Source/NoteLengthPicker.*` | The whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, 16th and 32nd note buttons for choosing the length of the notes clicks add, and the notes drawn on them, which a note's menu shows too |
 | `Source/PianoKeyboard.*` | The on-screen piano |

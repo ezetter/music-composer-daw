@@ -13,6 +13,11 @@ namespace
             return music::getDynamicMark (*dynamic) + " (" + music::getDynamicName (*dynamic) + "): click the score to mark it, "
                    "and the notes from there on play at velocity " + juce::String (music::getDynamicVelocity (*dynamic));
 
+        if (std::get_if<music::Repeat> (&marking) != nullptr && std::get<music::Repeat> (marking) == music::Repeat::endings)
+            return "First and second endings: click the measure the first ending starts at, before an end repeat, or anywhere if there isn't "
+                   "one after it, when one's added at the end. A second ending's added after it, in every instrument, with the first's music "
+                   "copied in, to change as you like. Click an ending to take out both, leaving their music";
+
         if (const auto* repeat = std::get_if<music::Repeat> (&marking))
             return *repeat == music::Repeat::start
                        ? juce::String ("Start repeat: click a measure to start a repeated passage there, in every instrument, or click one that's there to take it out")
@@ -42,7 +47,8 @@ DynamicPicker::DynamicPicker()
                          : i == numDynamics + 1 ? music::Marking (music::Hairpin::decrescendo)
                          : i == numDynamics + 2 ? music::Marking (music::Pedal::sustain)
                          : i == numDynamics + 3 ? music::Marking (music::Repeat::start)
-                                                : music::Marking (music::Repeat::end);
+                         : i == numDynamics + 4 ? music::Marking (music::Repeat::end)
+                                                : music::Marking (music::Repeat::endings);
         auto& button = buttons[i];
         button = std::make_unique<MarkingButton> (glyphs, shown);
         button->setTooltip (describe (shown));
@@ -102,6 +108,30 @@ void DynamicPicker::MarkingButton::paintButton (juce::Graphics& g, bool highligh
         const auto glyph = Smufl::dynamics[(size_t) *dynamic];
         const auto glyphBounds = glyphs.getPath (glyph).getBounds();
         glyphs.draw (g, glyph, { centre.x - glyphBounds.getCentreX(), centre.y + 0.45f * glyphStaffSpace });
+        return;
+    }
+
+    // The endings: two brackets side by side, numbered 1 and 2, the first closed and the second open
+    if (std::get_if<music::Repeat> (&marking) != nullptr && std::get<music::Repeat> (marking) == music::Repeat::endings)
+    {
+        const auto area = getLocalBounds().toFloat().reduced (5.0f, 8.0f);
+        const auto half = area.getWidth() / 2.0f;
+        g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+
+        for (int ending = 1; ending <= 2; ++ending)
+        {
+            const auto left = area.getX() + (float) (ending - 1) * half;
+            const auto right = left + half - (ending == 1 ? 1.5f : 0.0f);
+            g.fillRect (juce::Rectangle<float> (left, area.getY(), right - left, 1.2f));
+            g.fillRect (juce::Rectangle<float> (left, area.getY(), 1.2f, area.getHeight() * 0.7f));
+
+            if (ending == 1)
+                g.fillRect (juce::Rectangle<float> (right - 1.2f, area.getY(), 1.2f, area.getHeight() * 0.7f));
+
+            g.drawText (juce::String (ending), juce::Rectangle<float> (left + 2.5f, area.getY() + 1.5f, half - 3.0f, area.getHeight() - 1.5f),
+                        juce::Justification::centredLeft, false);
+        }
+
         return;
     }
 

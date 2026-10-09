@@ -254,15 +254,126 @@ bool Score::hasRepeats() const
     return std::any_of (repeats.begin(), repeats.end(), [] (const RepeatSigns& signs) { return signs.start || signs.end; });
 }
 
+int Score::getEnding (int measure) const
+{
+    return juce::isPositiveAndBelow (measure, (int) repeats.size()) ? repeats[(size_t) measure].ending : 0;
+}
+
+bool Score::hasEndings() const
+{
+    return std::any_of (repeats.begin(), repeats.end(), [] (const RepeatSigns& signs) { return signs.ending != 0; });
+}
+
+std::optional<std::pair<int, int>> Score::getEndingSpan (int measure) const
+{
+    const auto ending = getEnding (measure);
+
+    if (ending == 0)
+        return {};
+
+    auto first = measure, last = measure;
+
+    while (getEnding (first - 1) == ending)
+        --first;
+
+    // A first ending ends at its end repeat.
+    while (getEnding (last + 1) == ending && ! (ending == 1 && hasRepeatEnd (last)))
+        ++last;
+
+    return std::pair { first, last };
+}
+
+std::optional<std::pair<int, int>> Score::getFirstEndingFrom (int measure) const
+{
+    if (! juce::isPositiveAndBelow (measure, getNumMeasures()))
+        return {};
+
+    auto last = measure;
+
+    while (last < getNumMeasures() - 1 && ! hasRepeatEnd (last))
+        ++last;
+
+    for (auto m = measure; m <= last; ++m)
+        if (getEnding (m) != 0)
+            return {};
+
+    return std::pair { measure, last };
+}
+
+bool Score::addEndings (int firstMeasure)
+{
+    const auto span = getFirstEndingFrom (firstMeasure);
+
+    if (! span.has_value())
+        return false;
+
+    const auto [first, last] = *span;
+    const auto length = last - first + 1;
+
+    // The second ending, just after the first, starts as a copy of it, in every part.
+    for (auto& part : parts)
+    {
+        const std::vector<Measure> copy (part.measures.begin() + first, part.measures.begin() + last + 1);
+        part.measures.insert (part.measures.begin() + last + 1, copy.begin(), copy.end());
+    }
+
+    repeats[(size_t) last].end = true;
+
+    for (auto m = first; m <= last; ++m)
+        repeats[(size_t) m].ending = 1;
+
+    repeats.insert (repeats.begin() + last + 1, (size_t) length, RepeatSigns { false, false, 2 });
+
+    pruneTies();
+    sendSynchronousChangeMessage();
+    return true;
+}
+
+void Score::removeEndings (int measure)
+{
+    const auto span = getEndingSpan (measure);
+
+    if (! span.has_value())
+        return;
+
+    // The pair: the first ending and the second just after it, or the second and the first just before it
+    auto first = span->first, last = span->second;
+
+    if (getEnding (measure) == 1)
+    {
+        if (const auto second = getEndingSpan (last + 1); second.has_value() && getEnding (last + 1) == 2)
+            last = second->second;
+    }
+    else if (const auto previous = getEndingSpan (first - 1); previous.has_value() && getEnding (first - 1) == 1)
+    {
+        first = previous->first;
+    }
+
+    for (auto m = first; m <= last; ++m)
+        repeats[(size_t) m].ending = 0;
+
+    sendSynchronousChangeMessage();
+}
+
 std::vector<int> Score::getPerformanceOrder() const
 {
     std::vector<int> order;
     std::vector<bool> repeated (repeats.size(), false);
-    auto back = 0;      // where the next end repeat goes back to
+    auto back = 0;              // where the next end repeat goes back to
+    auto secondTime = false;    // whether it's going through a repeated passage again
 
     for (auto measure = 0; measure < getNumMeasures();)
     {
         const auto& signs = repeats[(size_t) measure];
+
+        // The second time through, a first ending is skipped, on to the second ending after it.
+        if (signs.ending == 1 && secondTime)
+        {
+            measure = getEndingSpan (measure)->second + 1;
+            back = measure;
+            secondTime = false;
+            continue;
+        }
 
         if (signs.start)
             back = measure;
@@ -273,12 +384,16 @@ std::vector<int> Score::getPerformanceOrder() const
         {
             repeated[(size_t) measure] = true;
             measure = back;
+            secondTime = true;
             continue;
         }
 
         // Played through the second time, the next end repeat without a start goes back to here.
         if (signs.end)
+        {
             back = measure + 1;
+            secondTime = false;
+        }
 
         ++measure;
     }
@@ -968,7 +1083,7 @@ namespace
     // 11: minor keys
     // 12: a minor key's chords numbered up its own scale, rather than its relative major's
     // 13: a chord's root raised
-    // 14: repeat signs
+    // 14: repeat signs, and first and second endings
     constexpr int formatVersion = 14;
 
     juce::var notesToJSON (const std::vector<music::KeyboardNote>& notes)
@@ -1057,6 +1172,18 @@ juce::var Score::toJSON (bool withPartIds) const
 
         root->setProperty ("repeatStarts", starts);
         root->setProperty ("repeatEnds", ends);
+    }
+
+    // The measures in first and second endings, as [measure, ending], if there are any
+    if (hasEndings())
+    {
+        juce::Array<juce::var> endings;
+
+        for (size_t measure = 0; measure < repeats.size(); ++measure)
+            if (repeats[measure].ending != 0)
+                endings.add (juce::Array<juce::var> { (int) measure, repeats[measure].ending });
+
+        root->setProperty ("endings", endings);
     }
 
     const auto measureToJSON = [] (const Measure& measure)
@@ -1426,6 +1553,11 @@ juce::Result Score::loadJSON (const juce::var& json)
             for (const auto& item : *list)
                 if (const auto measure = readInt (item, 0, getNumMeasures() - 1, -1); measure >= 0)
                     (isStart ? repeats[(size_t) measure].start : repeats[(size_t) measure].end) = true;
+
+    if (const auto* list = json.getProperty ("endings", {}).getArray())
+        for (const auto& item : *list)
+            if (const auto measure = readInt (item[0], 0, getNumMeasures() - 1, -1); measure >= 0)
+                repeats[(size_t) measure].ending = readInt (item[1], 0, 2, 0);
 
     // A saved random order is kept if it still fits its chord, and made again if not.
     for (auto& part : parts)

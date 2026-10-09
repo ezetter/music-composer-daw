@@ -133,12 +133,14 @@ public:
         std::optional<HairpinMark> hairpin;
         std::optional<PedalSpan> pedal;
         std::optional<std::pair<int, music::Repeat>> repeat;    // the measure of a repeat sign there, and which it is
+        std::optional<int> ending;                              // a measure of an ending whose bracket's there
 
-        bool isEmpty() const { return ! note.has_value() && ! tie.has_value() && ! dynamic.has_value() && ! hairpin.has_value() && ! pedal.has_value() && ! repeat.has_value(); }
+        bool isEmpty() const { return ! note.has_value() && ! tie.has_value() && ! dynamic.has_value() && ! hairpin.has_value() && ! pedal.has_value()
+                                      && ! repeat.has_value() && ! ending.has_value(); }
         bool operator== (const Erasable& other) const
         {
             return note == other.note && tie == other.tie && dynamic == other.dynamic && hairpin == other.hairpin && pedal == other.pedal
-                && repeat == other.repeat;
+                && repeat == other.repeat && ending == other.ending;
         }
     };
 
@@ -384,6 +386,18 @@ private:
 
     /** Where a measure's repeat sign is across the view, for finding it under the eraser. */
     juce::Range<float> getRepeatSignSpan (int measure, music::Repeat) const;
+
+    /** The endings' brackets, over the treble staff: a line with a hook down at the start, and
+        at the end of a first ending, numbered 1. and 2.
+    */
+    void drawEndings (juce::Graphics&) const;
+    void drawEndingBracket (juce::Graphics&, int firstMeasure, int lastMeasure, int ending) const;
+
+    /** Where the endings' brackets' lines are, in staff spaces above the treble staff. */
+    float getEndingOffset() const;
+
+    /** Where an ending's bracket is drawn across the view. */
+    juce::Range<float> getEndingBracketSpan (int firstMeasure, int lastMeasure) const;
 
     /** Where clicking at this point would put a pedal mark, as a measure and beat: on or under
         the lower staff, at the nearest beat, or 32nd note where a note starts.

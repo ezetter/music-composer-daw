@@ -260,9 +260,10 @@ namespace music
     enum class Pedal { sustain };
 
     /** A repeat sign: a start repeat, at the start of a measure, or an end repeat, at its end,
-        which sends the music back to the last start repeat the first time it's reached.
+        which sends the music back to the last start repeat the first time it's reached; or first
+        and second endings, the first played the first time through and the second after it.
     */
-    enum class Repeat { start, end };
+    enum class Repeat { start, end, endings };
 
     /** Something marked on the score to say how it's played: a dynamic, a hairpin, the pedal, or
         a repeat sign.

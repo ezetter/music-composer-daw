@@ -310,10 +310,40 @@ public:
     /** Whether there are any repeat signs. */
     bool hasRepeats() const;
 
+    /** Which ending a measure is in: 1 for a first ending, 2 for a second, or 0 for neither.
+        Endings, like repeat signs, are the score's, for every part alike.
+    */
+    int getEnding (int measure) const;
+
+    /** Whether there are any first and second endings. */
+    bool hasEndings() const;
+
+    /** The first and last measures of the ending a measure is in, if it's in one. */
+    std::optional<std::pair<int, int>> getEndingSpan (int measure) const;
+
+    /** The measures a first ending starting at a measure would take in: from it to the end repeat
+        at or after it, or if there isn't one, to the end of the score, where an end repeat would
+        be added. Nothing if they'd run into an ending already there.
+    */
+    std::optional<std::pair<int, int>> getFirstEndingFrom (int measure) const;
+
+    /** Makes the measures from one to the end repeat after it a first ending, adding an end repeat
+        at the end of the score if there isn't one, and puts a second ending just after it: as
+        many new measures, in every part, with the first ending's music copied into them, to be
+        edited on their own. The second time through, the music skips the first ending and plays
+        the second. Returns false, changing nothing, if there's no room for one there.
+    */
+    bool addEndings (int firstMeasure);
+
+    /** Takes out the first and second endings a measure is in, leaving their measures, and their
+        music, as they are.
+    */
+    void removeEndings (int measure);
+
     /** The measures in the order they're played. The first time an end repeat is reached, the
         music goes back to the last start repeat before it, or if there isn't one since the last
         end repeat it went on past, to just after that, or the beginning; the second time, it
-        goes on.
+        goes on, skipping a first ending to its second ending.
     */
     std::vector<int> getPerformanceOrder() const;
 
@@ -459,10 +489,11 @@ private:
         }
     };
 
-    /** The repeat signs at a measure's start and end. */
+    /** The repeat signs at a measure's start and end, and the ending it's in. */
     struct RepeatSigns
     {
         bool start = false, end = false;
+        int ending = 0;     // 1 for a first ending, 2 for a second
     };
 
     struct Part

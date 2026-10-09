@@ -343,7 +343,17 @@ juce::Range<int> StaffView::getStavesRange() const
 
 float StaffView::getSymbolOffset() const
 {
+    // Over the endings' brackets, if there are any
+    if (score.hasEndings())
+        return getEndingOffset() + 0.7f;
+
     return juce::jmax (2.0f, reachAbove + 1.8f);
+}
+
+float StaffView::getEndingOffset() const
+{
+    // Clear of the notes, and the measure numbers
+    return juce::jmax (3.1f, reachAbove + 2.0f);
 }
 
 float StaffView::getChordButtonOffset() const
@@ -1324,8 +1334,10 @@ void StaffView::paint (juce::Graphics& g)
     drawHoverDynamic (g);
     drawScaleHint (g);
 
+    drawEndings (g);
+
     // A repeat sign, faintly, where a click would mark it
-    if (const auto type = getChosenRepeat(); type.has_value() && hoverRepeat.has_value() && ! hoverHintHidden
+    if (const auto type = getChosenRepeat(); type.has_value() && *type != music::Repeat::endings && hoverRepeat.has_value() && ! hoverHintHidden
         && *hoverRepeat < score.getNumMeasures()
         && ! (*type == music::Repeat::start ? score.hasRepeatStart (*hoverRepeat) : score.hasRepeatEnd (*hoverRepeat)))
     {
@@ -1333,6 +1345,83 @@ void StaffView::paint (juce::Graphics& g)
         drawRepeatSign (g, *hoverRepeat, *type);
         g.setColour (inkColour);
     }
+
+    // And a first ending, with the end repeat it'd add if there isn't one
+    if (getChosenRepeat() == music::Repeat::endings && hoverRepeat.has_value() && ! hoverHintHidden && score.getEnding (*hoverRepeat) == 0)
+    {
+        if (const auto span = score.getFirstEndingFrom (*hoverRepeat))
+        {
+            g.setColour (hoverColour);
+            drawEndingBracket (g, span->first, span->second, 1);
+
+            if (! score.hasRepeatEnd (span->second))
+                drawRepeatSign (g, span->second, music::Repeat::end);
+
+            g.setColour (inkColour);
+        }
+    }
+}
+
+juce::Range<float> StaffView::getEndingBracketSpan (int firstMeasure, int lastMeasure) const
+{
+    const auto& first = measureLayouts[(size_t) firstMeasure];
+    const auto& last = measureLayouts[(size_t) lastMeasure];
+    return { first.x + 0.3f * staffSpace, last.x + last.width - 0.3f * staffSpace };
+}
+
+void StaffView::drawEndingBracket (juce::Graphics& g, int firstMeasure, int lastMeasure, int ending) const
+{
+    const auto span = getEndingBracketSpan (firstMeasure, lastMeasure);
+    const auto y = getStaffTop (Staff::treble) - getEndingOffset() * staffSpace;
+    const auto hook = 1.0f * staffSpace;
+    const auto thickness = 0.13f * staffSpace;
+
+    g.fillRect (juce::Rectangle<float> (span.getStart(), y, span.getLength(), thickness));
+    g.fillRect (juce::Rectangle<float> (span.getStart(), y, thickness, hook));
+
+    // A first ending's closed at its end; a second's left open, as the music goes on.
+    if (ending == 1)
+        g.fillRect (juce::Rectangle<float> (span.getEnd() - thickness, y, thickness, hook));
+
+    g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+    g.drawText (juce::String (ending) + ".", juce::Rectangle<float> (span.getStart() + 0.45f * staffSpace, y + 0.15f * staffSpace, 3.0f * staffSpace, hook),
+                juce::Justification::centredLeft, false);
+}
+
+void StaffView::drawEndings (juce::Graphics& g) const
+{
+    // Red under the eraser, or where a click with the endings chosen would take them out
+    const auto takingOut = [&] (int measure)
+    {
+        const auto under = erasing ? hoverErasable.ending
+                                   : getChosenRepeat() == music::Repeat::endings && ! hoverHintHidden ? hoverRepeat : std::nullopt;
+
+        if (! under.has_value() || score.getEnding (*under) == 0)
+            return false;
+
+        // The pair the measure's in goes together.
+        const auto span = score.getEndingSpan (*under);
+        const auto pairFirst = score.getEnding (*under) == 2 && score.getEnding (span->first - 1) == 1 ? score.getEndingSpan (span->first - 1)->first : span->first;
+        const auto pairLast = score.getEnding (*under) == 1 && score.getEnding (span->second + 1) == 2 ? score.getEndingSpan (span->second + 1)->second : span->second;
+        return measure >= pairFirst && measure <= pairLast;
+    };
+
+    for (int measure = 0; measure < (int) measureLayouts.size();)
+    {
+        const auto span = score.getEndingSpan (measure);
+
+        if (! span.has_value())
+        {
+            ++measure;
+            continue;
+        }
+
+        g.setColour (takingOut (measure) ? removalColour : inkColour);
+        drawEndingBracket (g, span->first, juce::jmin (span->second, (int) measureLayouts.size() - 1), score.getEnding (measure));
+        measure = span->second + 1;
+    }
+
+    g.setColour (inkColour);
 }
 
 void StaffView::drawHeader (juce::Graphics& g) const
@@ -2741,10 +2830,19 @@ void StaffView::mouseUp (const juce::MouseEvent& e)
     }
 
     // A start repeat goes at the start of the measure clicked, and an end repeat at its end, for
-    // every part. Clicking where there's one takes it out.
+    // every part. Clicking where there's one takes it out. With the endings chosen, a first
+    // ending starts at the measure clicked, and a second ending's added after it; clicking an
+    // ending takes out both.
     if (const auto type = getChosenRepeat(); type.has_value() && repeatMeasure.has_value() && ! e.mouseWasDraggedSinceMouseDown())
     {
-        if (*type == music::Repeat::start)
+        if (*type == music::Repeat::endings)
+        {
+            if (score.getEnding (*repeatMeasure) != 0)
+                score.removeEndings (*repeatMeasure);
+            else
+                score.addEndings (*repeatMeasure);
+        }
+        else if (*type == music::Repeat::start)
             score.setRepeatStart (*repeatMeasure, ! score.hasRepeatStart (*repeatMeasure));
         else
             score.setRepeatEnd (*repeatMeasure, ! score.hasRepeatEnd (*repeatMeasure));
@@ -2949,6 +3047,14 @@ StaffView::Erasable StaffView::findErasableAt (juce::Point<float> point) const
                     && getRepeatSignSpan (m, type).expanded (0.3f * staffSpace).contains (point.x))
                     found.repeat = std::pair { m, type };
 
+    // An ending's bracket, anywhere along its line or hooks
+    if (const auto lineY = getStaffTop (Staff::treble) - getEndingOffset() * staffSpace;
+        point.y >= lineY - 0.6f * staffSpace && point.y <= lineY + 1.3f * staffSpace)
+        if (nearMeasure >= 0 && nearMeasure < (int) measureLayouts.size())
+            if (const auto span = score.getEndingSpan (nearMeasure))
+                if (getEndingBracketSpan (span->first, juce::jmin (span->second, (int) measureLayouts.size() - 1)).contains (point.x))
+                    found.ending = nearMeasure;
+
     // A pedal mark, anywhere along its line or ticks
     if (const auto lineY = getPedalLineY(); point.y >= lineY - 1.4f * staffSpace && point.y <= lineY + 0.6f * staffSpace)
         if (const auto pedals = score.getPedals (part); ! pedals.empty())
@@ -2980,6 +3086,9 @@ void StaffView::eraseAt (juce::Point<float> point)
 
     if (found.dynamic.has_value())
         score.setDynamic (part, found.dynamic->first, found.dynamic->second, std::nullopt);
+
+    if (found.ending.has_value())
+        score.removeEndings (*found.ending);
 
     if (found.repeat.has_value())
     {
